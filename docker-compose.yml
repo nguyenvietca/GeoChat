@@ -7,8 +7,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-geochat}
-      POSTGRES_USER: ${DB_USERNAME:-geochat}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-geochat}
+      POSTGRES_USER: ${DB_USERNAME:?Set DB_USERNAME in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:

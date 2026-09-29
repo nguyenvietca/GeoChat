@@ -27,4 +27,6 @@ GeoChat is a cross-platform location-based social chat application built with a 
 
 ## Environment
 
-Copy .env.example to .env and fill in values as needed.
+Copy `.env.example` to `.env` and replace every `replace-with-...` value. Docker Compose reads `.env` automatically.
+
+Spring Boot does not load `.env` automatically. When running the backend from a terminal or Spring Tool Suite, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, and `JWT_SECRET` in the process environment or the run configuration. `JWT_SECRET` must contain at least 32 UTF-8 bytes. Never commit `.env` or use the example values outside local development.

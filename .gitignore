@@ -19,7 +19,6 @@ ios/
 
 # Java / backend
 backend/target/
-backend/.mvn/
 backend/.metadata/
 *.class
 *.log
@@ -32,3 +31,6 @@ backend/.metadata/
 # OS
 .DS_Store
 Thumbs.db
+backend/.classpath
+backend/.project
+backend/.settings

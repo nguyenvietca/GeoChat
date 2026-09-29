@@ -16,5 +16,5 @@ spring:
     console:
       enabled: true
 jwt:
-  secret: test-secret-key-for-jwt-1234567890
+  secret: test-only-key-not-a-real-secret-32-bytes-min
   expiration-ms: 3600000
