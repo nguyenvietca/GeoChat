@@ -1,0 +1,34 @@
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# React Native / Expo
+.expo/
+.expo-shared/
+web-build/
+android/
+ios/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Java / backend
+backend/target/
+backend/.mvn/
+backend/.metadata/
+*.class
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
