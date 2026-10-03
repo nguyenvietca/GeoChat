@@ -1,6 +1,7 @@
 package com.geochat.location;
 
 import com.geochat.auth.security.JwtService;
+import com.geochat.location.entity.UserLocation;
 import com.geochat.location.repository.UserLocationRepository;
 import com.geochat.user.entity.User;
 import com.geochat.user.entity.UserStatus;
@@ -18,7 +19,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.Instant;
+import java.util.List;
 
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.lessThan;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -148,6 +152,85 @@ class LocationIntegrationTest {
         mockMvc.perform(get("/api/v1/locations/me")
                         .header("Authorization", bearer(tokenFor(user))))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void findsNearbyUsersWithinRadiusAndExcludesCurrentUser() throws Exception {
+        User currentUser = createUser("nearby-owner");
+        User nearbyUser = createUser("nearby-user-1");
+        User farUser = createUser("nearby-user-2");
+        String token = tokenFor(currentUser);
+
+        locationRepository.saveAll(List.of(
+                buildLocation(currentUser.getId(), 0.0, 0.0),
+                buildLocation(nearbyUser.getId(), 0.01, 0.0),
+                buildLocation(farUser.getId(), 0.2, 0.0)
+        ));
+
+        mockMvc.perform(get("/api/v1/locations/nearby")
+                        .header("Authorization", bearer(token))
+                        .param("radius", "5000")
+                        .param("limit", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.radiusMeters").value(5000))
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].userId").value(nearbyUser.getId()))
+                .andExpect(jsonPath("$.data.items[0].displayName").value(nearbyUser.getDisplayName()))
+                .andExpect(jsonPath("$.data.items[0].distanceMeters").value(greaterThan(0.0)))
+                .andExpect(jsonPath("$.data.items[0].distanceMeters").value(lessThan(5000.0)))
+                .andExpect(jsonPath("$.data.items[0].latitude").doesNotExist())
+                .andExpect(jsonPath("$.data.items[0].longitude").doesNotExist())
+                .andExpect(jsonPath("$.data.items[0].passwordHash").doesNotExist());
+    }
+
+    @Test
+    void rejectsInvalidRadius() throws Exception {
+        User user = createUser("nearby-invalid");
+        String token = tokenFor(user);
+        locationRepository.save(buildLocation(user.getId(), 0.0, 0.0));
+
+        mockMvc.perform(get("/api/v1/locations/nearby")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/v1/locations/nearby")
+                        .header("Authorization", bearer(token))
+                        .param("radius", "0"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/v1/locations/nearby")
+                        .header("Authorization", bearer(token))
+                        .param("radius", "-1"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/v1/locations/nearby")
+                        .header("Authorization", bearer(token))
+                        .param("radius", "100001"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/v1/locations/nearby")
+                        .header("Authorization", bearer(token))
+                        .param("radius", "abc"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void currentUserWithoutLocationGetsNotFoundForNearbySearch() throws Exception {
+        User user = createUser("nearby-empty");
+
+        mockMvc.perform(get("/api/v1/locations/nearby")
+                        .header("Authorization", bearer(tokenFor(user)))
+                        .param("radius", "5000"))
+                .andExpect(status().isNotFound());
+    }
+
+    private UserLocation buildLocation(Long userId, Double latitude, Double longitude) {
+        UserLocation location = new UserLocation();
+        location.setUserId(userId);
+        location.setLatitude(latitude);
+        location.setLongitude(longitude);
+        location.setUpdatedAt(Instant.now());
+        return location;
     }
 
     private void assertInvalidLocation(String token, String requestBody) throws Exception {

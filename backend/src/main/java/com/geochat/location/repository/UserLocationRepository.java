@@ -5,6 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
 
-public interface UserLocationRepository extends JpaRepository<UserLocation, Long> {
+public interface UserLocationRepository extends JpaRepository<UserLocation, Long>, UserLocationSearchRepository {
     Optional<UserLocation> findByUserId(Long userId);
 }
