@@ -5,7 +5,9 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "splash": {
       "backgroundColor": "#0f172a"
     },
@@ -16,6 +18,15 @@
       "adaptiveIcon": {
         "backgroundColor": "#0f172a"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow GeoChat to use your location to find nearby users."
+        }
+      ],
+      "expo-secure-store"
+    ]
   }
 }

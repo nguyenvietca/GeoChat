@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class GeoChatApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(GeoChatApplication.class, args);
-    }
+	public static void main(String[] args) {
+		SpringApplication.run(GeoChatApplication.class, args);
+	}
 }

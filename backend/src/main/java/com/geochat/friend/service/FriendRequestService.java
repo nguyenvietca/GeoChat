@@ -9,9 +9,12 @@ import com.geochat.friend.dto.UserSummaryResponse;
 import com.geochat.friend.entity.FriendRequest;
 import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
+import com.geochat.notification.event.FriendRequestAcceptedEvent;
+import com.geochat.notification.event.FriendRequestCreatedEvent;
 import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,10 +29,14 @@ public class FriendRequestService {
 
     private final FriendRequestRepository friendRequestRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
-    public FriendRequestService(FriendRequestRepository friendRequestRepository, UserRepository userRepository) {
+    public FriendRequestService(FriendRequestRepository friendRequestRepository,
+                                UserRepository userRepository,
+                                ApplicationEventPublisher applicationEventPublisher) {
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     @Transactional
@@ -69,7 +76,15 @@ public class FriendRequestService {
         friendRequest.setCreatedAt(Instant.now());
         friendRequest.setUpdatedAt(Instant.now());
 
-        return toResponse(friendRequestRepository.save(friendRequest));
+        FriendRequest saved = friendRequestRepository.save(friendRequest);
+        applicationEventPublisher.publishEvent(new FriendRequestCreatedEvent(
+                saved.getId(),
+                saved.getReceiverId(),
+                saved.getSenderId(),
+                sender.getDisplayName()
+        ));
+
+        return toResponse(saved);
     }
 
     @Transactional
@@ -90,7 +105,15 @@ public class FriendRequestService {
         request.setStatus(FriendRequestStatus.ACCEPTED);
         request.setUpdatedAt(Instant.now());
 
-        return toResponse(friendRequestRepository.save(request));
+        FriendRequest saved = friendRequestRepository.save(request);
+        applicationEventPublisher.publishEvent(new FriendRequestAcceptedEvent(
+                saved.getId(),
+                saved.getSenderId(),
+                currentUser.getId(),
+                currentUser.getDisplayName()
+        ));
+
+        return toResponse(saved);
     }
 
     @Transactional
