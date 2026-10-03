@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",
+    "@stomp/stompjs": "^7.3.0",
     "expo": "~51.0.28",
     "expo-location": "~17.0.1",
     "expo-secure-store": "~13.0.2",

@@ -1,6 +1,8 @@
 package com.geochat.chat;
 
 import com.geochat.auth.security.JwtService;
+import com.geochat.chat.dto.SendMessageRequest;
+import com.geochat.chat.service.ChatService;
 import com.geochat.friend.entity.FriendRequest;
 import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
@@ -43,6 +45,9 @@ class ChatIntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+        @Autowired
+        private ChatService chatService;
 
     private MockMvc mockMvc;
 
@@ -150,6 +155,39 @@ class ChatIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].content").value("Hello Bob!"));
+    }
+
+    @Test
+    void loadsMessagePagesFromNewestAndReturnsEachPageInChronologicalOrder() throws Exception {
+        User alice = createUser("alice-paged", "Alice");
+        User bob = createUser("bob-paged", "Bob");
+        markFriends(alice, bob);
+        long conversationId = chatService.openDirectConversation(alice.getUsername(),
+                new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+
+        for (int messageIndex = 0; messageIndex < 25; messageIndex++) {
+            chatService.sendMessage(alice.getUsername(), conversationId,
+                    new SendMessageRequest("Message " + messageIndex));
+        }
+
+        mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationId)
+                        .header("Authorization", bearer(tokenFor(alice)))
+                        .param("limit", "10")
+                        .param("page", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(25))
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.items[0].content").value("Message 15"))
+                .andExpect(jsonPath("$.data.items[9].content").value("Message 24"));
+
+        mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationId)
+                        .header("Authorization", bearer(tokenFor(alice)))
+                        .param("limit", "10")
+                        .param("page", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.items[0].content").value("Message 5"))
+                .andExpect(jsonPath("$.data.items[9].content").value("Message 14"));
     }
 
     @Test

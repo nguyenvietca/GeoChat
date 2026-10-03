@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Type;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -119,6 +123,45 @@ class ChatWebSocketIntegrationTest {
 	@Test
 	void invalidJwtIsRejected() {
 		assertThatThrownBy(() -> connectSession("bad-token")).isInstanceOf(Exception.class);
+	}
+
+	@Test
+	void restSentMessageIsBroadcastToConversationSubscribers() throws Exception {
+		User alice = createUser("alice-rest-ws", "Alice");
+		User bob = createUser("bob-rest-ws", "Bob");
+		markFriends(alice, bob);
+		Long conversationId = openConversation(alice, bob);
+
+		StompSession bobSession = connectSession(tokenFor(bob));
+		BlockingQueue<Map<String, Object>> bobQueue = new LinkedBlockingQueue<>();
+		bobSession.subscribe("/topic/chat/" + conversationId, new StompFrameHandler() {
+			@Override
+			public Type getPayloadType(StompHeaders headers) {
+				return Map.class;
+			}
+
+			@Override
+			public void handleFrame(StompHeaders headers, Object payload) {
+				bobQueue.add((Map<String, Object>) payload);
+			}
+		});
+
+		String requestBody = objectMapper.writeValueAsString(Map.of("content", "REST realtime message"));
+		HttpRequest request = HttpRequest.newBuilder()
+				.uri(URI.create("http://localhost:" + port + "/api/v1/chats/" + conversationId + "/messages"))
+				.header("Authorization", "Bearer " + tokenFor(alice))
+				.header("Content-Type", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofString(requestBody))
+				.build();
+		HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+		assertThat(response.statusCode()).isEqualTo(200);
+		assertThat(objectMapper.readTree(response.body()).path("data").path("content").asText())
+				.isEqualTo("REST realtime message");
+
+		Map<String, Object> received = bobQueue.poll(10, TimeUnit.SECONDS);
+		assertThat(received).isNotNull();
+		assertThat(received.get("content")).isEqualTo("REST realtime message");
+		assertThat(received.get("conversationId")).isEqualTo(conversationId.intValue());
 	}
 
 	@Test

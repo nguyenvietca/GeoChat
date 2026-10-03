@@ -10,6 +10,7 @@ import com.geochat.chat.dto.SendMessageRequest;
 import com.geochat.chat.service.ChatService;
 import com.geochat.common.response.ApiResponse;
 import jakarta.validation.Valid;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,9 +26,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatController {
 
     private final ChatService chatService;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, SimpMessagingTemplate messagingTemplate) {
         this.chatService = chatService;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @PostMapping("/chats/direct")
@@ -54,14 +57,17 @@ public class ChatController {
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable Long conversationId,
             @Valid @RequestBody SendMessageRequest request) {
-        return ApiResponse.ok(chatService.sendMessage(principal.getUsername(), conversationId, request));
+        MessageResponse message = chatService.sendMessage(principal.getUsername(), conversationId, request);
+        messagingTemplate.convertAndSend("/topic/chat/" + conversationId, message);
+        return ApiResponse.ok(message);
     }
 
     @GetMapping("/chats/{conversationId}/messages")
     public ApiResponse<MessageListResponse> listMessages(
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable Long conversationId,
-            @RequestParam(defaultValue = "20") Integer limit) {
-        return ApiResponse.ok(chatService.listMessages(principal.getUsername(), conversationId, limit));
+            @RequestParam(defaultValue = "20") Integer limit,
+            @RequestParam(defaultValue = "0") Integer page) {
+        return ApiResponse.ok(chatService.listMessages(principal.getUsername(), conversationId, limit, page));
     }
 }

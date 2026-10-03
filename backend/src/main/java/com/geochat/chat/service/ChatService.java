@@ -2,6 +2,7 @@ package com.geochat.chat.service;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -161,6 +162,11 @@ public class ChatService {
 
 	@Transactional(readOnly = true)
 	public MessageListResponse listMessages(String username, Long conversationId, Integer limit) {
+		return listMessages(username, conversationId, limit, 0);
+	}
+
+	@Transactional(readOnly = true)
+	public MessageListResponse listMessages(String username, Long conversationId, Integer limit, Integer page) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
@@ -172,15 +178,17 @@ public class ChatService {
 		}
 
 		int safeLimit = limit == null || limit <= 0 ? 20 : Math.min(limit, 100);
-		Pageable pageable = PageRequest.of(0, safeLimit);
-		List<Message> messages = messageRepository.findByConversationIdOrderByCreatedAtAscIdAsc(conversation.getId(),
-				pageable);
+        int safePage = page == null || page < 0 ? 0 : page;
+		Pageable pageable = PageRequest.of(safePage, safeLimit);
+		List<Message> messages = messageRepository.findByConversationIdOrderByCreatedAtDescIdDesc(
+				conversation.getId(), pageable);
 
-		List<MessageResponse> items = messages.stream().map(message -> new MessageResponse(message.getId(),
+		List<MessageResponse> items = new ArrayList<>(messages.stream().map(message -> new MessageResponse(message.getId(),
 				message.getConversationId(), message.getSenderId(), message.getContent(), message.getCreatedAt()))
-				.toList();
+				.toList());
+		Collections.reverse(items);
 
-		return new MessageListResponse(items, messageRepository.countByConversationId(conversation.getId()), 0,
+		return new MessageListResponse(items, messageRepository.countByConversationId(conversation.getId()), safePage,
 				safeLimit);
 	}
 

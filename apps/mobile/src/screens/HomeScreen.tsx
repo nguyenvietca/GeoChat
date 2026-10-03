@@ -5,9 +5,11 @@ import { useAuth } from '../auth/AuthContext';
 type HomeScreenProps = {
   onSearchUsers?: () => void;
   onNearbyUsers?: () => void;
+  onFriends?: () => void;
+  onMessages?: () => void;
 };
 
-export function HomeScreen({ onSearchUsers, onNearbyUsers }: HomeScreenProps) {
+export function HomeScreen({ onSearchUsers, onNearbyUsers, onFriends, onMessages }: HomeScreenProps) {
   const { user, logout } = useAuth();
 
   return (
@@ -25,6 +27,16 @@ export function HomeScreen({ onSearchUsers, onNearbyUsers }: HomeScreenProps) {
         {onNearbyUsers ? (
           <Pressable accessibilityRole="button" style={styles.actionButton} onPress={onNearbyUsers}>
             <Text style={styles.actionButtonText}>Nearby users</Text>
+          </Pressable>
+        ) : null}
+        {onFriends ? (
+          <Pressable accessibilityRole="button" style={styles.actionButton} onPress={onFriends}>
+            <Text style={styles.actionButtonText}>Friends</Text>
+          </Pressable>
+        ) : null}
+        {onMessages ? (
+          <Pressable accessibilityRole="button" style={styles.actionButton} onPress={onMessages}>
+            <Text style={styles.actionButtonText}>Messages</Text>
           </Pressable>
         ) : null}
         <Pressable accessibilityRole="button" style={styles.logoutButton} onPress={() => void logout()}>

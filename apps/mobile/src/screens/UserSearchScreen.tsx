@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,19 +10,27 @@ import {
   View,
 } from 'react-native';
 import { ApiError } from '../api/client';
+import { sendFriendRequest } from '../api/friendApi';
 import { searchUsers } from '../api/userApi';
 import { UserSearchResult } from '../types/discovery';
+import { getFriendRelationshipState } from '../utils/friendRelationship';
 
 type UserSearchScreenProps = {
   token: string | null;
+  currentUserId: number | null;
   onBack: () => void;
+  onOpenFriends: () => void;
 };
 
-export function UserSearchScreen({ token, onBack }: UserSearchScreenProps) {
+export function UserSearchScreen({ token, currentUserId, onBack, onOpenFriends }: UserSearchScreenProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserSearchResult[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sendingUserId, setSendingUserId] = useState<number | null>(null);
+  const sendingUserIdsRef = useRef(new Set<number>());
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const handleSearch = async () => {
     if (loading) {
@@ -51,6 +59,8 @@ export function UserSearchScreen({ token, onBack }: UserSearchScreenProps) {
     Keyboard.dismiss();
     setLoading(true);
     setError('');
+    setActionError('');
+    setNotice('');
     try {
       const response = await searchUsers(normalizedQuery, token);
       setResults(response.items);
@@ -59,6 +69,31 @@ export function UserSearchScreen({ token, onBack }: UserSearchScreenProps) {
       setError(searchError instanceof ApiError ? searchError.message : 'Unable to search right now.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendFriendRequest = async (result: UserSearchResult) => {
+    if (!token || sendingUserIdsRef.current.has(result.userId) || getFriendRelationshipState(result.relationship, currentUserId, result.userId) !== 'NONE') {
+      return;
+    }
+
+    sendingUserIdsRef.current.add(result.userId);
+    setSendingUserId(result.userId);
+    setActionError('');
+    setNotice('');
+    try {
+      await sendFriendRequest(result.userId, token);
+      setResults((currentResults) => currentResults?.map((item) => item.userId === result.userId
+        ? { ...item, relationship: 'PENDING_OUTGOING' }
+        : item) ?? null);
+      setNotice(`Friend request sent to ${result.displayName}.`);
+    } catch (requestError) {
+      setActionError(requestError instanceof ApiError
+        ? requestError.message
+        : 'Unable to send the friend request right now.');
+    } finally {
+      sendingUserIdsRef.current.delete(result.userId);
+      setSendingUserId(null);
     }
   };
 
@@ -93,6 +128,8 @@ export function UserSearchScreen({ token, onBack }: UserSearchScreenProps) {
       </Pressable>
 
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {actionError ? <Text accessibilityRole="alert" style={styles.error}>{actionError}</Text> : null}
+      {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
       {loading ? <Text style={styles.stateText}>Searching...</Text> : null}
       {!loading && results === null && !error ? (
         <Text style={styles.stateText}>Enter a name or username to begin.</Text>
@@ -107,8 +144,45 @@ export function UserSearchScreen({ token, onBack }: UserSearchScreenProps) {
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <View style={styles.resultRow}>
-            <Text style={styles.displayName}>{item.displayName}</Text>
-            <Text style={styles.username}>@{item.username}</Text>
+            <View style={styles.resultCopy}>
+              <Text style={styles.displayName}>{item.displayName}</Text>
+              <Text style={styles.username}>@{item.username}</Text>
+            </View>
+            {(() => {
+              const relationship = getFriendRelationshipState(item.relationship, currentUserId, item.userId);
+              if (relationship === 'NONE') {
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    style={[styles.friendButton, sendingUserId !== null && styles.buttonDisabled]}
+                    onPress={() => void handleSendFriendRequest(item)}
+                    disabled={sendingUserId !== null}
+                  >
+                    {sendingUserId === item.userId
+                      ? (
+                        <View style={styles.sendingContents}>
+                          <ActivityIndicator color="#102a2a" />
+                          <Text style={styles.friendButtonText}>Sending...</Text>
+                        </View>
+                      )
+                      : <Text style={styles.friendButtonText}>Add Friend</Text>}
+                  </Pressable>
+                );
+              }
+              if (relationship === 'INCOMING_REQUEST') {
+                return (
+                  <Pressable accessibilityRole="button" style={styles.stateButton} onPress={onOpenFriends}>
+                    <Text style={styles.stateButtonText}>Review request</Text>
+                  </Pressable>
+                );
+              }
+              const labels = {
+                SELF: 'You',
+                FRIEND: 'Friends',
+                OUTGOING_REQUEST: 'Request sent',
+              } as const;
+              return <Text style={styles.relationshipText}>{labels[relationship]}</Text>;
+            })()}
           </View>
         )}
       />
@@ -185,7 +259,14 @@ const styles = StyleSheet.create({
   resultRow: {
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
-    paddingVertical: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  resultCopy: {
+    flex: 1,
+    paddingRight: 12,
   },
   displayName: {
     color: '#f8fafc',
@@ -196,5 +277,46 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 14,
     marginTop: 3,
+  },
+  friendButton: {
+    minWidth: 96,
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#67e8f9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+  },
+  friendButtonText: {
+    color: '#102a2a',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  stateButton: {
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    backgroundColor: '#334155',
+    borderRadius: 8,
+  },
+  stateButtonText: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  relationshipText: {
+    color: '#67e8f9',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sendingContents: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 6,
+  },
+  notice: {
+    color: '#86efac',
+    fontSize: 14,
+    marginTop: 12,
   },
 });
