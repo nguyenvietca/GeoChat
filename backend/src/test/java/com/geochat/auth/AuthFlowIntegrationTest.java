@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -82,6 +83,56 @@ class AuthFlowIntegrationTest {
 				.andExpect(jsonPath("$.data.passwordHash").doesNotExist())
 				.andExpect(content().string(not(containsString(ALICE_PASSWORD))))
 				.andExpect(content().string(not(containsString(jwtSecret))));
+	}
+
+	@Test
+	void profileUpdateChangesOnlyDisplayNameAndEnforcesExistingValidation() throws Exception {
+		registerAlice();
+		String loginResponse = mockMvc.perform(post("/api/v1/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(loginRequest("alice", ALICE_PASSWORD)))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		String accessToken = new ObjectMapper().readTree(loginResponse).path("data").path("token").asText();
+
+		mockMvc.perform(patch("/api/v1/users/me")
+				.header("Authorization", "Bearer " + accessToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"displayName":"  Alice Updated  "}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.username").value("alice"))
+				.andExpect(jsonPath("$.data.displayName").value("Alice Updated"))
+				.andExpect(jsonPath("$.data.password").doesNotExist())
+				.andExpect(jsonPath("$.data.passwordHash").doesNotExist());
+
+		mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + accessToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.displayName").value("Alice Updated"));
+
+		mockMvc.perform(patch("/api/v1/users/me")
+				.header("Authorization", "Bearer " + accessToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"displayName\":\" \"}"))
+				.andExpect(status().isBadRequest());
+
+		mockMvc.perform(patch("/api/v1/users/me")
+				.header("Authorization", "Bearer " + accessToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"displayName\":\"A\"}"))
+				.andExpect(status().isBadRequest());
+
+		mockMvc.perform(patch("/api/v1/users/me")
+				.header("Authorization", "Bearer " + accessToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"displayName\":\"%s\"}".formatted("x".repeat(101))))
+				.andExpect(status().isBadRequest());
+
+		mockMvc.perform(patch("/api/v1/users/me")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"displayName\":\"Unauthorized\"}"))
+				.andExpect(status().isUnauthorized());
 	}
 
 	@Test

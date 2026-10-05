@@ -7,9 +7,20 @@ type HomeScreenProps = {
   onNearbyUsers?: () => void;
   onFriends?: () => void;
   onMessages?: () => void;
+  onNotifications?: () => void;
+  onProfile?: () => void;
+  notificationCount?: number;
 };
 
-export function HomeScreen({ onSearchUsers, onNearbyUsers, onFriends, onMessages }: HomeScreenProps) {
+export function HomeScreen({
+  onSearchUsers,
+  onNearbyUsers,
+  onFriends,
+  onMessages,
+  onNotifications,
+  onProfile,
+  notificationCount = 0,
+}: HomeScreenProps) {
   const { user, logout } = useAuth();
 
   return (
@@ -37,6 +48,18 @@ export function HomeScreen({ onSearchUsers, onNearbyUsers, onFriends, onMessages
         {onMessages ? (
           <Pressable accessibilityRole="button" style={styles.actionButton} onPress={onMessages}>
             <Text style={styles.actionButtonText}>Messages</Text>
+          </Pressable>
+        ) : null}
+        {onNotifications ? (
+          <Pressable accessibilityRole="button" style={styles.actionButton} onPress={onNotifications}>
+            <Text style={styles.actionButtonText}>
+              {notificationCount > 0 ? `Notifications (${notificationCount})` : 'Notifications'}
+            </Text>
+          </Pressable>
+        ) : null}
+        {onProfile ? (
+          <Pressable accessibilityRole="button" style={styles.actionButton} onPress={onProfile}>
+            <Text style={styles.actionButtonText}>Profile</Text>
           </Pressable>
         ) : null}
         <Pressable accessibilityRole="button" style={styles.logoutButton} onPress={() => void logout()}>

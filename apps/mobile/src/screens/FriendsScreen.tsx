@@ -17,11 +17,13 @@ import {
   rejectFriendRequest,
 } from '../api/friendApi';
 import { Friend, FriendRequestItem } from '../types/friend';
+import { FriendNotificationTab } from '../navigation/notificationNavigation';
 
 type FriendsScreenProps = {
   token: string | null;
   onBack: () => void;
   onMessageFriend: (friend: Friend) => Promise<void>;
+  initialTab?: FriendNotificationTab;
 };
 
 type FriendsTab = 'friends' | 'incoming' | 'outgoing';
@@ -38,8 +40,8 @@ const tabLabels: Record<FriendsTab, string> = {
   outgoing: 'Sent',
 };
 
-export function FriendsScreen({ token, onBack, onMessageFriend }: FriendsScreenProps) {
-  const [activeTab, setActiveTab] = useState<FriendsTab>('friends');
+export function FriendsScreen({ token, onBack, onMessageFriend, initialTab = 'friends' }: FriendsScreenProps) {
+  const [activeTab, setActiveTab] = useState<FriendsTab>(initialTab);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<FriendRequestItem[]>([]);
   const [outgoing, setOutgoing] = useState<FriendRequestItem[]>([]);
@@ -220,6 +222,7 @@ export function FriendsScreen({ token, onBack, onMessageFriend }: FriendsScreenP
                 {activeTab === 'friends' ? (
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel={`Message ${item.displayName}`}
                     style={[styles.messageButton, isOpening && styles.buttonDisabled]}
                     onPress={() => void handleMessageFriend({ userId: item.userId, displayName: item.displayName })}
                     disabled={openingFriendId !== null}

@@ -3,14 +3,18 @@ package com.geochat.user.controller;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.geochat.common.response.ApiResponse;
+import com.geochat.user.dto.UpdateMyProfileRequest;
 import com.geochat.user.dto.UserResponse;
 import com.geochat.user.dto.UserSearchResponse;
 import com.geochat.user.service.UserService;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -25,6 +29,13 @@ public class UserController {
 	@GetMapping("/me")
 	public ApiResponse<UserResponse> getCurrentUser(@AuthenticationPrincipal UserDetails principal) {
 		return ApiResponse.ok(userService.getCurrentUser(principal.getUsername()));
+	}
+
+	@PatchMapping("/me")
+	public ApiResponse<UserResponse> updateCurrentUser(
+			@AuthenticationPrincipal UserDetails principal,
+			@Valid @RequestBody UpdateMyProfileRequest request) {
+		return ApiResponse.ok(userService.updateCurrentUser(principal.getUsername(), request));
 	}
 
 	@GetMapping("/search")

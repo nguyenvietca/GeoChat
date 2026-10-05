@@ -300,9 +300,10 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
             />
             <Pressable
               accessibilityRole="button"
-              style={[styles.sendButton, (sending || !draft.trim()) && styles.sendButtonDisabled]}
+              accessibilityLabel="Send message"
+              style={[styles.sendButton, sending && styles.sendButtonDisabled]}
               onPress={() => void handleSend()}
-              disabled={sending || !draft.trim()}
+              disabled={sending}
             >
               {sending ? <ActivityIndicator color="#102a2a" /> : <Text style={styles.sendText}>Send</Text>}
             </Pressable>

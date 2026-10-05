@@ -6,8 +6,10 @@ const defaultLocalHost = Platform.select({
   default: 'localhost',
 });
 
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? `http://${defaultLocalHost}:8080`;
+// @ts-expect-error Expo replaces this app-specific public variable when bundling.
+const configuredApiBaseUrl: string | undefined = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+export const API_BASE_URL = configuredApiBaseUrl ?? `http://${defaultLocalHost}:8080`;
 
 export const buildApiUrl = (path: string) => {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

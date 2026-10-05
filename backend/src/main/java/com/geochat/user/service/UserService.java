@@ -3,6 +3,7 @@ package com.geochat.user.service;
 import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
 import com.geochat.user.dto.RegisterRequest;
+import com.geochat.user.dto.UpdateMyProfileRequest;
 import com.geochat.user.dto.UserResponse;
 import com.geochat.user.dto.UserSearchResponse;
 import com.geochat.user.dto.UserSearchResult;
@@ -60,6 +61,15 @@ public class UserService {
         User user = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
         return UserResponse.from(user);
+    }
+
+    @Transactional
+    public UserResponse updateCurrentUser(String username, UpdateMyProfileRequest request) {
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        user.setDisplayName(request.displayName().trim());
+        user.setUpdatedAt(Instant.now());
+        return UserResponse.from(userRepository.save(user));
     }
 
     @Transactional(readOnly = true)

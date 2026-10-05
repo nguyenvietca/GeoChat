@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import { AuthTokens, LoginRequest, RegisterRequest, User } from '../types/auth';
+import { getMyProfile } from './userApi';
 
 export const loginUser = async (payload: LoginRequest) => {
   return apiRequest<AuthTokens>('/api/v1/auth/login', {
@@ -15,9 +16,4 @@ export const registerUser = async (payload: RegisterRequest) => {
   });
 };
 
-export const getCurrentUser = async (token: string) => {
-  return apiRequest<User>('/api/v1/users/me', {
-    method: 'GET',
-    token,
-  });
-};
+export const getCurrentUser = getMyProfile;
