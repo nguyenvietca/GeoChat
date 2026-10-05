@@ -31,6 +31,12 @@ Examples:
 - physical device on the same Wi-Fi: http://192.168.1.50:8080
 - local machine: http://localhost:8080
 
+## Push notifications
+
+Expo push token registration requires an EAS project ID. Set `EXPO_PUBLIC_EAS_PROJECT_ID` to the project UUID, or link the app to an EAS project so Expo Constants can provide it. Push registration is skipped safely when no project ID is available. Test delivery on a physical iOS or Android device with push credentials configured for the EAS project.
+
+On the backend, push delivery is disabled by default. Set `PUSH_NOTIFICATIONS_ENABLED=true` to enable Expo delivery; set `EXPO_ACCESS_TOKEN` when the Expo project requires an access token. The app registers its device after authentication and deactivates that device on logout.
+
 ## Authentication flow
 
 The app uses the existing backend endpoints:

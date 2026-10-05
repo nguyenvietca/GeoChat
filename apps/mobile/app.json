@@ -26,6 +26,7 @@
           "locationWhenInUsePermission": "Allow GeoChat to use your location to find nearby users."
         }
       ],
+      "expo-notifications",
       "expo-secure-store"
     ]
   }

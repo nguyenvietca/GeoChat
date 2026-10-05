@@ -5,6 +5,12 @@ import {
   UnreadCountResponse,
 } from '../types/notification';
 
+export type PushDeviceRegistration = {
+  deviceId: number;
+  platform: 'ios' | 'android';
+  createdAt: string;
+};
+
 export function getNotifications(token: string) {
   return apiRequest<NotificationListResponse>('/api/v1/notifications', { token });
 }
@@ -23,6 +29,21 @@ export function markNotificationRead(notificationId: number, token: string) {
 export function markAllNotificationsRead(token: string) {
   return apiRequest<NotificationListResponse>('/api/v1/notifications/read-all', {
     method: 'POST',
+    token,
+  });
+}
+
+export function registerPushDevice(token: string, pushToken: string, platform: 'ios' | 'android') {
+  return apiRequest<PushDeviceRegistration>('/api/v1/notifications/devices', {
+    method: 'POST',
+    body: { token: pushToken, platform },
+    token,
+  });
+}
+
+export function removePushDevice(deviceId: number, token: string) {
+  return apiRequest<void>(`/api/v1/notifications/devices/${deviceId}`, {
+    method: 'DELETE',
     token,
   });
 }

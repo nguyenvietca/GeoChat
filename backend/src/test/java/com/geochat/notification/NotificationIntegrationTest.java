@@ -1,9 +1,16 @@
 package com.geochat.notification;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 
 import java.time.Instant;
 
@@ -17,6 +24,7 @@ import org.springframework.security.web.FilterChainProxy;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.context.WebApplicationContext;
 
 import com.geochat.auth.security.JwtService;
@@ -27,11 +35,14 @@ import com.geochat.friend.entity.FriendRequest;
 import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
 import com.geochat.notification.repository.NotificationRepository;
+import com.geochat.notification.repository.UserPushDeviceRepository;
+import com.geochat.notification.entity.UserPushDevice;
+import com.geochat.notification.service.ExpoPushGateway;
 import com.geochat.user.entity.User;
 import com.geochat.user.entity.UserStatus;
 import com.geochat.user.repository.UserRepository;
 
-@SpringBootTest
+@SpringBootTest(properties = "push-notifications.enabled=true")
 @ActiveProfiles("test")
 class NotificationIntegrationTest {
 
@@ -48,6 +59,9 @@ class NotificationIntegrationTest {
 	private NotificationRepository notificationRepository;
 
 	@Autowired
+	private UserPushDeviceRepository pushDeviceRepository;
+
+	@Autowired
 	private PasswordEncoder passwordEncoder;
 
 	@Autowired
@@ -56,6 +70,9 @@ class NotificationIntegrationTest {
 	@Autowired
 	private ChatService chatService;
 
+	@MockitoBean
+	private ExpoPushGateway expoPushGateway;
+
 	private MockMvc mockMvc;
 
 	@BeforeEach
@@ -63,14 +80,51 @@ class NotificationIntegrationTest {
 		mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
 				.addFilters(webApplicationContext.getBean(FilterChainProxy.class)).build();
 		notificationRepository.deleteAll();
+		pushDeviceRepository.deleteAll();
 		friendRequestRepository.deleteAll();
 		userRepository.deleteAll();
+	}
+
+	@Test
+	void pushDeviceRegistrationIsAuthenticatedIdempotentAndOwnerScoped() throws Exception {
+		User alice = createUser("alice-device");
+		User bob = createUser("bob-device");
+		String body = "{\"token\":\"ExponentPushToken[device-token]\",\"platform\":\"android\"}";
+
+		mockMvc.perform(post("/api/v1/notifications/devices").contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isUnauthorized());
+
+		String firstResponse = mockMvc.perform(post("/api/v1/notifications/devices")
+				.header("Authorization", bearer(tokenFor(alice))).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.platform").value("android"))
+				.andExpect(jsonPath("$.data.token").doesNotExist()).andReturn().getResponse().getContentAsString();
+		Long deviceId = extractDeviceId(firstResponse);
+
+		mockMvc.perform(post("/api/v1/notifications/devices")
+				.header("Authorization", bearer(tokenFor(alice))).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.deviceId").value(deviceId));
+		org.junit.jupiter.api.Assertions.assertEquals(1, pushDeviceRepository.count());
+
+		mockMvc.perform(post("/api/v1/notifications/devices")
+				.header("Authorization", bearer(tokenFor(bob))).contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isForbidden());
+
+		mockMvc.perform(delete("/api/v1/notifications/devices/" + deviceId)
+				.header("Authorization", bearer(tokenFor(bob))))
+				.andExpect(status().isNotFound());
+
+		mockMvc.perform(delete("/api/v1/notifications/devices/" + deviceId)
+				.header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk());
+		org.junit.jupiter.api.Assertions.assertFalse(pushDeviceRepository.findById(deviceId).orElseThrow().isActive());
 	}
 
 	@Test
 	void friendRequestAndAcceptanceCreateNotifications() throws Exception {
 		User alice = createUser("alice-notify");
 		User bob = createUser("bob-notify");
+		savePushDevice(alice, "ExponentPushToken[alice-notify]");
+		savePushDevice(bob, "ExponentPushToken[bob-notify]");
 
 		String requestResponse = mockMvc
 				.perform(post("/api/v1/friends/requests").header("Authorization", bearer(tokenFor(alice)))
@@ -78,6 +132,9 @@ class NotificationIntegrationTest {
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
 		Long requestId = extractRequestId(requestResponse);
+		verify(expoPushGateway).send(eq("ExponentPushToken[bob-notify]"), eq("Friend request"), anyString(),
+				argThat(data -> "FRIEND_REQUEST_RECEIVED".equals(data.get("type"))
+						&& requestId.equals(data.get("friendRequestId"))));
 
 		mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenFor(bob))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
@@ -97,6 +154,9 @@ class NotificationIntegrationTest {
 		mockMvc.perform(post("/api/v1/friends/requests/" + requestId + "/accept").header("Authorization",
 				bearer(tokenFor(bob)))).andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value(FriendRequestStatus.ACCEPTED.name()));
+		verify(expoPushGateway).send(eq("ExponentPushToken[alice-notify]"), eq("Friend request accepted"), anyString(),
+				argThat(data -> "FRIEND_REQUEST_ACCEPTED".equals(data.get("type"))
+						&& requestId.equals(data.get("friendRequestId"))));
 
 		mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenFor(alice))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
@@ -110,6 +170,7 @@ class NotificationIntegrationTest {
 	void messageCreationCreatesNotificationOnlyForOtherParticipant() throws Exception {
 		User alice = createUser("alice-msg");
 		User bob = createUser("bob-msg");
+		savePushDevice(bob, "ExponentPushToken[bob-message]");
 
 		FriendRequest acceptedRequest = new FriendRequest();
 		acceptedRequest.setSenderId(alice.getId());
@@ -122,6 +183,9 @@ class NotificationIntegrationTest {
 		Long conversationId = chatService
 				.openDirectConversation(alice.getUsername(), new OpenDirectChatRequest(bob.getId())).conversationId();
 		chatService.sendMessage(alice.getUsername(), conversationId, new SendMessageRequest("hello"));
+		verify(expoPushGateway).send(eq("ExponentPushToken[bob-message]"), eq("New message"), anyString(),
+				argThat(data -> "NEW_MESSAGE".equals(data.get("type"))
+						&& conversationId.equals(data.get("conversationId"))));
 
 		mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenFor(bob))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
@@ -129,6 +193,22 @@ class NotificationIntegrationTest {
 
 		mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenFor(alice))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(0));
+	}
+
+	@Test
+	void providerFailureDoesNotFailFriendRequestOrNotificationCreation() throws Exception {
+		User alice = createUser("alice-push-failure");
+		User bob = createUser("bob-push-failure");
+		savePushDevice(bob, "ExponentPushToken[bob-push-failure]");
+		doThrow(new IllegalStateException("Expo unavailable"))
+				.when(expoPushGateway).send(anyString(), anyString(), anyString(), anyMap());
+
+		mockMvc.perform(post("/api/v1/friends/requests").header("Authorization", bearer(tokenFor(alice)))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + bob.getId() + "}"))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenFor(bob))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1));
 	}
 
 	private User createUser(String username) {
@@ -140,6 +220,14 @@ class NotificationIntegrationTest {
 		user.setCreatedAt(Instant.now());
 		user.setUpdatedAt(Instant.now());
 		return userRepository.save(user);
+	}
+
+	private void savePushDevice(User user, String pushToken) {
+		UserPushDevice device = new UserPushDevice();
+		device.setUserId(user.getId());
+		device.setPushToken(pushToken);
+		device.setPlatform("ios");
+		pushDeviceRepository.save(device);
 	}
 
 	private String tokenFor(User user) {
@@ -163,6 +251,16 @@ class NotificationIntegrationTest {
 	private Long extractNotificationId(String response) {
 		int index = response.indexOf("\"id\":");
 		String payload = response.substring(index + 5);
+		int end = payload.indexOf(',');
+		if (end == -1) {
+			end = payload.indexOf('}');
+		}
+		return Long.parseLong(payload.substring(0, end));
+	}
+
+	private Long extractDeviceId(String response) {
+		int index = response.indexOf("\"deviceId\":");
+		String payload = response.substring(index + 11);
 		int end = payload.indexOf(',');
 		if (end == -1) {
 			end = payload.indexOf('}');

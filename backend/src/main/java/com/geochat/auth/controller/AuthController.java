@@ -17,21 +17,21 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
-    private final AuthService authService;
-    private final UserService userService;
+	private final AuthService authService;
+	private final UserService userService;
 
-    public AuthController(AuthService authService, UserService userService) {
-        this.authService = authService;
-        this.userService = userService;
-    }
+	public AuthController(AuthService authService, UserService userService) {
+		this.authService = authService;
+		this.userService = userService;
+	}
 
-    @PostMapping("/register")
-    public ApiResponse<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ApiResponse.ok(userService.register(request));
-    }
+	@PostMapping("/register")
+	public ApiResponse<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
+		return ApiResponse.ok(userService.register(request));
+	}
 
-    @PostMapping("/login")
-    public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        return ApiResponse.ok(authService.login(request));
-    }
+	@PostMapping("/login")
+	public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+		return ApiResponse.ok(authService.login(request));
+	}
 }

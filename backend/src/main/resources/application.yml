@@ -24,5 +24,11 @@ jwt:
   secret: ${JWT_SECRET:vK7!qP2#xR9$mN4@tY8%wL3&cF6*zH1!}
   expiration-ms: 3600000
 
+push-notifications:
+  enabled: ${PUSH_NOTIFICATIONS_ENABLED:false}
+  expo:
+    url: ${EXPO_PUSH_URL:https://exp.host/--/api/v2/push/send}
+    access-token: ${EXPO_ACCESS_TOKEN:}
+
 server:
   port: ${SERVER_PORT:8080}

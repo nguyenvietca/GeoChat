@@ -5,6 +5,7 @@ import { AppNavigator } from '../navigation/AppNavigator';
 import { getCurrentUser } from '../api/authApi';
 import { getToken, clearTokens } from '../storage/tokenStorage';
 import { getUnreadNotificationCount } from '../api/notificationApi';
+import { unregisterCurrentPushDevice } from '../services/pushNotificationService';
 import { getMyProfile } from '../api/userApi';
 import { User } from '../types/auth';
 
@@ -21,6 +22,11 @@ jest.mock('../storage/tokenStorage', () => ({
 jest.mock('../api/notificationApi', () => ({
   getUnreadNotificationCount: jest.fn(),
 }));
+jest.mock('../services/pushNotificationService', () => ({
+  registerForPushNotifications: jest.fn().mockResolvedValue('unavailable'),
+  unregisterCurrentPushDevice: jest.fn().mockRejectedValue(new Error('network unavailable')),
+  addPushNotificationListeners: jest.fn(() => jest.fn()),
+}));
 jest.mock('../api/userApi', () => ({
   getMyProfile: jest.fn(),
   updateMyProfile: jest.fn(),
@@ -31,6 +37,7 @@ const mockGetCurrentUser = getCurrentUser as jest.MockedFunction<typeof getCurre
 const mockGetToken = getToken as jest.MockedFunction<typeof getToken>;
 const mockClearTokens = clearTokens as jest.MockedFunction<typeof clearTokens>;
 const mockGetUnreadCount = getUnreadNotificationCount as jest.MockedFunction<typeof getUnreadNotificationCount>;
+const mockUnregisterPushDevice = unregisterCurrentPushDevice as jest.MockedFunction<typeof unregisterCurrentPushDevice>;
 const mockGetProfile = getMyProfile as jest.MockedFunction<typeof getMyProfile>;
 
 const user: User = {
@@ -68,6 +75,7 @@ describe('profile navigation and logout', () => {
 
     await waitFor(() => expect(screen.getByText('Welcome back')).toBeTruthy());
     expect(mockClearTokens).toHaveBeenCalledTimes(1);
+    expect(mockUnregisterPushDevice).toHaveBeenCalledWith('active-token');
     expect(screen.queryByText('Profile User')).toBeNull();
     expect(screen.queryByText('Password changes are not available yet.')).toBeNull();
   });

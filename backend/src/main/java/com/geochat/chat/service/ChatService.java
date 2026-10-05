@@ -245,7 +245,7 @@ public class ChatService {
 				.map(participant -> participant.getId().getUserId()).orElse(null);
 
 		if (recipientId != null) {
-			applicationEventPublisher.publishEvent(new MessageCreatedEvent(saved.getId(), recipientId,
+			applicationEventPublisher.publishEvent(new MessageCreatedEvent(saved.getId(), saved.getConversationId(), recipientId,
 					currentUser.getId(), currentUser.getDisplayName()));
 		}
 

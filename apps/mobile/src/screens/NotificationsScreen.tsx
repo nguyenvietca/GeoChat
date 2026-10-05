@@ -23,6 +23,7 @@ type NotificationsScreenProps = {
   onBack: () => void;
   onUnreadCountChange: (count: number) => void;
   onOpenFriends: (tab: FriendNotificationTab) => void;
+  refreshVersion?: number;
 };
 
 export function NotificationsScreen({
@@ -30,6 +31,7 @@ export function NotificationsScreen({
   onBack,
   onUnreadCountChange,
   onOpenFriends,
+  refreshVersion = 0,
 }: NotificationsScreenProps) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -78,7 +80,7 @@ export function NotificationsScreen({
 
   useEffect(() => {
     void refresh(true);
-  }, [token]);
+  }, [token, refreshVersion]);
 
   const handleNotificationPress = async (notification: AppNotification) => {
     if (markingAll || markingIdsRef.current.size > 0) {

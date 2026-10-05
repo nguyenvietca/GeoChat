@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../screens/AuthScreen';
@@ -15,7 +15,12 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { EditProfileScreen } from '../screens/EditProfileScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { Friend } from '../types/friend';
-import { FriendNotificationTab } from './notificationNavigation';
+import {
+  FriendNotificationTab,
+  getPushNotificationDestination,
+  PushNotificationDestination,
+} from './notificationNavigation';
+import { addPushNotificationListeners } from '../services/pushNotificationService';
 
 type AuthenticatedScreen =
   | 'home'
@@ -38,6 +43,55 @@ export function AppNavigator() {
   const [notificationCount, setNotificationCount] = useState(0);
   const [friendsInitialTab, setFriendsInitialTab] = useState<FriendNotificationTab>('friends');
   const [profileNotice, setProfileNotice] = useState('');
+  const [notificationRefreshVersion, setNotificationRefreshVersion] = useState(0);
+  const [pendingPushDestination, setPendingPushDestination] = useState<{
+    destination: PushNotificationDestination;
+    identifier: string;
+  } | null>(null);
+  const latestSession = useRef({ isAuthenticated, token });
+  const handledPushResponses = useRef(new Set<string>());
+  latestSession.current = { isAuthenticated, token };
+
+  useEffect(() => addPushNotificationListeners({
+    onReceived: () => {
+      setNotificationRefreshVersion((version) => version + 1);
+      const session = latestSession.current;
+      if (session.isAuthenticated && session.token) {
+        void getUnreadNotificationCount(session.token)
+          .then((response) => setNotificationCount(response.unreadCount))
+          .catch(() => undefined);
+      }
+    },
+    onResponse: (data, identifier) => {
+      if (handledPushResponses.current.has(identifier)) {
+        return;
+      }
+      handledPushResponses.current.add(identifier);
+      setPendingPushDestination({
+        destination: getPushNotificationDestination(data),
+        identifier,
+      });
+    },
+  }), []);
+
+  useEffect(() => {
+    if (!pendingPushDestination || isLoading || !isAuthenticated) {
+      return;
+    }
+
+    const { destination } = pendingPushDestination;
+    if (destination.screen === 'friends') {
+      setFriendsInitialTab(destination.tab);
+      setScreen('friends');
+    } else if (destination.screen === 'chat') {
+      setConversationId(destination.conversationId);
+      setChatReturnScreen('conversations');
+      setScreen('chat');
+    } else {
+      setScreen('notifications');
+    }
+    setPendingPushDestination(null);
+  }, [pendingPushDestination, isAuthenticated, isLoading]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -152,6 +206,7 @@ export function AppNavigator() {
         onBack={() => setScreen('home')}
         onUnreadCountChange={setNotificationCount}
         onOpenFriends={openFriends}
+        refreshVersion={notificationRefreshVersion}
       />
     );
   }

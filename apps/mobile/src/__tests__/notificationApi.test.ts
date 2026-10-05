@@ -1,5 +1,7 @@
 import {
   getNotifications,
+  registerPushDevice,
+  removePushDevice,
   getUnreadNotificationCount,
   markAllNotificationsRead,
   markNotificationRead,
@@ -44,6 +46,25 @@ describe('notificationApi', () => {
 
     expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/notifications/read-all', {
       method: 'POST',
+      token,
+    });
+  });
+
+  it('registers a push device using the authenticated API client', async () => {
+    await registerPushDevice(token, 'ExponentPushToken[test]', 'ios');
+
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/notifications/devices', {
+      method: 'POST',
+      body: { token: 'ExponentPushToken[test]', platform: 'ios' },
+      token,
+    });
+  });
+
+  it('removes only the selected push device using the authenticated API client', async () => {
+    await removePushDevice(42, token);
+
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/notifications/devices/42', {
+      method: 'DELETE',
       token,
     });
   });

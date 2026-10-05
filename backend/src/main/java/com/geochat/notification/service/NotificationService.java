@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.geochat.notification.dto.NotificationListResponse;
@@ -29,7 +30,7 @@ public class NotificationService {
 		this.userRepository = userRepository;
 	}
 
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public NotificationResponse createFriendRequestReceived(Long recipientId, Long requestId,
 			String senderDisplayName) {
 		return toResponse(createNotification(recipientId, NotificationType.FRIEND_REQUEST_RECEIVED,
@@ -37,7 +38,7 @@ public class NotificationService {
 				buildFriendRequestReceivedMessage(senderDisplayName)));
 	}
 
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public NotificationResponse createFriendRequestAccepted(Long recipientId, Long requestId,
 			String accepterDisplayName) {
 		return toResponse(createNotification(recipientId, NotificationType.FRIEND_REQUEST_ACCEPTED,
@@ -45,7 +46,7 @@ public class NotificationService {
 				buildFriendRequestAcceptedMessage(accepterDisplayName)));
 	}
 
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public NotificationResponse createNewMessage(Long recipientId, Long messageId, String senderDisplayName) {
 		return toResponse(
 				createNotification(recipientId, NotificationType.NEW_MESSAGE, NotificationReferenceType.MESSAGE,

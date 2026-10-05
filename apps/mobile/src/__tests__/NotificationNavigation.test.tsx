@@ -1,7 +1,10 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { HomeScreen } from '../screens/HomeScreen';
-import { getNotificationDestination } from '../navigation/notificationNavigation';
+import {
+  getNotificationDestination,
+  getPushNotificationDestination,
+} from '../navigation/notificationNavigation';
 import { AppNotification } from '../types/notification';
 
 jest.mock('../auth/AuthContext', () => ({
@@ -46,6 +49,22 @@ describe('notification navigation', () => {
 
   it('rejects a friend notification without a valid reference ID', () => {
     expect(getNotificationDestination(makeNotification({ referenceId: 0 }))).toBeNull();
+  });
+
+  it('routes push notifications to incoming requests, friends, and the matching chat', () => {
+    expect(getPushNotificationDestination({ type: 'FRIEND_REQUEST_RECEIVED', friendRequestId: 9 }))
+      .toEqual({ screen: 'friends', tab: 'incoming' });
+    expect(getPushNotificationDestination({ type: 'FRIEND_REQUEST_ACCEPTED', friendRequestId: 9 }))
+      .toEqual({ screen: 'friends', tab: 'friends' });
+    expect(getPushNotificationDestination({ type: 'NEW_MESSAGE', conversationId: 45 }))
+      .toEqual({ screen: 'chat', conversationId: 45 });
+  });
+
+  it('sends unknown or malformed push data to Notifications', () => {
+    expect(getPushNotificationDestination(null)).toEqual({ screen: 'notifications' });
+    expect(getPushNotificationDestination({ type: 'NEW_MESSAGE', conversationId: '45' }))
+      .toEqual({ screen: 'notifications' });
+    expect(getPushNotificationDestination({ type: 'UNKNOWN' })).toEqual({ screen: 'notifications' });
   });
 });
 

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getCurrentUser, loginUser, registerUser } from '../api/authApi';
 import { clearTokens, getToken, saveTokens } from '../storage/tokenStorage';
+import { registerForPushNotifications, unregisterCurrentPushDevice } from '../services/pushNotificationService';
 import { LoginRequest, RegisterRequest, User } from '../types/auth';
 
 type AuthContextValue = {
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentUser = await getCurrentUser(currentToken);
       setUser(currentUser);
       setToken(currentToken);
+      void registerForPushNotifications(currentToken);
     } catch (_error) {
       await clearTokens();
       setUser(null);
@@ -55,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const currentUser = await getCurrentUser(authData.token);
     setToken(authData.token);
     setUser(currentUser);
+    void registerForPushNotifications(authData.token);
   };
 
   const register = async (payload: RegisterRequest) => {
@@ -63,6 +66,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    if (token) {
+      void unregisterCurrentPushDevice(token).catch(() => undefined);
+    }
     await clearTokens();
     setUser(null);
     setToken(null);
