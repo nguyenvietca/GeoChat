@@ -67,7 +67,10 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
 
             String destination = accessor.getDestination();
             if (destination != null && destination.startsWith("/user/")) {
-                return message;
+                if ("/user/queue/notifications".equals(destination)) {
+                    return message;
+                }
+                throw new AccessDeniedException("You cannot access this user destination.");
             }
 
             Long conversationId = extractConversationId(destination);

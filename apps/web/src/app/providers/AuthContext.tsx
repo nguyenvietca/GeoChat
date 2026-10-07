@@ -24,6 +24,7 @@ type AuthContextValue = {
   register: (payload: RegisterRequest) => Promise<User>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  syncUser: (user: User) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -112,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   const register = useCallback((payload: RegisterRequest) => registerRequest(payload), []);
+  const syncUser = useCallback((updatedUser: User) => setUser(updatedUser), []);
   const logout = useCallback(() => {
     disconnectAllChatWebSockets();
     clearSession();
@@ -127,7 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     register,
     logout,
     refreshUser,
-  }), [user, token, isLoading, sessionNotice, login, register, logout, refreshUser]);
+    syncUser,
+  }), [user, token, isLoading, sessionNotice, login, register, logout, refreshUser, syncUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

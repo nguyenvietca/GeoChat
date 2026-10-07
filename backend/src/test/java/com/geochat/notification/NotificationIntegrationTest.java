@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.test.context.ActiveProfiles;
@@ -36,7 +37,11 @@ import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
 import com.geochat.notification.repository.NotificationRepository;
 import com.geochat.notification.repository.UserPushDeviceRepository;
+import com.geochat.notification.dto.NotificationResponse;
+import com.geochat.notification.entity.Notification;
 import com.geochat.notification.entity.UserPushDevice;
+import com.geochat.notification.enumtype.NotificationReferenceType;
+import com.geochat.notification.enumtype.NotificationType;
 import com.geochat.notification.service.ExpoPushGateway;
 import com.geochat.user.entity.User;
 import com.geochat.user.entity.UserStatus;
@@ -72,6 +77,9 @@ class NotificationIntegrationTest {
 
 	@MockitoBean
 	private ExpoPushGateway expoPushGateway;
+
+	@MockitoBean
+	private SimpMessagingTemplate messagingTemplate;
 
 	private MockMvc mockMvc;
 
@@ -186,13 +194,47 @@ class NotificationIntegrationTest {
 		verify(expoPushGateway).send(eq("ExponentPushToken[bob-message]"), eq("New message"), anyString(),
 				argThat(data -> "NEW_MESSAGE".equals(data.get("type"))
 						&& conversationId.equals(data.get("conversationId"))));
+		verify(messagingTemplate).convertAndSendToUser(eq(bob.getUsername()), eq("/queue/notifications"),
+				argThat(payload -> payload instanceof NotificationResponse notification
+						&& "NEW_MESSAGE".equals(notification.type().name())
+						&& conversationId.equals(notification.conversationId())));
 
 		mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenFor(bob))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
-				.andExpect(jsonPath("$.data.items[0].type").value("NEW_MESSAGE"));
+				.andExpect(jsonPath("$.data.items[0].type").value("NEW_MESSAGE"))
+				.andExpect(jsonPath("$.data.items[0].conversationId").value(conversationId));
 
 		mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenFor(alice))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(0));
+	}
+
+	@Test
+	void notificationListSupportsBoundedOffsetPagination() throws Exception {
+		User recipient = createUser("paged-notifications");
+		for (int index = 0; index < 21; index++) {
+			Notification notification = new Notification();
+			notification.setRecipientId(recipient.getId());
+			notification.setType(NotificationType.FRIEND_REQUEST_RECEIVED);
+			notification.setTitle("Friend request");
+			notification.setMessage("A friend request arrived.");
+			notification.setReferenceType(NotificationReferenceType.FRIEND_REQUEST);
+			notification.setReferenceId((long) index + 1);
+			notification.setCreatedAt(Instant.parse("2026-10-01T00:00:00Z").plusSeconds(index));
+			notificationRepository.save(notification);
+		}
+
+		mockMvc.perform(get("/api/v1/notifications?limit=20&offset=0")
+				.header("Authorization", bearer(tokenFor(recipient))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.items.length()").value(20))
+				.andExpect(jsonPath("$.data.total").value(21))
+				.andExpect(jsonPath("$.data.hasMore").value(true));
+
+		mockMvc.perform(get("/api/v1/notifications?limit=20&offset=20")
+				.header("Authorization", bearer(tokenFor(recipient))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.items.length()").value(1))
+				.andExpect(jsonPath("$.data.hasMore").value(false));
 	}
 
 	@Test

@@ -35,6 +35,12 @@ const socketHarness = vi.hoisted(() => ({
 vi.mock('../../api/auth', () => ({ getCurrentUser: vi.fn() }));
 vi.mock('../../api/users', () => ({ searchUsers: vi.fn() }));
 vi.mock('../../api/location', () => ({ getNearbyUsers: vi.fn(), updateCurrentLocation: vi.fn() }));
+vi.mock('../../api/notifications', () => ({
+  getNotifications: vi.fn(),
+  getUnreadNotificationCount: vi.fn().mockResolvedValue({ unreadCount: 0 }),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+}));
 vi.mock('../../api/friends', () => ({
   getFriends: vi.fn(),
   getIncomingFriendRequests: vi.fn(),
@@ -56,6 +62,7 @@ vi.mock('../../services/chatWebSocket', () => ({
     socketHarness.handlers = handlers;
     return socketHarness.disconnect;
   }),
+  subscribeToNotifications: vi.fn(() => socketHarness.disconnect),
   disconnectAllChatWebSockets: vi.fn(),
 }));
 

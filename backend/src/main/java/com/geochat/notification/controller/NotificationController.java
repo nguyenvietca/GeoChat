@@ -18,8 +18,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -34,8 +37,11 @@ public class NotificationController {
     }
 
     @GetMapping("/notifications")
-    public ApiResponse<NotificationListResponse> getNotifications(@AuthenticationPrincipal UserDetails principal) {
-        return ApiResponse.ok(notificationService.listNotifications(principal.getUsername()));
+    public ApiResponse<NotificationListResponse> getNotifications(
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int limit,
+            @RequestParam(defaultValue = "0") @Min(0) int offset) {
+        return ApiResponse.ok(notificationService.listNotifications(principal.getUsername(), limit, offset));
     }
 
     @GetMapping("/notifications/unread-count")

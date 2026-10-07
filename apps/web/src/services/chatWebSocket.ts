@@ -1,21 +1,20 @@
-import { Client, IMessage, StompSubscription } from '@stomp/stompjs';
-import { apiBaseUrl } from '../api/client';
-import { ChatMessage } from '../types';
+import { AppNotification, ChatMessage, NotificationReferenceType, NotificationType } from '../types';
+import {
+  buildWebSocketUrl,
+  disconnectAllStompConnections,
+  StompConnectionState,
+  subscribeToStompDestination,
+} from './stompConnection';
 
-export type ChatConnectionState = 'connecting' | 'connected' | 'reconnecting';
+export type ChatConnectionState = StompConnectionState;
 
 export type ChatWebSocketHandlers = {
   onMessage: (message: ChatMessage) => void;
   onStateChange: (state: ChatConnectionState) => void;
 };
 
-const activeConnections = new Set<() => void>();
-
 export function buildChatWebSocketUrl() {
-  const url = new URL(apiBaseUrl);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.pathname = `${url.pathname.replace(/\/$/, '')}/ws`;
-  return url.toString();
+  return buildWebSocketUrl();
 }
 
 export function subscribeToConversation(
@@ -23,58 +22,70 @@ export function subscribeToConversation(
   token: string,
   handlers: ChatWebSocketHandlers,
 ) {
-  let active = true;
-  let subscription: StompSubscription | null = null;
-
-  const client = new Client({
-    brokerURL: buildChatWebSocketUrl(),
-    connectHeaders: { Authorization: `Bearer ${token}` },
-    reconnectDelay: 3000,
-    connectionTimeout: 10000,
-    heartbeatIncoming: 10000,
-    heartbeatOutgoing: 10000,
-    debug: () => undefined,
-    onConnect: () => {
-      if (!active) return;
-      subscription?.unsubscribe();
-      handlers.onStateChange('connected');
-      subscription = client.subscribe(`/topic/chat/${conversationId}`, (frame: IMessage) => {
-        if (!active) return;
-        const message = parseChatMessage(frame.body);
-        if (message?.conversationId === conversationId) {
-          handlers.onMessage(message);
-        }
-      });
-    },
-    onStompError: () => {
-      if (active) handlers.onStateChange('reconnecting');
-    },
-    onWebSocketClose: () => {
-      if (active) handlers.onStateChange('reconnecting');
-    },
-    onWebSocketError: () => {
-      if (active) handlers.onStateChange('reconnecting');
+  return subscribeToStompDestination(token, `/topic/chat/${conversationId}`, {
+    onStateChange: handlers.onStateChange,
+    onFrame: (body) => {
+      const message = parseChatMessage(body);
+      if (message?.conversationId === conversationId) {
+        handlers.onMessage(message);
+      }
     },
   });
-
-  const disconnect = () => {
-    if (!active) return;
-    active = false;
-    subscription?.unsubscribe();
-    activeConnections.delete(disconnect);
-    void client.deactivate().catch(() => undefined);
-  };
-
-  activeConnections.add(disconnect);
-  handlers.onStateChange('connecting');
-  client.activate();
-
-  return disconnect;
 }
 
 export function disconnectAllChatWebSockets() {
-  for (const disconnect of [...activeConnections]) {
-    disconnect();
+  disconnectAllStompConnections();
+}
+
+export type NotificationWebSocketHandlers = {
+  onNotification: (notification: AppNotification) => void;
+  onStateChange: (state: StompConnectionState) => void;
+};
+
+export function subscribeToNotifications(token: string, handlers: NotificationWebSocketHandlers) {
+  return subscribeToStompDestination(token, '/user/queue/notifications', {
+    onStateChange: handlers.onStateChange,
+    onFrame: (body) => {
+      const notification = parseNotification(body);
+      if (notification) handlers.onNotification(notification);
+    },
+  });
+}
+
+export function parseNotification(body: string): AppNotification | null {
+  try {
+    const value: unknown = JSON.parse(body);
+    if (typeof value !== 'object' || value === null) return null;
+
+    const notification = value as Partial<AppNotification>;
+    const notificationTypes: NotificationType[] = [
+      'FRIEND_REQUEST_RECEIVED',
+      'FRIEND_REQUEST_ACCEPTED',
+      'NEW_MESSAGE',
+    ];
+    const referenceTypes: NotificationReferenceType[] = ['FRIEND_REQUEST', 'MESSAGE'];
+    if (
+      !Number.isSafeInteger(notification.id) || Number(notification.id) <= 0
+      || !Number.isSafeInteger(notification.recipientId) || Number(notification.recipientId) <= 0
+      || !notificationTypes.includes(notification.type as NotificationType)
+      || !referenceTypes.includes(notification.referenceType as NotificationReferenceType)
+      || !Number.isSafeInteger(notification.referenceId) || Number(notification.referenceId) <= 0
+      || (notification.conversationId !== null
+        && (!Number.isSafeInteger(notification.conversationId) || Number(notification.conversationId) <= 0))
+      || typeof notification.title !== 'string'
+      || typeof notification.message !== 'string'
+      || typeof notification.read !== 'boolean'
+      || typeof notification.createdAt !== 'string'
+      || Number.isNaN(Date.parse(notification.createdAt))
+      || (notification.readAt !== null
+        && (typeof notification.readAt !== 'string' || Number.isNaN(Date.parse(notification.readAt))))
+    ) {
+      return null;
+    }
+
+    return notification as AppNotification;
+  } catch {
+    return null;
   }
 }
 

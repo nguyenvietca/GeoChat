@@ -9,6 +9,10 @@ import { NearbyPage } from './features/nearby/NearbyPage';
 import { SearchPage } from './features/search/SearchPage';
 import { ConversationListPage } from './features/chat/ConversationListPage';
 import { ChatPage } from './features/chat/ChatPage';
+import { NotificationsPage } from './features/notifications/NotificationsPage';
+import { useNotifications } from './app/providers/NotificationContext';
+import { ProfilePage } from './features/profile/ProfilePage';
+import { SettingsPage } from './features/settings/SettingsPage';
 
 function LoadingScreen() {
   return <main className="state-page"><span className="spinner" /><p>Restoring your GeoChat session…</p></main>;
@@ -30,6 +34,7 @@ function ProtectedArea() {
 
 function AppShell() {
   const { user, logout } = useAuth();
+  const { unreadCount } = useNotifications();
   return (
     <div className="app-frame">
       <aside className="sidebar">
@@ -54,6 +59,21 @@ function AppShell() {
           <NavLink to="/app/chat" className="nav-link">
             <span className="nav-icon">▤</span> Messages
           </NavLink>
+          <NavLink to="/app/notifications" className="nav-link notifications-nav-link">
+            <span className="nav-icon">♧</span> Notifications
+            {unreadCount > 0 ? <span className="notification-count" aria-label={`${unreadCount} unread notifications`}>
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span> : null}
+          </NavLink>
+        </nav>
+        <p className="nav-caption account-nav-caption">ACCOUNT</p>
+        <nav className="side-nav account-side-nav" aria-label="Account navigation">
+          <NavLink to="/app/profile" className="nav-link account-nav-link">
+            <span className="nav-icon">◉</span> Profile
+          </NavLink>
+          <NavLink to="/app/settings" className="nav-link account-nav-link">
+            <span className="nav-icon">⚙</span> Settings
+          </NavLink>
         </nav>
         <div className="sidebar-bottom">
           <div className="signed-in-user">
@@ -67,6 +87,10 @@ function AppShell() {
         <header className="topbar">
           <span className="mobile-brand"><span className="brand-mark">G</span> GeoChat</span>
           <span className="topbar-user">Signed in as <strong>{user?.username}</strong></span>
+          <nav className="mobile-account-nav" aria-label="Account navigation">
+            <NavLink to="/app/profile" aria-label="Profile" title="Profile">◉</NavLink>
+            <NavLink to="/app/settings" aria-label="Settings" title="Settings">⚙</NavLink>
+          </nav>
         </header>
         <main className="content-area"><Outlet /></main>
       </div>
@@ -121,6 +145,9 @@ export default function App() {
             <Route path="friends" element={<FriendsPage />} />
             <Route path="chat" element={<ConversationListPage />} />
             <Route path="chat/:conversationId" element={<ChatPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="profile" element={<ProfilePage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

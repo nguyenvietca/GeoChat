@@ -22,8 +22,10 @@ describe('notificationApi', () => {
 
   it('loads the authenticated notification list', async () => {
     await getNotifications(token);
+    await getNotifications(token, 20, 40);
 
-    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/notifications', { token });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(1, '/api/v1/notifications?limit=20&offset=0', { token });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(2, '/api/v1/notifications?limit=20&offset=40', { token });
   });
 
   it('loads the authenticated unread count', async () => {

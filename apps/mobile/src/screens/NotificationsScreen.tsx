@@ -26,6 +26,8 @@ type NotificationsScreenProps = {
   refreshVersion?: number;
 };
 
+const PAGE_SIZE = 20;
+
 export function NotificationsScreen({
   token,
   onBack,
@@ -37,11 +39,15 @@ export function NotificationsScreen({
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [markingIds, setMarkingIds] = useState<number[]>([]);
   const [markingAll, setMarkingAll] = useState(false);
   const [error, setError] = useState('');
   const markingIdsRef = useRef(new Set<number>());
   const unreadCountRef = useRef(0);
+  const nextOffsetRef = useRef(0);
+  const loadingMoreRef = useRef(false);
 
   const updateUnreadCount = (count: number) => {
     unreadCountRef.current = count;
@@ -65,10 +71,12 @@ export function NotificationsScreen({
 
     try {
       const [listResponse, countResponse] = await Promise.all([
-        getNotifications(token),
+        getNotifications(token, PAGE_SIZE, 0),
         getUnreadNotificationCount(token),
       ]);
       setNotifications(dedupeNotifications(listResponse.items));
+      nextOffsetRef.current = (listResponse.offset ?? 0) + listResponse.items.length;
+      setHasMore(Boolean(listResponse.hasMore));
       updateUnreadCount(countResponse.unreadCount);
     } catch (loadError) {
       setError(loadError instanceof ApiError ? loadError.message : 'Unable to load notifications right now.');
@@ -81,6 +89,25 @@ export function NotificationsScreen({
   useEffect(() => {
     void refresh(true);
   }, [token, refreshVersion]);
+
+  const loadMore = async () => {
+    if (!token || !hasMore || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setError('');
+    const offset = nextOffsetRef.current;
+    try {
+      const response = await getNotifications(token, PAGE_SIZE, offset);
+      setNotifications((current) => dedupeNotifications([...current, ...response.items]));
+      nextOffsetRef.current = offset + response.items.length;
+      setHasMore(response.items.length > 0 && Boolean(response.hasMore));
+    } catch (loadError) {
+      setError(loadError instanceof ApiError ? loadError.message : 'Unable to load older notifications right now.');
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  };
 
   const handleNotificationPress = async (notification: AppNotification) => {
     if (markingAll || markingIdsRef.current.size > 0) {
@@ -128,7 +155,9 @@ export function NotificationsScreen({
     setError('');
     try {
       const response = await markAllNotificationsRead(token);
-      setNotifications(dedupeNotifications(response.items));
+      setNotifications((current) => current.map((item) => (
+        item.read ? item : { ...item, read: true, readAt: new Date().toISOString() }
+      )));
       updateUnreadCount(response.unreadCount);
     } catch (markError) {
       setError(markError instanceof ApiError ? markError.message : 'Unable to mark notifications as read.');
@@ -192,6 +221,11 @@ export function NotificationsScreen({
           refreshing={refreshing}
           onRefresh={() => void refresh()}
           contentContainerStyle={styles.listContent}
+          ListFooterComponent={hasMore ? (
+            <Pressable accessibilityRole="button" disabled={loadingMore} onPress={() => void loadMore()} style={styles.loadMoreButton}>
+              {loadingMore ? <ActivityIndicator color="#67e8c1" /> : <Text style={styles.actionText}>Load older notifications</Text>}
+            </Pressable>
+          ) : null}
           renderItem={({ item }) => (
             <NotificationItem
               notification={item}
@@ -292,5 +326,13 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 24,
+  },
+  loadMoreButton: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    borderRadius: 8,
+    backgroundColor: '#334155',
   },
 });

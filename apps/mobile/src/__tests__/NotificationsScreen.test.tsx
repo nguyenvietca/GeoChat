@@ -50,7 +50,14 @@ function makeProps() {
 }
 
 function setupDefaults(items: AppNotification[] = [makeNotification()]) {
-  mockGetNotifications.mockResolvedValue({ items, unreadCount: items.filter((item) => !item.read).length });
+  mockGetNotifications.mockResolvedValue({
+    items,
+    unreadCount: items.filter((item) => !item.read).length,
+    total: items.length,
+    limit: 20,
+    offset: 0,
+    hasMore: false,
+  });
   mockGetUnreadCount.mockResolvedValue({ unreadCount: items.filter((item) => !item.read).length });
   mockMarkRead.mockImplementation(async (id) => makeNotification({ id, read: true, readAt: new Date().toISOString() }));
   mockMarkAllRead.mockResolvedValue({
@@ -110,6 +117,21 @@ describe('NotificationsScreen', () => {
 
     await waitFor(() => expect(screen.getByText('2 unread')).toBeTruthy());
     expect(screen.getAllByRole('button', { name: /Alice sent you a friend request/ })).toHaveLength(1);
+  });
+
+  it('loads older notifications using the next bounded offset', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => makeNotification({ id: index + 1 }));
+    const olderNotification = makeNotification({ id: 21, read: true, message: 'Bob accepted your friend request.' });
+    mockGetNotifications
+      .mockResolvedValueOnce({ items: firstPage, unreadCount: 20, total: 21, limit: 20, offset: 0, hasMore: true })
+      .mockResolvedValueOnce({ items: [olderNotification], unreadCount: 20, total: 21, limit: 20, offset: 20, hasMore: false });
+    render(<NotificationsScreen {...makeProps()} />);
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Load older notifications' }));
+    await waitFor(() => expect(mockGetNotifications).toHaveBeenCalledTimes(2));
+
+    expect(mockGetNotifications).toHaveBeenNthCalledWith(2, token, 20, 20);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Load older notifications' })).toBeNull());
   });
 
   it('shows a retryable error state when loading fails', async () => {

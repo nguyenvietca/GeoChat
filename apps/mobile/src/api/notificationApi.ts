@@ -11,8 +11,9 @@ export type PushDeviceRegistration = {
   createdAt: string;
 };
 
-export function getNotifications(token: string) {
-  return apiRequest<NotificationListResponse>('/api/v1/notifications', { token });
+export function getNotifications(token: string, limit = 20, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiRequest<NotificationListResponse>(`/api/v1/notifications?${params}`, { token });
 }
 
 export function getUnreadNotificationCount(token: string) {

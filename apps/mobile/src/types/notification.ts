@@ -21,6 +21,10 @@ export type AppNotification = {
 export type NotificationListResponse = {
   items: AppNotification[];
   unreadCount: number;
+  total?: number;
+  limit?: number;
+  offset?: number;
+  hasMore?: boolean;
 };
 
 export type UnreadCountResponse = {

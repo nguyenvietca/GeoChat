@@ -3,9 +3,11 @@ import {
   buildChatWebSocketUrl,
   disconnectAllChatWebSockets,
   parseChatMessage,
+  parseNotification,
+  subscribeToNotifications,
   subscribeToConversation,
 } from './chatWebSocket';
-import { ChatMessage } from '../types';
+import { AppNotification, ChatMessage } from '../types';
 
 const stompHarness = vi.hoisted(() => ({
   configuration: null as unknown,
@@ -42,6 +44,23 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     senderId: 9,
     content: 'A safe text message',
     createdAt: '2026-10-06T12:00:00Z',
+    ...overrides,
+  };
+}
+
+function notification(overrides: Partial<AppNotification> = {}): AppNotification {
+  return {
+    id: 5,
+    recipientId: 9,
+    type: 'NEW_MESSAGE',
+    title: 'New message',
+    message: 'A message arrived.',
+    referenceType: 'MESSAGE',
+    referenceId: 14,
+    conversationId: 42,
+    read: false,
+    createdAt: '2026-10-06T12:00:00Z',
+    readAt: null,
     ...overrides,
   };
 }
@@ -104,5 +123,33 @@ describe('web chat WebSocket service', () => {
     cleanup();
     expect(stompHarness.client.deactivate).toHaveBeenCalledOnce();
     expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares one authenticated STOMP connection between chat and notifications', () => {
+    const chatCleanup = subscribeToConversation(42, 'same-token', {
+      onMessage: vi.fn(),
+      onStateChange: vi.fn(),
+    });
+    const notificationCleanup = subscribeToNotifications('same-token', {
+      onNotification: vi.fn(),
+      onStateChange: vi.fn(),
+    });
+
+    expect(stompHarness.client.activate).toHaveBeenCalledOnce();
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/topic/chat/42', expect.any(Function));
+    expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/user/queue/notifications', expect.any(Function));
+
+    chatCleanup();
+    expect(stompHarness.client.deactivate).not.toHaveBeenCalled();
+    notificationCleanup();
+    expect(stompHarness.client.deactivate).toHaveBeenCalledOnce();
+  });
+
+  it('validates notification payloads and preserves the server notification ID', () => {
+    expect(parseNotification(JSON.stringify(notification()))).toEqual(notification());
+    expect(parseNotification(JSON.stringify(notification({ id: 0 })))).toBeNull();
+    expect(parseNotification(JSON.stringify(notification({ conversationId: -1 })))).toBeNull();
+    expect(parseNotification('{not json')).toBeNull();
   });
 });

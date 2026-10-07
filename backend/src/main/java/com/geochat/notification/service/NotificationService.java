@@ -21,6 +21,7 @@ import jakarta.persistence.EntityNotFoundException;
 
 @Service
 public class NotificationService {
+	private static final int MAX_PAGE_SIZE = 50;
 
 	private final NotificationRepository notificationRepository;
 	private final UserRepository userRepository;
@@ -34,7 +35,7 @@ public class NotificationService {
 	public NotificationResponse createFriendRequestReceived(Long recipientId, Long requestId,
 			String senderDisplayName) {
 		return toResponse(createNotification(recipientId, NotificationType.FRIEND_REQUEST_RECEIVED,
-				NotificationReferenceType.FRIEND_REQUEST, requestId, "Friend request",
+				NotificationReferenceType.FRIEND_REQUEST, requestId, null, "Friend request",
 				buildFriendRequestReceivedMessage(senderDisplayName)));
 	}
 
@@ -42,26 +43,36 @@ public class NotificationService {
 	public NotificationResponse createFriendRequestAccepted(Long recipientId, Long requestId,
 			String accepterDisplayName) {
 		return toResponse(createNotification(recipientId, NotificationType.FRIEND_REQUEST_ACCEPTED,
-				NotificationReferenceType.FRIEND_REQUEST, requestId, "Friend request accepted",
+				NotificationReferenceType.FRIEND_REQUEST, requestId, null, "Friend request accepted",
 				buildFriendRequestAcceptedMessage(accepterDisplayName)));
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public NotificationResponse createNewMessage(Long recipientId, Long messageId, String senderDisplayName) {
-		return toResponse(
-				createNotification(recipientId, NotificationType.NEW_MESSAGE, NotificationReferenceType.MESSAGE,
-						messageId, "New message", buildNewMessageMessage(senderDisplayName)));
+	public NotificationResponse createNewMessage(Long recipientId, Long messageId, Long conversationId,
+			String senderDisplayName) {
+		return toResponse(createNotification(recipientId, NotificationType.NEW_MESSAGE,
+				NotificationReferenceType.MESSAGE, messageId, conversationId, "New message",
+				buildNewMessageMessage(senderDisplayName)));
 	}
 
 	@Transactional(readOnly = true)
-	public NotificationListResponse listNotifications(String username) {
+	public String getRecipientUsername(Long recipientId) {
+		return userRepository.findById(recipientId)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"))
+				.getUsername();
+	}
+
+	@Transactional(readOnly = true)
+	public NotificationListResponse listNotifications(String username, int limit, int offset) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
 		List<Notification> notifications = notificationRepository
-				.findByRecipientIdOrderByCreatedAtDesc(currentUser.getId());
+				.findPageByRecipientId(currentUser.getId(), limit, offset);
+		long total = notificationRepository.countByRecipientId(currentUser.getId());
 		long unreadCount = notificationRepository.countByRecipientIdAndReadFalse(currentUser.getId());
-		return new NotificationListResponse(notifications.stream().map(this::toResponse).toList(), unreadCount);
+		return new NotificationListResponse(notifications.stream().map(this::toResponse).toList(), unreadCount, total,
+				limit, offset, (long) offset + notifications.size() < total);
 	}
 
 	@Transactional(readOnly = true)
@@ -92,29 +103,18 @@ public class NotificationService {
 	public NotificationListResponse markAllAsRead(String username) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
-
-		List<Notification> notifications = notificationRepository
-				.findByRecipientIdOrderByCreatedAtDesc(currentUser.getId());
-		notifications.stream().filter(notification -> !notification.isRead()).forEach(notification -> {
-			notification.setRead(true);
-			notification.setReadAt(Instant.now());
-		});
-
-		if (!notifications.isEmpty()) {
-			notificationRepository.saveAll(notifications.stream()
-					.filter(notification -> !notification.isRead() || notification.getReadAt() != null).toList());
-		}
-
-		return listNotifications(username);
+		notificationRepository.markAllAsRead(currentUser.getId(), Instant.now());
+		return listNotifications(username, MAX_PAGE_SIZE, 0);
 	}
 
 	private Notification createNotification(Long recipientId, NotificationType type,
-			NotificationReferenceType referenceType, Long referenceId, String title, String message) {
+			NotificationReferenceType referenceType, Long referenceId, Long conversationId, String title, String message) {
 		Notification notification = new Notification();
 		notification.setRecipientId(recipientId);
 		notification.setType(type);
 		notification.setReferenceType(referenceType);
 		notification.setReferenceId(referenceId);
+		notification.setConversationId(conversationId);
 		notification.setTitle(title);
 		notification.setMessage(message);
 		notification.setRead(false);
@@ -125,7 +125,7 @@ public class NotificationService {
 	private NotificationResponse toResponse(Notification notification) {
 		return new NotificationResponse(notification.getId(), notification.getRecipientId(), notification.getType(),
 				notification.getTitle(), notification.getMessage(), notification.getReferenceType(),
-				notification.getReferenceId(), notification.isRead(), notification.getCreatedAt(),
+			notification.getReferenceId(), notification.getConversationId(), notification.isRead(), notification.getCreatedAt(),
 				notification.getReadAt());
 	}
 

@@ -4,7 +4,7 @@ import App from './App';
 import { ApiError } from './api/client';
 import { getCurrentUser, login, register } from './api/auth';
 import { getNearbyUsers, updateCurrentLocation } from './api/location';
-import { searchUsers } from './api/users';
+import { searchUsers, updateMyProfile } from './api/users';
 import { User } from './types';
 
 vi.mock('./api/auth', () => ({
@@ -16,7 +16,13 @@ vi.mock('./api/location', () => ({
   getNearbyUsers: vi.fn(),
   updateCurrentLocation: vi.fn(),
 }));
-vi.mock('./api/users', () => ({ searchUsers: vi.fn() }));
+vi.mock('./api/notifications', () => ({
+  getNotifications: vi.fn(),
+  getUnreadNotificationCount: vi.fn().mockResolvedValue({ unreadCount: 0 }),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+}));
+vi.mock('./api/users', () => ({ searchUsers: vi.fn(), updateMyProfile: vi.fn() }));
 
 const mockGetCurrentUser = vi.mocked(getCurrentUser);
 const mockLogin = vi.mocked(login);
@@ -24,6 +30,7 @@ const mockRegister = vi.mocked(register);
 const mockGetNearbyUsers = vi.mocked(getNearbyUsers);
 const mockUpdateLocation = vi.mocked(updateCurrentLocation);
 const mockSearchUsers = vi.mocked(searchUsers);
+const mockUpdateMyProfile = vi.mocked(updateMyProfile);
 
 const currentUser: User = {
   id: 9,
@@ -46,6 +53,14 @@ async function renderSignedIn(path = '/') {
   await screen.findByRole('heading', { name: /welcome, mira vale/i });
 }
 
+async function renderSignedInAt(path: string, heading: string) {
+  localStorage.setItem('geochat.web.accessToken', 'session-token');
+  mockGetCurrentUser.mockResolvedValue(currentUser);
+  setPath(path);
+  render(<App />);
+  await screen.findByRole('heading', { name: heading });
+}
+
 describe('web authentication and protected routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -59,6 +74,13 @@ describe('web authentication and protected routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Search people' })).toBeNull();
+  });
+
+  it.each(['/app/profile', '/app/settings'])('protects the account route %s', async (path) => {
+    setPath(path);
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
   });
 
   it('restores a stored session and renders the authenticated home', async () => {
@@ -151,6 +173,44 @@ describe('web authentication and protected routes', () => {
   it('logs out and clears the stored token', async () => {
     await renderSignedIn('/app/home');
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
+    expect(localStorage.getItem('geochat.web.accessToken')).toBeNull();
+  });
+
+  it('updates the supported display name and synchronizes the authenticated user state', async () => {
+    const updatedUser = { ...currentUser, displayName: 'Mira Updated' };
+    mockUpdateMyProfile.mockResolvedValue(updatedUser);
+    await renderSignedInAt('/app/profile', 'Profile');
+
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: '  Mira Updated  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect((await screen.findByRole('status')).textContent).toBe('Profile updated.');
+    expect(mockUpdateMyProfile).toHaveBeenCalledWith({ displayName: 'Mira Updated' }, 'session-token');
+    expect(screen.getByText('Mira Updated')).toBeTruthy();
+  });
+
+  it('validates supported profile fields and presents backend errors', async () => {
+    await renderSignedInAt('/app/profile', 'Profile');
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('between 2 and 100 characters');
+    expect(mockUpdateMyProfile).not.toHaveBeenCalled();
+
+    mockUpdateMyProfile.mockRejectedValue(new ApiError('Display name is already invalid.', 400));
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Mira Vale' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Display name is already invalid.');
+  });
+
+  it('shows only supported settings and reuses logout cleanup', async () => {
+    await renderSignedInAt('/app/settings', 'Settings');
+
+    expect(screen.getByRole('link', { name: /Update your public display name/ })).toBeTruthy();
+    expect(screen.queryByLabelText(/password/i)).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Sign out' }).at(-1)!);
 
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
     expect(localStorage.getItem('geochat.web.accessToken')).toBeNull();

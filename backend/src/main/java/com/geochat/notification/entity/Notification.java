@@ -45,6 +45,9 @@ public class Notification {
 	@Column(name = "reference_id", nullable = false)
 	private Long referenceId;
 
+	@Column(name = "conversation_id")
+	private Long conversationId;
+
 	@Column(name = "is_read", nullable = false)
 	private boolean read = false;
 
@@ -108,6 +111,14 @@ public class Notification {
 
 	public void setReferenceId(Long referenceId) {
 		this.referenceId = referenceId;
+	}
+
+	public Long getConversationId() {
+		return conversationId;
+	}
+
+	public void setConversationId(Long conversationId) {
+		this.conversationId = conversationId;
 	}
 
 	public boolean isRead() {
