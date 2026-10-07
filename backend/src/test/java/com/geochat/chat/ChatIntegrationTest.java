@@ -124,6 +124,22 @@ class ChatIntegrationTest {
     }
 
     @Test
+    void conversationListIncludesLatestMessagePreview() throws Exception {
+        User alice = createUser("alice-preview", "Alice");
+        User bob = createUser("bob-preview", "Bob");
+        markFriends(alice, bob);
+        long conversationId = chatService.openDirectConversation(alice.getUsername(),
+                new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+        chatService.sendMessage(alice.getUsername(), conversationId, new SendMessageRequest("Older message"));
+        chatService.sendMessage(alice.getUsername(), conversationId, new SendMessageRequest("Latest message"));
+
+        mockMvc.perform(get("/api/v1/chats")
+                        .header("Authorization", bearer(tokenFor(alice))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].lastMessage").value("Latest message"));
+    }
+
+    @Test
     void sendMessageAndReadMessagesWithPagination() throws Exception {
         User alice = createUser("alice-message", "Alice");
         User bob = createUser("bob-message", "Bob");

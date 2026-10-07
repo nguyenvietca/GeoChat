@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
@@ -119,12 +121,20 @@ public class ChatService {
 			if (otherUser == null) {
 				continue;
 			}
-			items.add(new ConversationSummaryResponse(conversation.getId(), conversation.getType(),
-					toUserSummary(otherUser), conversation.getUpdatedAt()));
+			    items.add(new ConversationSummaryResponse(conversation.getId(), conversation.getType(),
+				    toUserSummary(otherUser), conversation.getUpdatedAt(), null));
 		}
 
-		items.sort(Comparator.comparing(ConversationSummaryResponse::updatedAt, Comparator.reverseOrder()));
-		return new ConversationListResponse(items);
+			List<Long> conversationIds = items.stream().map(ConversationSummaryResponse::conversationId).toList();
+			Map<Long, String> latestMessages = conversationIds.isEmpty() ? Map.of()
+				: messageRepository.findLatestMessagesByConversationIds(conversationIds).stream()
+					.collect(Collectors.toMap(Message::getConversationId, Message::getContent));
+			List<ConversationSummaryResponse> summaries = items.stream()
+				.map(item -> new ConversationSummaryResponse(item.conversationId(), item.type(), item.participant(),
+					item.updatedAt(), latestMessages.get(item.conversationId())))
+				.sorted(Comparator.comparing(ConversationSummaryResponse::updatedAt, Comparator.reverseOrder()))
+				.toList();
+			return new ConversationListResponse(summaries);
 	}
 
 	@Transactional(readOnly = true)

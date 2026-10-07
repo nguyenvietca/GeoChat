@@ -32,8 +32,81 @@ export type UserSearchResult = {
   userId: number;
   displayName: string;
   username: string;
-  relationship: string;
+  relationship: FriendRelationship;
 };
+
+export type FriendRelationship = 'NONE' | 'FRIENDS' | 'PENDING_OUTGOING' | 'PENDING_INCOMING';
+
+export type FriendSummary = {
+  userId: number;
+  username: string;
+  displayName: string;
+};
+
+export type FriendRequestUser = FriendSummary;
+
+export type FriendRequestItem = {
+  requestId: number;
+  user: FriendRequestUser;
+  createdAt: string;
+};
+
+export type FriendRequestStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+
+export type FriendRequestResponse = {
+  requestId: number;
+  senderId: number;
+  receiverId: number;
+  status: FriendRequestStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FriendListResponse = { items: FriendSummary[] };
+export type FriendRequestListResponse = { items: FriendRequestItem[] };
+
+export type ConversationUser = FriendSummary;
+
+export type Conversation = {
+  conversationId: number;
+  type: string;
+  participant: ConversationUser;
+  updatedAt: string;
+  lastMessage: string | null;
+};
+
+export type ConversationListResponse = { items: Conversation[] };
+
+export type ConversationDetail = {
+  conversationId: number;
+  type: string;
+  participants: ConversationUser[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OpenDirectConversationResponse = {
+  conversationId: number;
+  type: string;
+  participant: ConversationUser;
+};
+
+export type ChatMessage = {
+  messageId: number;
+  conversationId: number;
+  senderId: number;
+  content: string;
+  createdAt: string;
+};
+
+export type MessageListResponse = {
+  items: ChatMessage[];
+  total: number;
+  page: number;
+  size: number;
+};
+
+export type SendMessageRequest = { content: string };
 
 export type NearbyUser = {
   userId: number;

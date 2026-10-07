@@ -18,7 +18,8 @@ public class ChatDtos {
             Long conversationId,
             String type,
             UserSummaryResponse participant,
-            Instant updatedAt
+            Instant updatedAt,
+            String lastMessage
     ) {}
 
     public record ConversationDetailResponse(

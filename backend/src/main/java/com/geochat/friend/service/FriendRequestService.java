@@ -170,7 +170,7 @@ public class FriendRequestService {
                     .orElseThrow(() -> new EntityNotFoundException("Sender user not found"));
             items.add(new FriendRequestItemResponse(
                     request.getId(),
-                    new UserSummaryResponse(sender.getId(), sender.getDisplayName()),
+                    new UserSummaryResponse(sender.getId(), sender.getUsername(), sender.getDisplayName()),
                     request.getCreatedAt()));
         }
 
@@ -189,7 +189,7 @@ public class FriendRequestService {
                     .orElseThrow(() -> new EntityNotFoundException("Receiver user not found"));
             items.add(new FriendRequestItemResponse(
                     request.getId(),
-                    new UserSummaryResponse(receiver.getId(), receiver.getDisplayName()),
+                    new UserSummaryResponse(receiver.getId(), receiver.getUsername(), receiver.getDisplayName()),
                     request.getCreatedAt()));
         }
 
@@ -201,16 +201,17 @@ public class FriendRequestService {
         User currentUser = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        Map<Long, String> friendsById = new LinkedHashMap<>();
+        Map<Long, User> friendsById = new LinkedHashMap<>();
         addAcceptedFriends(currentUser.getId(), friendsById, true);
         addAcceptedFriends(currentUser.getId(), friendsById, false);
 
         return new FriendListResponse(friendsById.entrySet().stream()
-                .map(entry -> new com.geochat.friend.dto.FriendSummaryResponse(entry.getKey(), entry.getValue()))
+            .map(entry -> new com.geochat.friend.dto.FriendSummaryResponse(
+                entry.getKey(), entry.getValue().getUsername(), entry.getValue().getDisplayName()))
                 .toList());
     }
 
-    private void addAcceptedFriends(Long currentUserId, Map<Long, String> friendsById, boolean asSender) {
+        private void addAcceptedFriends(Long currentUserId, Map<Long, User> friendsById, boolean asSender) {
         List<FriendRequest> requests = asSender
                 ? friendRequestRepository.findBySenderIdAndStatusOrderByCreatedAtDesc(currentUserId, FriendRequestStatus.ACCEPTED)
                 : friendRequestRepository.findByReceiverIdAndStatusOrderByCreatedAtDesc(currentUserId, FriendRequestStatus.ACCEPTED);
@@ -218,7 +219,7 @@ public class FriendRequestService {
         for (FriendRequest request : requests) {
             Long friendId = asSender ? request.getReceiverId() : request.getSenderId();
             if (!friendId.equals(currentUserId)) {
-                userRepository.findById(friendId).ifPresent(user -> friendsById.putIfAbsent(user.getId(), user.getDisplayName()));
+                userRepository.findById(friendId).ifPresent(user -> friendsById.putIfAbsent(user.getId(), user));
             }
         }
     }

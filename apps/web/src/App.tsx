@@ -4,8 +4,11 @@ import { AppProviders } from './app/providers/AppProviders';
 import { useAuth } from './app/providers/AuthContext';
 import { LoginPage } from './features/auth/LoginPage';
 import { RegisterPage } from './features/auth/RegisterPage';
+import { FriendsPage } from './features/friends/FriendsPage';
 import { NearbyPage } from './features/nearby/NearbyPage';
 import { SearchPage } from './features/search/SearchPage';
+import { ConversationListPage } from './features/chat/ConversationListPage';
+import { ChatPage } from './features/chat/ChatPage';
 
 function LoadingScreen() {
   return <main className="state-page"><span className="spinner" /><p>Restoring your GeoChat session…</p></main>;
@@ -45,6 +48,12 @@ function AppShell() {
           <NavLink to="/app/nearby" className="nav-link">
             <span className="nav-icon">◎</span> Nearby
           </NavLink>
+          <NavLink to="/app/friends" className="nav-link">
+            <span className="nav-icon">♧</span> Friends
+          </NavLink>
+          <NavLink to="/app/chat" className="nav-link">
+            <span className="nav-icon">▤</span> Messages
+          </NavLink>
         </nav>
         <div className="sidebar-bottom">
           <div className="signed-in-user">
@@ -81,6 +90,12 @@ function HomePage() {
         <Link to="/app/nearby" className="action-panel nearby-panel">
           <span className="panel-symbol">◎</span><span><strong>Explore nearby</strong><small>See GeoChat members around you</small></span><b>→</b>
         </Link>
+        <Link to="/app/friends" className="action-panel">
+          <span className="panel-symbol friends-symbol">♧</span><span><strong>Your friends</strong><small>Manage your circle and requests</small></span><b>→</b>
+        </Link>
+        <Link to="/app/chat" className="action-panel">
+          <span className="panel-symbol messages-symbol">▤</span><span><strong>Messages</strong><small>Continue a direct conversation</small></span><b>→</b>
+        </Link>
       </div>
       <section className="account-summary" aria-label="Public profile details">
         <div><span className="summary-label">DISPLAY NAME</span><strong>{user?.displayName}</strong></div>
@@ -103,6 +118,9 @@ export default function App() {
             <Route path="home" element={<HomePage />} />
             <Route path="search" element={<SearchPage />} />
             <Route path="nearby" element={<NearbyPage />} />
+            <Route path="friends" element={<FriendsPage />} />
+            <Route path="chat" element={<ConversationListPage />} />
+            <Route path="chat/:conversationId" element={<ChatPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

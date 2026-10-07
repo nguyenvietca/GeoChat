@@ -72,13 +72,15 @@ class FriendIntegrationTest {
                         .header("Authorization", bearer(tokenFor(receiver))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].user.userId").value(sender.getId()));
+                .andExpect(jsonPath("$.data.items[0].user.userId").value(sender.getId()))
+                .andExpect(jsonPath("$.data.items[0].user.username").value(sender.getUsername()));
 
         mockMvc.perform(get("/api/v1/friends/requests/outgoing")
                         .header("Authorization", bearer(senderToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].user.userId").value(receiver.getId()));
+                .andExpect(jsonPath("$.data.items[0].user.userId").value(receiver.getId()))
+                .andExpect(jsonPath("$.data.items[0].user.username").value(receiver.getUsername()));
     }
 
     @Test
@@ -127,7 +129,8 @@ class FriendIntegrationTest {
         mockMvc.perform(get("/api/v1/friends").header("Authorization", bearer(tokenFor(userA))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].userId").value(userB.getId()));
+                .andExpect(jsonPath("$.data.items[0].userId").value(userB.getId()))
+                .andExpect(jsonPath("$.data.items[0].username").value(userB.getUsername()));
     }
 
     @Test

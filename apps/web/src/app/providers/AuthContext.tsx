@@ -10,6 +10,7 @@ import {
 import { getCurrentUser, login as loginRequest, register as registerRequest } from '../../api/auth';
 import { ApiError, setUnauthorizedHandler } from '../../api/client';
 import { LoginRequest, RegisterRequest, User } from '../../types';
+import { disconnectAllChatWebSockets } from '../../services/chatWebSocket';
 
 const TOKEN_STORAGE_KEY = 'geochat.web.accessToken';
 
@@ -111,7 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   const register = useCallback((payload: RegisterRequest) => registerRequest(payload), []);
-  const logout = useCallback(() => clearSession(), [clearSession]);
+  const logout = useCallback(() => {
+    disconnectAllChatWebSockets();
+    clearSession();
+  }, [clearSession]);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
