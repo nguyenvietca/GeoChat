@@ -14,8 +14,10 @@ import {
 } from 'react-native';
 import { ApiError } from '../api/client';
 import { getConversationDetail, getMessages, sendMessage } from '../api/chatApi';
+import { getGroup } from '../api/groupApi';
 import { ChatConnectionState, subscribeToConversation } from '../services/chatWebSocketService';
 import { ChatMessage, ConversationDetail } from '../types/chat';
+import { GroupInfo } from '../types/group';
 
 const MESSAGE_PAGE_SIZE = 20;
 const MESSAGE_MAX_LENGTH = 5000;
@@ -25,10 +27,13 @@ type ChatScreenProps = {
   currentUserId: number | null;
   token: string | null;
   onBack: () => void;
+  onOpenGroupInfo?: () => void;
+  onAccessDenied?: (message: string) => void;
 };
 
-export function ChatScreen({ conversationId, currentUserId, token, onBack }: ChatScreenProps) {
+export function ChatScreen({ conversationId, currentUserId, token, onBack, onOpenGroupInfo, onAccessDenied }: ChatScreenProps) {
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
+  const [groupInfo, setGroupInfo] = useState<GroupInfo | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [page, setPage] = useState(0);
   const [totalMessages, setTotalMessages] = useState(0);
@@ -56,21 +61,29 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
     let active = true;
     setLoading(true);
     setError('');
+    setConversation(null);
+    setGroupInfo(null);
 
     void Promise.all([
       getConversationDetail(conversationId, token),
       getMessages(conversationId, token, 0, MESSAGE_PAGE_SIZE),
-    ]).then(([detail, history]) => {
+    ]).then(async ([detail, history]) => {
+      const info = detail.type === 'GROUP' ? await getGroup(conversationId, token) : null;
       if (!active) {
         return;
       }
       setConversation(detail);
+      setGroupInfo(info);
       setMessages((current) => mergeMessages(current, history.items));
       setPage(history.page);
       setTotalMessages(history.total);
       shouldScrollToLatestRef.current = true;
     }).catch((loadError: unknown) => {
       if (active) {
+        if (loadError instanceof ApiError && (loadError.status === 403 || loadError.status === 404) && onAccessDenied) {
+          onAccessDenied('This conversation is unavailable or you no longer have access.');
+          return;
+        }
         setError(loadError instanceof ApiError ? loadError.message : 'Unable to load this conversation.');
       }
     }).finally(() => {
@@ -82,10 +95,10 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
     return () => {
       active = false;
     };
-  }, [conversationId, token]);
+  }, [conversationId, token, onAccessDenied]);
 
   useEffect(() => {
-    if (!token) {
+    if (!token || !conversation || (conversation.type === 'GROUP' && !groupInfo)) {
       return undefined;
     }
 
@@ -99,7 +112,7 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
         setMessages((current) => mergeMessages(current, [message]));
       },
     });
-  }, [conversationId, token]);
+  }, [conversationId, token, conversation, groupInfo]);
 
   const canLoadOlder = totalMessages > (page + 1) * MESSAGE_PAGE_SIZE;
 
@@ -138,13 +151,19 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
         getConversationDetail(conversationId, token),
         getMessages(conversationId, token, 0, MESSAGE_PAGE_SIZE),
       ]);
+      const info = detail.type === 'GROUP' ? await getGroup(conversationId, token) : null;
       setConversation(detail);
+      setGroupInfo(info);
       setMessages((current) => mergeMessages(current, history.items));
       setPage(history.page);
       setTotalMessages(history.total);
       shouldScrollToLatestRef.current = true;
     } catch (loadError) {
-      setError(loadError instanceof ApiError ? loadError.message : 'Unable to load this conversation.');
+      if (loadError instanceof ApiError && (loadError.status === 403 || loadError.status === 404) && onAccessDenied) {
+        onAccessDenied('This conversation is unavailable or you no longer have access.');
+      } else {
+        setError(loadError instanceof ApiError ? loadError.message : 'Unable to load this conversation.');
+      }
     } finally {
       setLoading(false);
     }
@@ -195,6 +214,7 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
   };
 
   const otherParticipant = conversation?.participants.find((participant) => participant.userId !== currentUserId);
+  const isGroup = conversation?.type === 'GROUP';
   const connectionLabel = {
     connecting: 'Connecting...',
     connected: 'Live',
@@ -212,9 +232,14 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
           <Text style={styles.backText}>Back</Text>
         </Pressable>
         <View style={styles.headerCopy}>
-          <Text style={styles.title}>{otherParticipant?.displayName ?? 'Conversation'}</Text>
+          <Text style={styles.title}>{isGroup ? groupInfo?.name ?? 'Group' : otherParticipant?.displayName ?? 'Conversation'}</Text>
           <Text style={[styles.connection, connection === 'connected' && styles.connected]}>{connectionLabel}</Text>
         </View>
+        {isGroup && onOpenGroupInfo ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Group information" onPress={onOpenGroupInfo} style={styles.infoButton}>
+            <Text style={styles.infoButtonText}>Info</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {loading ? (
@@ -266,8 +291,12 @@ export function ChatScreen({ conversationId, currentUserId, token, onBack }: Cha
               maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
               renderItem={({ item }) => {
                 const isOutgoing = currentUserId !== null && item.senderId === currentUserId;
+                const sender = conversation?.participants.find((participant) => participant.userId === item.senderId);
                 return (
                   <View style={[styles.messageRow, isOutgoing ? styles.outgoingRow : styles.incomingRow]}>
+                    {isGroup && !isOutgoing ? (
+                      <Text style={styles.senderName}>{sender?.displayName ?? 'Member'}</Text>
+                    ) : null}
                     <View style={[styles.bubble, isOutgoing ? styles.outgoingBubble : styles.incomingBubble]}>
                       <Text style={[styles.messageText, isOutgoing && styles.outgoingText]}>{item.content}</Text>
                       <Text style={[styles.timestamp, isOutgoing && styles.outgoingTimestamp]}>
@@ -359,6 +388,16 @@ const styles = StyleSheet.create({
   },
   headerCopy: {
     flex: 1,
+  },
+  infoButton: {
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  infoButtonText: {
+    color: '#67e8f9',
+    fontSize: 14,
+    fontWeight: '600',
   },
   title: {
     color: '#f8fafc',
@@ -454,6 +493,12 @@ const styles = StyleSheet.create({
   messageRow: {
     width: '100%',
     marginVertical: 4,
+  },
+  senderName: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginBottom: 3,
+    marginLeft: 4,
   },
   incomingRow: {
     alignItems: 'flex-start',

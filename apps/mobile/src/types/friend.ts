@@ -1,6 +1,7 @@
 export type Friend = {
   userId: number;
   displayName: string;
+  username?: string;
 };
 
 export type FriendRequestUser = {

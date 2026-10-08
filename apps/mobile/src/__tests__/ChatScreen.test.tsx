@@ -32,12 +32,15 @@ jest.mock('../api/chatApi', () => ({
   getMessages: jest.fn(),
   sendMessage: jest.fn(),
 }));
+jest.mock('../api/groupApi', () => ({ getGroup: jest.fn() }));
 
 import { getConversationDetail, getMessages, sendMessage } from '../api/chatApi';
+import { getGroup } from '../api/groupApi';
 
 const mockGetDetail = getConversationDetail as jest.MockedFunction<typeof getConversationDetail>;
 const mockGetMessages = getMessages as jest.MockedFunction<typeof getMessages>;
 const mockSendMessage = sendMessage as jest.MockedFunction<typeof sendMessage>;
+const mockGetGroup = getGroup as jest.MockedFunction<typeof getGroup>;
 
 // ---- Mock chatWebSocketService ----
 type WsHandlers = {
@@ -107,6 +110,14 @@ describe('ChatScreen', () => {
     // Default happy-path mocks
     mockGetDetail.mockResolvedValue(makeDetail());
     mockGetMessages.mockResolvedValue(makePageResponse([]));
+    mockGetGroup.mockResolvedValue({
+      groupId: CONVERSATION_ID,
+      name: 'Weekend hikers',
+      owner: { userId: CURRENT_USER_ID, username: 'me', displayName: 'Me' },
+      memberCount: 2,
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -147,6 +158,60 @@ describe('ChatScreen', () => {
 
     await waitFor(() => {
       expect(screen.getByText('No messages yet.')).toBeTruthy();
+    });
+  });
+
+  it('loads group metadata, displays sender identity, and exposes group info', async () => {
+    const onOpenGroupInfo = jest.fn();
+    mockGetDetail.mockResolvedValue({ ...makeDetail(), type: 'GROUP' });
+    mockGetMessages.mockResolvedValue(makePageResponse([makeMessage(3, 2, 'Group hello')]));
+
+    render(<ChatScreen {...defaultProps} onOpenGroupInfo={onOpenGroupInfo} />);
+
+    expect(await screen.findByText('Weekend hikers')).toBeTruthy();
+    expect(screen.getByText('Alice')).toBeTruthy();
+    expect(mockGetGroup).toHaveBeenCalledWith(CONVERSATION_ID, FAKE_TOKEN);
+    fireEvent.press(screen.getByRole('button', { name: 'Group information' }));
+    expect(onOpenGroupInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplicates group messages received through REST and WebSocket', async () => {
+    mockGetDetail.mockResolvedValue({ ...makeDetail(), type: 'GROUP' });
+    mockGetMessages.mockResolvedValue(makePageResponse([makeMessage(7, 2, 'Once only')]));
+
+    render(<ChatScreen {...defaultProps} />);
+    await screen.findByText('Weekend hikers');
+
+    act(() => {
+      capturedWsHandlers?.onMessage(makeMessage(7, 2, 'Once only'));
+    });
+
+    expect(screen.getAllByText('Once only')).toHaveLength(1);
+  });
+
+  it('sends trimmed text through the shared chat API for a group', async () => {
+    mockGetDetail.mockResolvedValue({ ...makeDetail(), type: 'GROUP' });
+    mockSendMessage.mockResolvedValue(makeMessage(81, CURRENT_USER_ID, 'Group reply'));
+    render(<ChatScreen {...defaultProps} />);
+    await screen.findByText('Weekend hikers');
+
+    fireEvent.changeText(screen.getByLabelText('Message'), '  Group reply  ');
+    fireEvent.press(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalledWith(CONVERSATION_ID, { content: 'Group reply' }, FAKE_TOKEN);
+      expect(screen.getByText('Group reply')).toBeTruthy();
+    });
+  });
+
+  it('routes a forbidden group conversation back to Chats with feedback', async () => {
+    const onAccessDenied = jest.fn();
+    mockGetDetail.mockRejectedValue(new ApiError('You do not have permission to do that.', 'forbidden', 403));
+
+    render(<ChatScreen {...defaultProps} onAccessDenied={onAccessDenied} />);
+
+    await waitFor(() => {
+      expect(onAccessDenied).toHaveBeenCalledWith('This conversation is unavailable or you no longer have access.');
     });
   });
 

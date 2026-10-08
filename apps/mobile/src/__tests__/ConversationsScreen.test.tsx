@@ -9,18 +9,21 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { ConversationsScreen } from '../screens/ConversationsScreen';
 
 // Mock chatApi
 jest.mock('../api/chatApi', () => ({
   getConversations: jest.fn(),
 }));
+jest.mock('../api/groupApi', () => ({ getGroup: jest.fn() }));
 
 import { getConversations } from '../api/chatApi';
+import { getGroup } from '../api/groupApi';
 import { ApiError } from '../api/client';
 
 const mockGetConversations = getConversations as jest.MockedFunction<typeof getConversations>;
+const mockGetGroup = getGroup as jest.MockedFunction<typeof getGroup>;
 
 const FAKE_TOKEN = 'fake-jwt-token';
 
@@ -35,9 +38,18 @@ const makeConversation = (id: number, displayName: string, username: string) => 
 describe('ConversationsScreen', () => {
   const onBack = jest.fn();
   const onOpenConversation = jest.fn();
+  const onCreateGroup = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetGroup.mockResolvedValue({
+      groupId: 3,
+      name: 'Weekend hikers',
+      owner: { userId: 1, username: 'owner', displayName: 'Owner' },
+      memberCount: 2,
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -52,6 +64,7 @@ describe('ConversationsScreen', () => {
         token={FAKE_TOKEN}
         onBack={onBack}
         onOpenConversation={onOpenConversation}
+        onCreateGroup={onCreateGroup}
       />,
     );
 
@@ -74,6 +87,7 @@ describe('ConversationsScreen', () => {
         token={FAKE_TOKEN}
         onBack={onBack}
         onOpenConversation={onOpenConversation}
+        onCreateGroup={onCreateGroup}
       />,
     );
 
@@ -97,6 +111,7 @@ describe('ConversationsScreen', () => {
         token={FAKE_TOKEN}
         onBack={onBack}
         onOpenConversation={onOpenConversation}
+        onCreateGroup={onCreateGroup}
       />,
     );
 
@@ -118,6 +133,7 @@ describe('ConversationsScreen', () => {
         token={FAKE_TOKEN}
         onBack={onBack}
         onOpenConversation={onOpenConversation}
+        onCreateGroup={onCreateGroup}
       />,
     );
 
@@ -134,6 +150,7 @@ describe('ConversationsScreen', () => {
         token={FAKE_TOKEN}
         onBack={onBack}
         onOpenConversation={onOpenConversation}
+        onCreateGroup={onCreateGroup}
       />,
     );
 
@@ -151,11 +168,40 @@ describe('ConversationsScreen', () => {
         token={null}
         onBack={onBack}
         onOpenConversation={onOpenConversation}
+        onCreateGroup={onCreateGroup}
       />,
     );
 
     await waitFor(() => {
       expect(screen.getByText(/session has expired/i)).toBeTruthy();
     });
+  });
+
+  it('loads group metadata into the existing conversation list', async () => {
+    mockGetConversations.mockResolvedValue({
+      items: [{
+        conversationId: 3,
+        type: 'GROUP',
+        participant: { userId: 2, username: 'alice', displayName: 'Alice' },
+        updatedAt: '2024-06-01T10:00:00Z',
+        lastMessage: 'See you soon',
+      }],
+    });
+
+    render(<ConversationsScreen token={FAKE_TOKEN} onBack={onBack} onOpenConversation={onOpenConversation} onCreateGroup={onCreateGroup} />);
+
+    expect(await screen.findByText('Weekend hikers')).toBeTruthy();
+    expect(screen.getByText('See you soon')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: /Weekend hikers/ }));
+    expect(onOpenConversation).toHaveBeenCalledWith(3);
+    expect(mockGetGroup).toHaveBeenCalledWith(3, FAKE_TOKEN);
+  });
+
+  it('opens the group creation flow from Conversations', async () => {
+    mockGetConversations.mockResolvedValue({ items: [] });
+    render(<ConversationsScreen token={FAKE_TOKEN} onBack={onBack} onOpenConversation={onOpenConversation} onCreateGroup={onCreateGroup} />);
+
+    fireEvent.press(screen.getByRole('button', { name: /Group/ }));
+    expect(onCreateGroup).toHaveBeenCalledTimes(1);
   });
 });

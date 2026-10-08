@@ -137,16 +137,37 @@ describe('chatWebSocketService', () => {
   // Subscription
   // -------------------------------------------------------------------------
   describe('subscription', () => {
-    it('subscribes to /topic/chat/{conversationId}', () => {
-      const subscribeSpy = jest.fn().mockReturnValue({ unsubscribe: jest.fn() });
-      // Override subscribe on the instance after creation
+    it('uses the conversation topic for group IDs and restores one subscription after reconnect', () => {
+      const received: unknown[] = [];
       subscribeToConversation(42, 'tok', {
+        onMessage: (message) => received.push(message),
+        onStateChange: () => undefined,
+      });
+      const client = lastClientInstance as unknown as {
+        _subscriptions: Map<string, unknown>;
+        _simulateDisconnect: () => void;
+        _simulateMessage: (body: string) => void;
+        onConnect: (() => void) | null;
+      };
+
+      expect([...client._subscriptions.keys()]).toEqual(['/topic/chat/42']);
+      client._simulateDisconnect();
+      client.onConnect?.();
+      expect([...client._subscriptions.keys()]).toEqual(['/topic/chat/42']);
+      client._simulateMessage(makeMessage({ conversationId: 42 }));
+      expect(received).toHaveLength(1);
+    });
+
+    it('unsubscribes from the group topic when the screen is left', () => {
+      const teardown = subscribeToConversation(42, 'tok', {
         onMessage: () => undefined,
         onStateChange: () => undefined,
       });
-      // The mock Client auto-calls onConnect which calls subscribe
-      // Verify via message delivery (indirect)
-      expect(lastClientInstance).not.toBeNull();
+      const client = lastClientInstance as unknown as { _subscriptions: Map<string, unknown> };
+
+      expect(client._subscriptions.has('/topic/chat/42')).toBe(true);
+      teardown();
+      expect(client._subscriptions.size).toBe(0);
     });
   });
 

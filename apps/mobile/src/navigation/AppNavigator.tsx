@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { AuthScreen } from '../screens/AuthScreen';
@@ -7,6 +7,8 @@ import { NearbyUsersScreen } from '../screens/NearbyUsersScreen';
 import { FriendsScreen } from '../screens/FriendsScreen';
 import { ConversationsScreen } from '../screens/ConversationsScreen';
 import { ChatScreen } from '../screens/ChatScreen';
+import { CreateGroupScreen } from '../screens/CreateGroupScreen';
+import { GroupInfoScreen } from '../screens/GroupInfoScreen';
 import { UserSearchScreen } from '../screens/UserSearchScreen';
 import { openDirectConversation } from '../api/chatApi';
 import { getUnreadNotificationCount } from '../api/notificationApi';
@@ -29,6 +31,8 @@ type AuthenticatedScreen =
   | 'nearby'
   | 'friends'
   | 'conversations'
+  | 'create-group'
+  | 'group-info'
   | 'chat'
   | 'notifications'
   | 'profile'
@@ -44,6 +48,7 @@ export function AppNavigator() {
   const [notificationCount, setNotificationCount] = useState(0);
   const [friendsInitialTab, setFriendsInitialTab] = useState<FriendNotificationTab>('friends');
   const [profileNotice, setProfileNotice] = useState('');
+  const [conversationNotice, setConversationNotice] = useState('');
   const [notificationRefreshVersion, setNotificationRefreshVersion] = useState(0);
   const [pendingPushDestination, setPendingPushDestination] = useState<{
     destination: PushNotificationDestination;
@@ -98,6 +103,7 @@ export function AppNavigator() {
     if (!isAuthenticated) {
       setScreen('home');
       setConversationId(null);
+      setConversationNotice('');
     }
   }, [isAuthenticated]);
 
@@ -171,9 +177,15 @@ export function AppNavigator() {
 
   const openConversation = (nextConversationId: number) => {
     setConversationId(nextConversationId);
+    setConversationNotice('');
     setChatReturnScreen('conversations');
     setScreen('chat');
   };
+
+  const returnToConversations = useCallback((message: string) => {
+    setConversationNotice(message);
+    setScreen('conversations');
+  }, []);
 
   const openFriends = (tab: FriendNotificationTab = 'friends') => {
     setFriendsInitialTab(tab);
@@ -231,6 +243,19 @@ export function AppNavigator() {
         token={token}
         onBack={() => setScreen('home')}
         onOpenConversation={openConversation}
+        onCreateGroup={() => setScreen('create-group')}
+        notice={conversationNotice}
+      />
+    );
+  }
+
+  if (screen === 'create-group') {
+    return (
+      <CreateGroupScreen
+        token={token}
+        currentUserId={user?.id ?? null}
+        onBack={() => setScreen('conversations')}
+        onGroupCreated={openConversation}
       />
     );
   }
@@ -242,6 +267,21 @@ export function AppNavigator() {
         currentUserId={user?.id ?? null}
         token={token}
         onBack={() => setScreen(chatReturnScreen)}
+        onOpenGroupInfo={() => setScreen('group-info')}
+        onAccessDenied={returnToConversations}
+      />
+    );
+  }
+
+  if (screen === 'group-info' && conversationId !== null) {
+    return (
+      <GroupInfoScreen
+        groupId={conversationId}
+        currentUserId={user?.id ?? null}
+        token={token}
+        onBack={() => setScreen('chat')}
+        onLeft={() => returnToConversations('You left the group.')}
+        onAccessDenied={returnToConversations}
       />
     );
   }

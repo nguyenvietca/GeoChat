@@ -31,11 +31,10 @@ export class Client {
   }
 
   subscribe(destination: string, callback: (frame: { body: string }) => void): { unsubscribe: () => void } {
-    const id = `sub-${Date.now()}-${Math.random()}`;
-    this._subscriptions.set(id, callback);
+    this._subscriptions.set(destination, callback);
     return {
       unsubscribe: () => {
-        this._subscriptions.delete(id);
+        this._subscriptions.delete(destination);
       },
     };
   }
