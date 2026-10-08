@@ -3,8 +3,8 @@ spring:
     name: geochat
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:geochat}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    username: ${DB_USERNAME:geochat}
+    password: ${DB_PASSWORD:geochat}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -21,7 +21,7 @@ spring:
     baseline-version: 0
 
 jwt:
-  secret: ${JWT_SECRET}
+  secret: ${JWT_SECRET:vK7!qP2#xR9$mN4@tY8%wL3&cF6*zH1!}
   expiration-ms: 3600000
 
 app:

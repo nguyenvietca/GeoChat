@@ -7,7 +7,7 @@ import { AuthFrame } from './AuthFrame';
 type LoginLocationState = { from?: string; registered?: boolean };
 
 export function LoginPage() {
-  const { login, sessionNotice } = useAuth();
+  const { login, retrySessionRestore, sessionNotice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const locationState = location.state as LoginLocationState | null;
@@ -15,6 +15,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [retryingSession, setRetryingSession] = useState(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -34,11 +35,27 @@ export function LoginPage() {
     }
   };
 
+  const retryRestore = async () => {
+    setRetryingSession(true);
+    try {
+      await retrySessionRestore();
+    } finally {
+      setRetryingSession(false);
+    }
+  };
+
   return (
     <AuthFrame mode="login">
       <h2>Sign in</h2>
       <p className="auth-description">Pick up where your next conversation begins.</p>
-      {sessionNotice ? <p className="error-message" role="status">{sessionNotice}</p> : null}
+      {sessionNotice ? (
+        <div className="error-message" role="status">
+          <p>{sessionNotice}</p>
+          <button className="quiet-light-button compact-button" type="button" onClick={() => void retryRestore()} disabled={retryingSession}>
+            {retryingSession ? 'Retrying…' : 'Retry session check'}
+          </button>
+        </div>
+      ) : null}
       {locationState?.registered ? <p className="success-message" role="status">Account created. Sign in to continue.</p> : null}
       {error ? <p className="error-message" role="alert">{error}</p> : null}
       <form className="form-stack" onSubmit={(event) => void submit(event)}>

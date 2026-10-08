@@ -108,6 +108,19 @@ describe('web authentication and protected routes', () => {
     expect(localStorage.getItem('geochat.web.accessToken')).toBe('offline-session');
   });
 
+  it('retries restoring a saved session after the API becomes available', async () => {
+    localStorage.setItem('geochat.web.accessToken', 'offline-session');
+    mockGetCurrentUser.mockRejectedValueOnce(new ApiError('Unable to connect.'));
+    mockGetCurrentUser.mockResolvedValueOnce(currentUser);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry session check' }));
+
+    expect(await screen.findByRole('heading', { name: /welcome, mira vale/i })).toBeTruthy();
+    expect(mockGetCurrentUser).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem('geochat.web.accessToken')).toBe('offline-session');
+  });
+
   it('logs in with backend credentials and navigates to Home', async () => {
     mockLogin.mockResolvedValue({ token: 'new-session', tokenType: 'Bearer' });
     mockGetCurrentUser.mockResolvedValue(currentUser);

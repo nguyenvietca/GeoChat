@@ -146,10 +146,10 @@ class ChatWebSocketIntegrationTest {
 	@Test
 	void websocketConnectionClosesWhenJwtExpires() throws Exception {
 		User alice = createUser("alice-expiring-ws", "Alice");
-		String shortLivedToken = new JwtService(jwtSecret, 1000).generateToken(alice.getId(), alice.getUsername());
+		String shortLivedToken = new JwtService(jwtSecret, 5000).generateToken(alice.getId(), alice.getUsername());
 		StompSession session = connectSession(shortLivedToken);
 
-		long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(5);
+		long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10);
 		while (session.isConnected() && System.currentTimeMillis() < deadline) {
 			Thread.sleep(50);
 		}

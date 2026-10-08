@@ -22,6 +22,7 @@ type AuthContextValue = {
   sessionNotice: string;
   login: (payload: LoginRequest) => Promise<void>;
   register: (payload: RegisterRequest) => Promise<User>;
+  retrySessionRestore: () => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   syncUser: (user: User) => void;
@@ -80,7 +81,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (error instanceof ApiError && error.status === 401) {
             clearSession();
           } else {
-            setToken(null);
             setUser(null);
             setSessionNotice('Your saved session could not be checked. Sign in again or retry when you are online.');
           }
@@ -113,6 +113,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   const register = useCallback((payload: RegisterRequest) => registerRequest(payload), []);
+  const retrySessionRestore = useCallback(async () => {
+    const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!storedToken) {
+      clearSession();
+      return;
+    }
+
+    setToken(storedToken);
+    try {
+      const currentUser = await getCurrentUser(storedToken);
+      setUser(currentUser);
+      setSessionNotice('');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearSession();
+      } else {
+        setUser(null);
+        setSessionNotice('Your saved session could not be checked. Sign in again or retry when you are online.');
+      }
+    }
+  }, [clearSession]);
   const syncUser = useCallback((updatedUser: User) => setUser(updatedUser), []);
   const logout = useCallback(() => {
     disconnectAllChatWebSockets();
@@ -127,10 +148,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionNotice,
     login,
     register,
+    retrySessionRestore,
     logout,
     refreshUser,
     syncUser,
-  }), [user, token, isLoading, sessionNotice, login, register, logout, refreshUser, syncUser]);
+  }), [user, token, isLoading, sessionNotice, login, register, retrySessionRestore, logout, refreshUser, syncUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

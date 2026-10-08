@@ -2,6 +2,7 @@ package com.geochat.auth;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.test.context.ActiveProfiles;
@@ -28,6 +30,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geochat.auth.security.JwtService;
+import com.geochat.common.exception.GlobalExceptionHandler;
 import com.geochat.user.repository.UserRepository;
 
 import io.jsonwebtoken.Jwts;
@@ -171,6 +174,23 @@ class AuthFlowIntegrationTest {
 	@Test
 	void protectedEndpointRejectsMissingToken() throws Exception {
 		mockMvc.perform(get("/api/v1/users/me")).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void healthEndpointIsAvailableWithoutAuthentication() throws Exception {
+		mockMvc.perform(get("/api/health"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.success").value(true))
+				.andExpect(jsonPath("$.data").value("GeoChat backend is running"));
+	}
+
+	@Test
+	void unexpectedApiExceptionReturnsGenericClientMessage() {
+		var response = new GlobalExceptionHandler()
+				.handleUnexpectedException(new Exception("private database details"));
+
+		assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+		assertEquals("Internal server error", response.getBody().message());
 	}
 
 	@Test

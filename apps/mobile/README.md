@@ -9,6 +9,8 @@ npm install
 npx expo start
 ```
 
+Use Node.js 22.12 or newer. For local configuration, copy `.env.example` to `.env` in `apps/mobile` and set `EXPO_PUBLIC_API_BASE_URL` for the target device. Expo reads app environment files from this directory, not the repository root.
+
 ## Local backend configuration
 
 The mobile app expects the backend to be running on port 8080.
@@ -20,16 +22,13 @@ By default, the app uses:
 - Expo web on the development machine: http://localhost:8080
 - Physical device: set `EXPO_PUBLIC_API_BASE_URL` to the development machine's LAN IP
 
-You can override it for local development with:
+For a physical device, set the URL to the development machine's LAN IP and make sure the device and machine can reach each other. For example:
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://<your-machine-ip>:8080 npx expo start
+EXPO_PUBLIC_API_BASE_URL=http://192.168.1.50:8080 npx expo start
 ```
 
-Examples:
-
-- physical device on the same Wi-Fi: http://192.168.1.50:8080
-- local machine: http://localhost:8080
+The backend must be reachable on port 8080. The repository Compose setup starts only the PostgreSQL/PostGIS database; start the backend separately.
 
 ## Push notifications
 
@@ -41,8 +40,12 @@ On the backend, push delivery is disabled by default. Set `PUSH_NOTIFICATIONS_EN
 
 The app uses the existing backend endpoints:
 
-- POST /api/v1/auth/register
-- POST /api/v1/auth/login
-- GET /api/v1/users/me
 
 On iOS and Android, tokens are stored with `expo-secure-store`. Expo web uses `localStorage` because the native secure store is unavailable there; browser storage is not equivalent to secure device storage and should only be used for local development. The app validates stored sessions through `/api/v1/users/me` on startup.
+
+## Validation
+
+```bash
+npm run typecheck
+npm test -- --runInBand
+```
