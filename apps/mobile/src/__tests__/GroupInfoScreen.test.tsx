@@ -3,13 +3,21 @@ import { Alert, Platform } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { ApiError } from '../api/client';
 import { GroupInfoScreen } from '../screens/GroupInfoScreen';
-import { getGroup, getGroupMembers, leaveGroup } from '../api/groupApi';
+import { getGroup, getGroupMembers, leaveGroup, addGroupMembers, removeGroupMember } from '../api/groupApi';
+import { getFriends } from '../api/friendApi';
 
+jest.mock('../api/friendApi', () => ({ getFriends: jest.fn() }));
 jest.mock('../api/groupApi', () => ({
   getGroup: jest.fn(),
   getGroupMembers: jest.fn(),
   leaveGroup: jest.fn(),
+  addGroupMembers: jest.fn(),
+  removeGroupMember: jest.fn(),
 }));
+
+const mockAddMembers = addGroupMembers as jest.MockedFunction<typeof addGroupMembers>;
+const mockRemoveMember = removeGroupMember as jest.MockedFunction<typeof removeGroupMember>;
+const mockGetFriends = getFriends as jest.MockedFunction<typeof getFriends>;
 
 const mockGetGroup = getGroup as jest.MockedFunction<typeof getGroup>;
 const mockGetGroupMembers = getGroupMembers as jest.MockedFunction<typeof getGroupMembers>;
@@ -44,6 +52,35 @@ describe('GroupInfoScreen', () => {
     expect(screen.getByText('Alice')).toBeTruthy();
     expect(screen.getAllByText('Owner', { exact: true })).toHaveLength(2);
     expect(screen.getByText('Leave Group')).toBeTruthy();
+  });
+
+  it('lets the owner add members repeatedly and remove a member', async () => {
+    mockGetFriends.mockResolvedValue({ items: [
+      { userId: 2, displayName: 'Alice' },
+      { userId: 3, displayName: 'Bob' },
+      { userId: 4, displayName: 'Cara' },
+    ] });
+    mockAddMembers.mockResolvedValue({ ...group, memberCount: 3 });
+    mockRemoveMember.mockResolvedValue({ ...group, memberCount: 1 });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      buttons?.find((button) => button.text === 'Remove')?.onPress?.();
+    });
+    render(<GroupInfoScreen groupId={42} currentUserId={1} token="jwt" onBack={jest.fn()} onLeft={jest.fn()} />);
+    await screen.findByText('Weekend hikers');
+
+    fireEvent.press(screen.getByText('Add members'));
+    fireEvent.press(await screen.findByRole('checkbox', { name: 'Select Bob' }));
+    fireEvent.press(screen.getByText('Add selected'));
+    await waitFor(() => expect(mockAddMembers).toHaveBeenCalledWith(42, [3], 'jwt'));
+
+    fireEvent.press(await screen.findByText('Add members'));
+    fireEvent.press(await screen.findByRole('checkbox', { name: 'Select Cara' }));
+    fireEvent.press(screen.getByText('Add selected'));
+    await waitFor(() => expect(mockAddMembers).toHaveBeenLastCalledWith(42, [4], 'jwt'));
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Remove Alice' }));
+    await waitFor(() => expect(mockRemoveMember).toHaveBeenCalledWith(42, 2, 'jwt'));
+    alert.mockRestore();
   });
 
   it('does not offer owners a leave action', async () => {

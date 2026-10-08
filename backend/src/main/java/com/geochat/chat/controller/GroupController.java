@@ -1,5 +1,6 @@
 package com.geochat.chat.controller;
 
+import com.geochat.chat.dto.AddGroupMembersRequest;
 import com.geochat.chat.dto.ChatDtos.GroupInfoResponse;
 import com.geochat.chat.dto.ChatDtos.GroupMembersResponse;
 import com.geochat.chat.dto.CreateGroupRequest;
@@ -42,6 +43,20 @@ public class GroupController {
     public ApiResponse<GroupMembersResponse> getMembers(@AuthenticationPrincipal UserDetails principal,
                                                         @PathVariable Long groupId) {
         return ApiResponse.ok(groupService.getMembers(principal.getUsername(), groupId));
+    }
+
+    @PostMapping("/{groupId}/members")
+    public ApiResponse<GroupInfoResponse> addMembers(@AuthenticationPrincipal UserDetails principal,
+                                                     @PathVariable Long groupId,
+                                                     @Valid @RequestBody AddGroupMembersRequest request) {
+        return ApiResponse.ok(groupService.addMembers(principal.getUsername(), groupId, request));
+    }
+
+    @DeleteMapping("/{groupId}/members/{memberId}")
+    public ApiResponse<GroupInfoResponse> removeMember(@AuthenticationPrincipal UserDetails principal,
+                                                       @PathVariable Long groupId,
+                                                       @PathVariable Long memberId) {
+        return ApiResponse.ok(groupService.removeMember(principal.getUsername(), groupId, memberId));
     }
 
     @DeleteMapping("/{groupId}/members/me")

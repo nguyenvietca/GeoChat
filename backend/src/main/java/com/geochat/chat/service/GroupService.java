@@ -1,5 +1,6 @@
 package com.geochat.chat.service;
 
+import com.geochat.chat.dto.AddGroupMembersRequest;
 import com.geochat.chat.dto.ChatDtos.GroupInfoResponse;
 import com.geochat.chat.dto.ChatDtos.GroupMemberResponse;
 import com.geochat.chat.dto.ChatDtos.GroupMembersResponse;
@@ -139,6 +140,78 @@ public class GroupService {
         participantRepository.delete(participant);
         conversation.setUpdatedAt(Instant.now());
         conversationRepository.save(conversation);
+    }
+
+    @Transactional
+    public GroupInfoResponse addMembers(String username, Long groupId, AddGroupMembersRequest request) {
+        Conversation conversation = requireGroupMember(username, groupId);
+        User owner = requireOwner(conversation, username);
+
+        Set<Long> newIds = new LinkedHashSet<>();
+        for (Long memberId : request.memberIds()) {
+            if (memberId == null || memberId <= 0) {
+                throw new IllegalArgumentException("Member IDs must be valid user IDs");
+            }
+            if (!memberId.equals(owner.getId())) {
+                newIds.add(memberId);
+            }
+        }
+        if (newIds.isEmpty()) {
+            throw new IllegalArgumentException("Select at least one friend to add");
+        }
+        for (Long memberId : newIds) {
+            if (participantRepository.existsByConversationIdAndUserId(groupId, memberId)) {
+                throw new IllegalArgumentException("One or more users are already in this group");
+            }
+        }
+        long currentCount = participantRepository.countByConversationId(groupId);
+        if (currentCount + newIds.size() > maxGroupMembers) {
+            throw new IllegalArgumentException("Group cannot exceed " + maxGroupMembers + " members");
+        }
+
+        List<User> users = new ArrayList<>(userRepository.findAllById(newIds));
+        if (users.size() != newIds.size()) {
+            throw new IllegalArgumentException("One or more member IDs are invalid");
+        }
+        Instant now = Instant.now();
+        List<ConversationParticipant> participants = new ArrayList<>();
+        for (User user : users) {
+            if (!friendRequestRepository.areFriends(owner.getId(), user.getId())) {
+                throw new IllegalArgumentException("All group members must be friends with the owner");
+            }
+            ConversationParticipant participant = new ConversationParticipant(groupId, user.getId());
+            participant.setRole("MEMBER");
+            participant.setCreatedAt(now);
+            participants.add(participant);
+        }
+        participantRepository.saveAll(participants);
+        conversation.setUpdatedAt(now);
+        conversationRepository.save(conversation);
+        return toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
+    }
+
+    @Transactional
+    public GroupInfoResponse removeMember(String username, Long groupId, Long memberId) {
+        Conversation conversation = requireGroupMember(username, groupId);
+        User owner = requireOwner(conversation, username);
+        if (owner.getId().equals(memberId)) {
+            throw new IllegalArgumentException("The group owner cannot be removed");
+        }
+        ConversationParticipant participant = participantRepository.findByConversationIdAndUserId(groupId, memberId)
+                .orElseThrow(() -> new EntityNotFoundException("Member not found in this group"));
+        participantRepository.delete(participant);
+        conversation.setUpdatedAt(Instant.now());
+        conversationRepository.save(conversation);
+        return toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
+    }
+
+    private User requireOwner(Conversation conversation, String username) {
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        if (conversation.getOwner() == null || !conversation.getOwner().getId().equals(user.getId())) {
+            throw new AccessDeniedException("Only the group owner can manage members");
+        }
+        return user;
     }
 
     private Conversation requireGroupMember(String username, Long groupId) {

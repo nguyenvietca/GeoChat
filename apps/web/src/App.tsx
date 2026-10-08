@@ -7,8 +7,7 @@ import { RegisterPage } from './features/auth/RegisterPage';
 import { FriendsPage } from './features/friends/FriendsPage';
 import { NearbyPage } from './features/nearby/NearbyPage';
 import { SearchPage } from './features/search/SearchPage';
-import { ConversationListPage } from './features/chat/ConversationListPage';
-import { ChatPage } from './features/chat/ChatPage';
+import { MessagesPage } from './features/chat/MessagesPage';
 import { NotificationsPage } from './features/notifications/NotificationsPage';
 import { useNotifications } from './app/providers/NotificationContext';
 import { ProfilePage } from './features/profile/ProfilePage';
@@ -143,8 +142,8 @@ export default function App() {
             <Route path="search" element={<SearchPage />} />
             <Route path="nearby" element={<NearbyPage />} />
             <Route path="friends" element={<FriendsPage />} />
-            <Route path="chat" element={<ConversationListPage />} />
-            <Route path="chat/:conversationId" element={<ChatPage />} />
+            <Route path="chat" element={<MessagesPage />} />
+            <Route path="chat/:conversationId" element={<MessagesPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="profile" element={<ProfilePage />} />
             <Route path="settings" element={<SettingsPage />} />

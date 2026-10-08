@@ -1,20 +1,28 @@
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { getConversationDetail, getMessages, sendMessage } from '../../api/chats';
 import { ApiError } from '../../api/client';
+import { getGroup } from '../../api/groups';
 import { useAuth } from '../../app/providers/AuthContext';
 import { ChatConnectionState, subscribeToConversation } from '../../services/chatWebSocket';
-import { ChatMessage, ConversationDetail } from '../../types';
+import { ChatMessage, ConversationDetail, GroupInfo } from '../../types';
+import { GroupInfoPanel } from './GroupInfoPanel';
 
 const PAGE_SIZE = 20;
 const MAX_MESSAGE_LENGTH = 5000;
 
-export function ChatPage() {
-  const { conversationId: routeId } = useParams();
-  const conversationId = Number(routeId);
-  const navigate = useNavigate();
+type ChatPanelProps = {
+  conversationId: number;
+  onBack: () => void;
+  onLeftGroup: () => void;
+};
+
+// Rendered with key={conversationId} so switching conversations resets all state and subscriptions.
+export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProps) {
   const { token, user } = useAuth();
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
+  const [group, setGroup] = useState<GroupInfo | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -46,24 +54,25 @@ export function ChatPage() {
     let active = true;
     setLoading(true);
     setError('');
-    setConversation(null);
-    setMessages([]);
-    setTotal(0);
-    setPage(0);
     knownMessageIds.current.clear();
     shouldScrollToBottomRef.current = true;
     void Promise.all([
       getConversationDetail(conversationId, token),
       getMessages(conversationId, 0, PAGE_SIZE, token),
-    ]).then(([detail, response]) => {
+    ]).then(async ([detail, response]) => {
+      const info = detail.type === 'GROUP' ? await getGroup(conversationId, token) : null;
       if (!active) return;
       setConversation(detail);
+      setGroup(info);
       for (const message of response.items) knownMessageIds.current.add(message.messageId);
       setMessages((current) => mergeMessages(current, response.items));
       setTotal(Math.max(response.total, response.items.length));
       setPage(response.page);
     }).catch((loadError: unknown) => {
-      if (active) setError(loadError instanceof ApiError ? loadError.message : 'Unable to load this conversation.');
+      if (!active) return;
+      const denied = loadError instanceof ApiError && (loadError.status === 403 || loadError.status === 404);
+      setError(denied ? 'This conversation is unavailable or you no longer have access.'
+        : loadError instanceof ApiError ? loadError.message : 'Unable to load this conversation.');
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -153,7 +162,11 @@ export function ChatPage() {
     }
   };
 
+  const isGroup = conversation?.type === 'GROUP';
   const participant = conversation?.participants.find((item) => item.userId !== user?.id);
+  const title = isGroup ? group?.name ?? 'Group' : participant?.displayName ?? 'Conversation';
+  const subtitle = isGroup ? `${group?.memberCount ?? conversation?.participants.length ?? 0} members`
+    : participant ? `@${participant.username}` : 'Direct chat';
   const connectionLabel: Record<ChatConnectionState, string> = {
     connecting: 'Connecting…',
     connected: 'Live',
@@ -161,15 +174,23 @@ export function ChatPage() {
   };
 
   return (
-    <section className="chat-page">
+    <section className="chat-page" aria-label="Conversation">
       <header className="chat-header">
-        <button className="quiet-light-button" type="button" onClick={() => navigate('/app/chat')}>Back</button>
-        <span className="chat-person-avatar">{participant?.displayName.charAt(0).toUpperCase() ?? '…'}</span>
-        <span className="chat-person-details"><strong>{participant?.displayName ?? 'Conversation'}</strong><small>{participant ? `@${participant.username}` : 'Direct chat'}</small></span>
+        <button className="quiet-light-button chat-back-button" type="button" onClick={onBack}>Back</button>
+        <span className="chat-person-avatar">{title.charAt(0).toUpperCase()}</span>
+        <span className="chat-person-details"><strong>{title}</strong><small>{subtitle}</small></span>
+        {isGroup ? (
+          <button className="quiet-light-button" type="button" aria-expanded={showInfo} onClick={() => setShowInfo((value) => !value)}>
+            Group info
+          </button>
+        ) : null}
         <span className={connection === 'connected' ? 'connection-state connected' : 'connection-state'}><i />{connectionLabel[connection]}</span>
       </header>
+      {showInfo && isGroup && group && token ? (
+        <GroupInfoPanel group={group} currentUserId={user?.id ?? null} token={token} onClose={() => setShowInfo(false)} onLeft={onLeftGroup} onGroupChanged={setGroup} />
+      ) : null}
       {error && !conversation ? (
-        <div className="chat-load-error" role="alert">{error}<Link to="/app/friends">Back to Friends</Link></div>
+        <div className="chat-load-error" role="alert">{error}<Link to="/app/chat">Back to Messages</Link></div>
       ) : (
         <>
           <div className="chat-message-area" ref={messageAreaRef} onScroll={(event) => {
@@ -182,9 +203,13 @@ export function ChatPage() {
             {!loading && messages.length === 0 ? <div className="chat-empty-state">No messages yet. Start the conversation.</div> : null}
             {messages.map((message) => {
               const outgoing = message.senderId === user?.id;
+              const sender = isGroup && !outgoing
+                ? conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member'
+                : null;
               return (
                 <div className={outgoing ? 'chat-message-row outgoing' : 'chat-message-row incoming'} key={message.messageId}>
                   <article className={outgoing ? 'chat-bubble outgoing-bubble' : 'chat-bubble incoming-bubble'}>
+                    {sender ? <strong className="chat-sender">{sender}</strong> : null}
                     <p>{message.content}</p>
                     <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
                   </article>

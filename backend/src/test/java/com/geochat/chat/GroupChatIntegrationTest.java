@@ -203,6 +203,83 @@ class GroupChatIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void ownerCanAddMembersRepeatedlyAndRemoveThemButMembersCannot() throws Exception {
+        User owner = createUser("group-admin-owner", "Owner");
+        User first = createUser("group-admin-first", "First");
+        User second = createUser("group-admin-second", "Second");
+        User nonFriend = createUser("group-admin-nonfriend", "Nonfriend");
+        markFriends(owner, first);
+        markFriends(owner, second);
+        long groupId = createGroup(owner, List.of());
+
+        mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(memberBody(List.of(first.getId()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memberCount").value(2));
+        mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(memberBody(List.of(second.getId()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memberCount").value(3));
+
+        mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(memberBody(List.of(first.getId()))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(memberBody(List.of(nonFriend.getId()))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                        .header("Authorization", bearer(first)).contentType(MediaType.APPLICATION_JSON)
+                        .content(memberBody(List.of(nonFriend.getId()))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/groups/{groupId}/members/{memberId}", groupId, second.getId())
+                        .header("Authorization", bearer(first)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/groups/{groupId}/members/{memberId}", groupId, owner.getId())
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(delete("/api/v1/groups/{groupId}/members/{memberId}", groupId, second.getId())
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memberCount").value(2));
+        mockMvc.perform(get("/api/v1/groups/{groupId}", groupId)
+                        .header("Authorization", bearer(second)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/groups/{groupId}/members/{memberId}", groupId, second.getId())
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void addingMembersRespectsTheMaximumGroupSize() throws Exception {
+        User owner = createUser("group-cap-owner", "Owner");
+        User first = createUser("group-cap-first", "First");
+        User second = createUser("group-cap-second", "Second");
+        User third = createUser("group-cap-third", "Third");
+        markFriends(owner, first);
+        markFriends(owner, second);
+        markFriends(owner, third);
+        long groupId = createGroup(owner, List.of(first.getId()));
+
+        mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(memberBody(List.of(second.getId(), third.getId()))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(memberBody(List.of(second.getId()))))
+                .andExpect(status().isOk());
+    }
+
+    private String memberBody(List<Long> memberIds) throws Exception {
+        return objectMapper.writeValueAsString(java.util.Map.of("memberIds", memberIds));
+    }
+
     private long createGroup(User owner, List<Long> memberIds) throws Exception {
         String response = mockMvc.perform(post("/api/v1/groups")
                         .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)

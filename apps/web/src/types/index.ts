@@ -108,6 +108,25 @@ export type MessageListResponse = {
 
 export type SendMessageRequest = { content: string };
 
+export type GroupInfo = {
+  groupId: number;
+  name: string;
+  owner: ConversationUser;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GroupMember = {
+  user: ConversationUser;
+  role: string;
+  joinedAt: string;
+};
+
+export type GroupMembersResponse = { items: GroupMember[] };
+
+export type CreateGroupRequest = { name: string; memberIds: number[] };
+
 export type NotificationType = 'FRIEND_REQUEST_RECEIVED' | 'FRIEND_REQUEST_ACCEPTED' | 'NEW_MESSAGE';
 export type NotificationReferenceType = 'FRIEND_REQUEST' | 'MESSAGE';
 
