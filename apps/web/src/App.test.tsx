@@ -4,6 +4,13 @@ import App from './App';
 import { ApiError } from './api/client';
 import { getCurrentUser, login, register } from './api/auth';
 import { getNearbyUsers, updateCurrentLocation } from './api/location';
+import {
+  getFriends,
+  getIncomingFriendRequests,
+  getOutgoingFriendRequests,
+  sendFriendRequest,
+} from './api/friends';
+import { getConversationDetail, getMessages, openDirectConversation } from './api/chats';
 import { searchUsers, updateMyProfile } from './api/users';
 import { User } from './types';
 
@@ -15,6 +22,24 @@ vi.mock('./api/auth', () => ({
 vi.mock('./api/location', () => ({
   getNearbyUsers: vi.fn(),
   updateCurrentLocation: vi.fn(),
+}));
+vi.mock('./api/friends', () => ({
+  getFriends: vi.fn(),
+  getIncomingFriendRequests: vi.fn(),
+  getOutgoingFriendRequests: vi.fn(),
+  sendFriendRequest: vi.fn(),
+}));
+vi.mock('./api/chats', () => ({
+  getConversations: vi.fn(),
+  getConversationDetail: vi.fn(),
+  getMessages: vi.fn(),
+  openDirectConversation: vi.fn(),
+  sendMessage: vi.fn(),
+}));
+vi.mock('./services/chatWebSocket', () => ({
+  subscribeToConversation: vi.fn(() => vi.fn()),
+  subscribeToNotifications: vi.fn(() => vi.fn()),
+  disconnectAllChatWebSockets: vi.fn(),
 }));
 vi.mock('./api/notifications', () => ({
   getNotifications: vi.fn(),
@@ -29,6 +54,13 @@ const mockLogin = vi.mocked(login);
 const mockRegister = vi.mocked(register);
 const mockGetNearbyUsers = vi.mocked(getNearbyUsers);
 const mockUpdateLocation = vi.mocked(updateCurrentLocation);
+const mockGetFriends = vi.mocked(getFriends);
+const mockGetIncoming = vi.mocked(getIncomingFriendRequests);
+const mockGetOutgoing = vi.mocked(getOutgoingFriendRequests);
+const mockSendFriendRequest = vi.mocked(sendFriendRequest);
+const mockGetConversationDetail = vi.mocked(getConversationDetail);
+const mockGetMessages = vi.mocked(getMessages);
+const mockOpenDirectConversation = vi.mocked(openDirectConversation);
 const mockSearchUsers = vi.mocked(searchUsers);
 const mockUpdateMyProfile = vi.mocked(updateMyProfile);
 
@@ -271,7 +303,16 @@ describe('user search', () => {
 });
 
 describe('nearby location flow', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetFriends.mockResolvedValue({ items: [] });
+    mockGetIncoming.mockResolvedValue({ items: [] });
+    mockGetOutgoing.mockResolvedValue({ items: [] });
+    mockSendFriendRequest.mockResolvedValue({ requestId: 81, senderId: 9, receiverId: 3, status: 'PENDING', createdAt: '', updatedAt: '' });
+    mockOpenDirectConversation.mockResolvedValue({ conversationId: 41, type: 'DIRECT', participant: { userId: 3, username: 'kai', displayName: 'Kai' } });
+    mockGetConversationDetail.mockResolvedValue({ conversationId: 41, type: 'DIRECT', participants: [currentUser, { userId: 3, username: 'kai', displayName: 'Kai' }], createdAt: '', updatedAt: '' });
+    mockGetMessages.mockResolvedValue({ items: [], total: 0, page: 0, size: 20 });
+  });
 
   it('syncs a one-time browser location before requesting nearby users', async () => {
     Object.defineProperty(navigator, 'geolocation', {
@@ -337,5 +378,45 @@ describe('nearby location flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh nearby' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Nearby search unavailable.');
+  });
+
+  it('sends a friend request to a nearby person', async () => {
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition: vi.fn((success: PositionCallback) => success({
+        coords: { latitude: 41.2, longitude: -72.8 },
+      } as GeolocationPosition)) },
+    });
+    mockUpdateLocation.mockResolvedValue(undefined);
+    mockGetNearbyUsers.mockResolvedValue({ items: [{ userId: 3, displayName: 'Kai', distanceMeters: 600 }], radiusMeters: 5000 });
+    await renderSignedIn();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /nearby/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add friend' }));
+
+    expect(mockSendFriendRequest).toHaveBeenCalledWith(3, 'session-token');
+    expect(await screen.findByText('Friend request sent to Kai.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Request sent · manage' })).toBeTruthy();
+  });
+
+  it('opens a direct conversation for a nearby friend', async () => {
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition: vi.fn((success: PositionCallback) => success({
+        coords: { latitude: 41.2, longitude: -72.8 },
+      } as GeolocationPosition)) },
+    });
+    mockUpdateLocation.mockResolvedValue(undefined);
+    mockGetNearbyUsers.mockResolvedValue({ items: [{ userId: 3, displayName: 'Kai', distanceMeters: 600 }], radiusMeters: 5000 });
+    mockGetFriends.mockResolvedValue({ items: [{ userId: 3, username: 'kai', displayName: 'Kai' }] });
+    await renderSignedIn();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /nearby/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Chat' }));
+
+    expect(mockOpenDirectConversation).toHaveBeenCalledWith(3, 'session-token');
+    expect(await screen.findByLabelText('Message')).toBeTruthy();
   });
 });

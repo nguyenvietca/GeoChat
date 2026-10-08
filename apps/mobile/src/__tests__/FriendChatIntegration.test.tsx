@@ -21,17 +21,20 @@ jest.mock('../api/friendApi', () => ({
   acceptFriendRequest: jest.fn(),
   rejectFriendRequest: jest.fn(),
   cancelFriendRequest: jest.fn(),
+  removeFriend: jest.fn(),
 }));
 
 import {
   getFriends,
   getIncomingFriendRequests,
   getOutgoingFriendRequests,
+  removeFriend,
 } from '../api/friendApi';
 
 const mockGetFriends = getFriends as jest.MockedFunction<typeof getFriends>;
 const mockGetIncoming = getIncomingFriendRequests as jest.MockedFunction<typeof getIncomingFriendRequests>;
 const mockGetOutgoing = getOutgoingFriendRequests as jest.MockedFunction<typeof getOutgoingFriendRequests>;
+const mockRemoveFriend = removeFriend as jest.MockedFunction<typeof removeFriend>;
 
 const FAKE_TOKEN = 'test-token';
 
@@ -45,6 +48,7 @@ function setupDefaultMocks(friends = [makeFriend(2, 'Alice')]) {
   mockGetFriends.mockResolvedValue({ items: friends });
   mockGetIncoming.mockResolvedValue({ items: [] });
   mockGetOutgoing.mockResolvedValue({ items: [] });
+  mockRemoveFriend.mockResolvedValue(undefined);
 }
 
 describe('FriendsScreen — Friend → Chat integration', () => {
@@ -210,5 +214,20 @@ describe('FriendsScreen — Friend → Chat integration', () => {
 
     await waitFor(() => expect(screen.getByText('Bob')).toBeTruthy());
     expect(screen.getByRole('tab', { name: /Incoming/ }).props.accessibilityState.selected).toBe(true);
+  });
+
+  it('removes a friend after confirming the remove action with the API', async () => {
+    setupDefaultMocks();
+    const onMessageFriend = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <FriendsScreen token={FAKE_TOKEN} onBack={onBack} onMessageFriend={onMessageFriend} />,
+    );
+
+    await waitFor(() => expect(screen.getByText('Alice')).toBeTruthy());
+    fireEvent.press(screen.getByRole('button', { name: 'Remove Alice' }));
+
+    await waitFor(() => expect(mockRemoveFriend).toHaveBeenCalledWith(2, FAKE_TOKEN));
+    expect(await screen.findByText("You don't have any friends yet.")).toBeTruthy();
   });
 });

@@ -9,6 +9,7 @@ import {
   getFriends,
   getIncomingFriendRequests,
   getOutgoingFriendRequests,
+  removeFriend,
   rejectFriendRequest,
   sendFriendRequest,
 } from '../../api/friends';
@@ -49,6 +50,7 @@ vi.mock('../../api/friends', () => ({
   acceptFriendRequest: vi.fn(),
   rejectFriendRequest: vi.fn(),
   cancelFriendRequest: vi.fn(),
+  removeFriend: vi.fn(),
 }));
 vi.mock('../../api/chats', () => ({
   getConversations: vi.fn(),
@@ -74,6 +76,7 @@ const mockSendFriendRequest = vi.mocked(sendFriendRequest);
 const mockAcceptFriendRequest = vi.mocked(acceptFriendRequest);
 const mockRejectFriendRequest = vi.mocked(rejectFriendRequest);
 const mockCancelFriendRequest = vi.mocked(cancelFriendRequest);
+const mockRemoveFriend = vi.mocked(removeFriend);
 const mockGetConversations = vi.mocked(getConversations);
 const mockGetConversationDetail = vi.mocked(getConversationDetail);
 const mockGetMessages = vi.mocked(getMessages);
@@ -136,6 +139,7 @@ describe('web friends and direct chat', () => {
     mockAcceptFriendRequest.mockResolvedValue({ requestId: 71, senderId: 22, receiverId: 9, status: 'ACCEPTED', createdAt: '', updatedAt: '' });
     mockRejectFriendRequest.mockResolvedValue({ requestId: 71, senderId: 22, receiverId: 9, status: 'REJECTED', createdAt: '', updatedAt: '' });
     mockCancelFriendRequest.mockResolvedValue({ requestId: 72, senderId: 9, receiverId: 22, status: 'CANCELLED', createdAt: '', updatedAt: '' });
+    mockRemoveFriend.mockResolvedValue(undefined);
   });
 
   it('accepts an incoming request, updates Friends, opens a direct chat and disconnects on logout', async () => {
@@ -159,6 +163,17 @@ describe('web friends and direct chat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
     expect(mockDisconnectAll).toHaveBeenCalledOnce();
+  });
+
+  it('removes a friend from the list after the API confirms removal', async () => {
+    mockGetFriends.mockResolvedValue({ items: [rowan] });
+    await renderSignedIn('/app/friends');
+
+    expect(await screen.findByText('@rowan')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Rowan Park' }));
+
+    expect(mockRemoveFriend).toHaveBeenCalledWith(22, 'session-token');
+    expect(await screen.findByText('No friends yet. Search for people to connect.')).toBeTruthy();
   });
 
   it('rejects incoming and cancels outgoing requests without reloading the page', async () => {

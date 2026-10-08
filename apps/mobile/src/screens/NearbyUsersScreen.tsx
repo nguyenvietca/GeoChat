@@ -10,16 +10,27 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { ApiError } from '../api/client';
+import {
+  getFriends,
+  getIncomingFriendRequests,
+  getOutgoingFriendRequests,
+  sendFriendRequest,
+} from '../api/friendApi';
 import { getNearbyUsers, updateMyLocation } from '../api/locationApi';
+import { Friend } from '../types/friend';
 import { NearbyUser } from '../types/discovery';
+import { FriendNotificationTab } from '../navigation/notificationNavigation';
 import { formatDistance } from '../utils/formatDistance';
 
 type NearbyUsersScreenProps = {
   token: string | null;
   onBack: () => void;
+  onOpenFriends: (tab?: FriendNotificationTab) => void;
+  onMessageUser: (friend: Friend) => Promise<void>;
 };
 
 type LoadingStage = 'permission' | 'location' | 'sync' | 'nearby';
+type NearbyRelationship = 'NONE' | 'OUTGOING_REQUEST' | 'INCOMING_REQUEST' | 'FRIEND';
 
 const loadingMessages: Record<LoadingStage, string> = {
   permission: 'Requesting location permission...',
@@ -28,13 +39,17 @@ const loadingMessages: Record<LoadingStage, string> = {
   nearby: 'Finding nearby users...',
 };
 
-export function NearbyUsersScreen({ token, onBack }: NearbyUsersScreenProps) {
+export function NearbyUsersScreen({ token, onBack, onOpenFriends, onMessageUser }: NearbyUsersScreenProps) {
   const [items, setItems] = useState<NearbyUser[] | null>(null);
+  const [relationships, setRelationships] = useState<Record<number, NearbyRelationship>>({});
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState<LoadingStage>('permission');
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [canAskAgain, setCanAskAgain] = useState(true);
+  const [busyUserId, setBusyUserId] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const refreshNearby = async () => {
     if (loading) {
@@ -47,6 +62,8 @@ export function NearbyUsersScreen({ token, onBack }: NearbyUsersScreenProps) {
 
     setLoading(true);
     setError('');
+    setActionError('');
+    setNotice('');
     setPermissionDenied(false);
     try {
       setLoadingStage('permission');
@@ -78,14 +95,65 @@ export function NearbyUsersScreen({ token, onBack }: NearbyUsersScreenProps) {
 
       setLoadingStage('nearby');
       const response = await getNearbyUsers(token, 5000);
+      if (response.items.length > 0) {
+        const [friends, incoming, outgoing] = await Promise.all([
+          getFriends(token),
+          getIncomingFriendRequests(token),
+          getOutgoingFriendRequests(token),
+        ]);
+        const friendIds = new Set(friends.items.map((friend) => friend.userId));
+        const incomingIds = new Set(incoming.items.map((request) => request.user.userId));
+        const outgoingIds = new Set(outgoing.items.map((request) => request.user.userId));
+        setRelationships(Object.fromEntries(response.items.map((person) => [
+          person.userId,
+          friendIds.has(person.userId) ? 'FRIEND'
+            : incomingIds.has(person.userId) ? 'INCOMING_REQUEST'
+              : outgoingIds.has(person.userId) ? 'OUTGOING_REQUEST' : 'NONE',
+        ])) as Record<number, NearbyRelationship>);
+      } else {
+        setRelationships({});
+      }
       setItems(response.items);
     } catch (nearbyError) {
       setItems(null);
+      setRelationships({});
       setError(nearbyError instanceof ApiError
         ? nearbyError.message
         : 'Unable to get your location. Check location services and try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRelationshipAction = async (person: NearbyUser) => {
+    if (!token || busyUserId !== null) {
+      return;
+    }
+
+    const relationship = relationships[person.userId] ?? 'NONE';
+    if (relationship === 'OUTGOING_REQUEST') {
+      return;
+    }
+
+    setBusyUserId(person.userId);
+    setActionError('');
+    setNotice('');
+    try {
+      if (relationship === 'NONE') {
+        await sendFriendRequest(person.userId, token);
+        setRelationships((current) => ({ ...current, [person.userId]: 'OUTGOING_REQUEST' }));
+        setNotice(`Friend request sent to ${person.displayName}.`);
+      } else if (relationship === 'INCOMING_REQUEST') {
+        onOpenFriends('incoming');
+      } else {
+        await onMessageUser({ userId: person.userId, displayName: person.displayName });
+      }
+    } catch (actionException) {
+      setActionError(actionException instanceof ApiError
+        ? actionException.message
+        : relationship === 'FRIEND' ? 'Unable to open this conversation.' : 'Unable to update this connection.');
+    } finally {
+      setBusyUserId(null);
     }
   };
 
@@ -129,6 +197,9 @@ export function NearbyUsersScreen({ token, onBack }: NearbyUsersScreenProps) {
         </View>
       ) : null}
 
+      {actionError ? <Text accessibilityRole="alert" style={styles.error}>{actionError}</Text> : null}
+      {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+
       {!loading && permissionDenied ? (
         <View style={styles.stateContainer}>
           <Text style={styles.stateText}>Location permission is required to find nearby users.</Text>
@@ -160,8 +231,27 @@ export function NearbyUsersScreen({ token, onBack }: NearbyUsersScreenProps) {
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
           <View style={styles.resultRow}>
-            <Text style={styles.displayName}>{item.displayName}</Text>
-            <Text style={styles.distance}>{formatDistance(item.distanceMeters)}</Text>
+            <View style={styles.resultCopy}>
+              <Text style={styles.displayName}>{item.displayName}</Text>
+              <Text style={styles.distance}>{formatDistance(item.distanceMeters)}</Text>
+            </View>
+            {relationships[item.userId] === 'OUTGOING_REQUEST' ? (
+              <Text style={styles.relationshipText}>Request sent</Text>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                style={[styles.relationshipButton, busyUserId !== null && styles.buttonDisabled]}
+                onPress={() => void handleRelationshipAction(item)}
+                disabled={busyUserId !== null}
+              >
+                {busyUserId === item.userId
+                  ? <ActivityIndicator color="#102a2a" size="small" />
+                  : <Text style={styles.relationshipButtonText}>
+                    {relationships[item.userId] === 'FRIEND' ? 'Message'
+                      : relationships[item.userId] === 'INCOMING_REQUEST' ? 'Review request' : 'Add Friend'}
+                  </Text>}
+              </Pressable>
+            )}
           </View>
         )}
       />
@@ -251,9 +341,16 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
     paddingVertical: 14,
+  },
+  resultCopy: {
+    flex: 1,
+    paddingRight: 12,
   },
   displayName: {
     color: '#f8fafc',
@@ -264,5 +361,29 @@ const styles = StyleSheet.create({
     color: '#67e8f9',
     fontSize: 14,
     marginTop: 4,
+  },
+  relationshipButton: {
+    minHeight: 38,
+    minWidth: 94,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#67e8f9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+  },
+  relationshipButtonText: {
+    color: '#102a2a',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  relationshipText: {
+    color: '#67e8f9',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  notice: {
+    color: '#86efac',
+    fontSize: 14,
+    marginTop: 12,
   },
 });

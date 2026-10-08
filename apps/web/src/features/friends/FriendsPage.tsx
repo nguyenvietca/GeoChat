@@ -6,6 +6,7 @@ import {
   getFriends,
   getIncomingFriendRequests,
   getOutgoingFriendRequests,
+  removeFriend,
   rejectFriendRequest,
 } from '../../api/friends';
 import { openDirectConversation } from '../../api/chats';
@@ -28,6 +29,7 @@ export function FriendsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyIds, setBusyIds] = useState<number[]>([]);
+  const [removingFriendId, setRemovingFriendId] = useState<number | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -108,6 +110,22 @@ export function FriendsPage() {
     }
   };
 
+  const removeFriendFromList = async (friend: FriendSummary) => {
+    if (!token || removingFriendId !== null) return;
+    setRemovingFriendId(friend.userId);
+    setError('');
+    setNotice('');
+    try {
+      await removeFriend(friend.userId, token);
+      setFriends((items) => items.filter((item) => item.userId !== friend.userId));
+      setNotice(`${friend.displayName} removed from friends.`);
+    } catch (removeError) {
+      setError(removeError instanceof ApiError ? removeError.message : 'Unable to remove this friend.');
+    } finally {
+      setRemovingFriendId(null);
+    }
+  };
+
   const countForTab = activeTab === 'friends' ? friends.length : activeTab === 'incoming' ? incoming.length : outgoing.length;
 
   return (
@@ -154,6 +172,15 @@ export function FriendsPage() {
               <span className="person-details"><strong>{friend.displayName}</strong><small>@{friend.username}</small></span>
               <button className="primary-button compact-button" type="button" onClick={() => void openChat(friend)} disabled={openingId !== null}>
                 {openingId === friend.userId ? 'Opening…' : 'Chat'}
+              </button>
+              <button
+                className="quiet-light-button compact-button"
+                type="button"
+                aria-label={`Remove ${friend.displayName}`}
+                onClick={() => void removeFriendFromList(friend)}
+                disabled={removingFriendId !== null}
+              >
+                {removingFriendId === friend.userId ? 'Removing…' : 'Remove'}
               </button>
             </article>
           )) : (activeTab === 'incoming' ? incoming : outgoing).map((request) => (

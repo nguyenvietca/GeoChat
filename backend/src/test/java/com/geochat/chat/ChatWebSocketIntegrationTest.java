@@ -35,7 +35,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geochat.auth.security.JwtService;
 import com.geochat.chat.dto.OpenDirectChatRequest;
 import com.geochat.chat.dto.SendMessageRequest;
+import com.geochat.chat.dto.CreateGroupRequest;
+import com.geochat.chat.repository.ConversationRepository;
 import com.geochat.chat.service.ChatService;
+import com.geochat.chat.service.GroupService;
 import com.geochat.friend.entity.FriendRequest;
 import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
@@ -65,6 +68,12 @@ class ChatWebSocketIntegrationTest {
 	private ChatService chatService;
 
 	@Autowired
+	private GroupService groupService;
+
+	@Autowired
+	private ConversationRepository conversationRepository;
+
+	@Autowired
 	private SimpUserRegistry simpUserRegistry;
 
 	@Value("${jwt.secret}")
@@ -74,8 +83,40 @@ class ChatWebSocketIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
+		conversationRepository.deleteAll();
 		friendRequestRepository.deleteAll();
 		userRepository.deleteAll();
+	}
+
+	@Test
+	void groupMembersReceiveRealtimeMessagesAndNonMembersCannotSubscribeOrSend() throws Exception {
+		User owner = createUser("owner-group-ws", "Owner");
+		User member = createUser("member-group-ws", "Member");
+		User outsider = createUser("outsider-group-ws", "Outsider");
+		markFriends(owner, member);
+		Long groupId = groupService.createGroup(owner.getUsername(),
+				new CreateGroupRequest("Realtime group", java.util.List.of(member.getId()))).groupId();
+
+		StompSession ownerSession = connectSession(tokenFor(owner));
+		StompSession memberSession = connectSession(tokenFor(member));
+		StompSession outsiderSession = connectSession(tokenFor(outsider));
+		BlockingQueue<Map<String, Object>> ownerQueue = new LinkedBlockingQueue<>();
+		BlockingQueue<Map<String, Object>> memberQueue = new LinkedBlockingQueue<>();
+		BlockingQueue<Map<String, Object>> outsiderQueue = new LinkedBlockingQueue<>();
+
+		ownerSession.subscribe("/topic/chat/" + groupId, frameHandler(ownerQueue));
+		memberSession.subscribe("/topic/chat/" + groupId, frameHandler(memberQueue));
+		outsiderSession.subscribe("/topic/chat/" + groupId, frameHandler(outsiderQueue));
+		ownerSession.send("/app/chat/" + groupId + "/send", Map.of("content", "Group broadcast"));
+
+		assertThat(ownerQueue.poll(10, TimeUnit.SECONDS).get("content")).isEqualTo("Group broadcast");
+		assertThat(memberQueue.poll(10, TimeUnit.SECONDS).get("content")).isEqualTo("Group broadcast");
+		assertThat(outsiderQueue.poll(1, TimeUnit.SECONDS)).isNull();
+
+		StompSession outsiderSendSession = connectSession(tokenFor(outsider));
+		outsiderSendSession.send("/app/chat/" + groupId + "/send", Map.of("content", "Forbidden"));
+		assertThat(chatService.listMessages(owner.getUsername(), groupId, 50).total()).isEqualTo(1);
+		assertThat(memberQueue.poll(1, TimeUnit.SECONDS)).isNull();
 	}
 
 	@Test
@@ -299,6 +340,20 @@ class ChatWebSocketIntegrationTest {
 					public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
 					}
 				}).get(10, TimeUnit.SECONDS);
+	}
+
+	private StompFrameHandler frameHandler(BlockingQueue<Map<String, Object>> queue) {
+		return new StompFrameHandler() {
+			@Override
+			public Type getPayloadType(StompHeaders headers) {
+				return Map.class;
+			}
+
+			@Override
+			public void handleFrame(StompHeaders headers, Object payload) {
+				queue.add((Map<String, Object>) payload);
+			}
+		};
 	}
 
 	private void markFriends(User first, User second) {

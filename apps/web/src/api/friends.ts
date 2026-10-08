@@ -9,6 +9,13 @@ export function getFriends(token: string) {
   return apiRequest<FriendListResponse>('/api/v1/friends', { token });
 }
 
+export function removeFriend(userId: number, token: string) {
+  return apiRequest<void>(`/api/v1/friends/${userId}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
 export function getIncomingFriendRequests(token: string) {
   return apiRequest<FriendRequestListResponse>('/api/v1/friends/requests/incoming', { token });
 }

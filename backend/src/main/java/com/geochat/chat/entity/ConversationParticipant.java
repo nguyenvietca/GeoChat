@@ -17,6 +17,9 @@ public class ConversationParticipant {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Column(nullable = false, length = 16)
+    private String role = "MEMBER";
+
     public ConversationParticipant() {
     }
 
@@ -46,5 +49,13 @@ public class ConversationParticipant {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
     }
 }

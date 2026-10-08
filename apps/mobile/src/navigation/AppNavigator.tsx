@@ -34,7 +34,7 @@ type AuthenticatedScreen =
   | 'profile'
   | 'edit-profile'
   | 'settings';
-type ChatReturnScreen = 'friends' | 'conversations';
+type ChatReturnScreen = 'friends' | 'conversations' | 'nearby';
 
 export function AppNavigator() {
   const { isAuthenticated, isLoading, token, user } = useAuth();
@@ -159,13 +159,13 @@ export function AppNavigator() {
     };
   }, [isAuthenticated, token, user?.id]);
 
-  const startDirectConversation = async (friend: Friend) => {
+  const startDirectConversation = async (friend: Friend, returnScreen: ChatReturnScreen = 'friends') => {
     if (!token) {
       throw new Error('Your session has expired. Please log in again.');
     }
     const response = await openDirectConversation(friend.userId, token);
     setConversationId(response.conversationId);
-    setChatReturnScreen('friends');
+    setChatReturnScreen(returnScreen);
     setScreen('chat');
   };
 
@@ -204,7 +204,14 @@ export function AppNavigator() {
   }
 
   if (screen === 'nearby') {
-    return <NearbyUsersScreen token={token} onBack={() => setScreen('home')} />;
+    return (
+      <NearbyUsersScreen
+        token={token}
+        onBack={() => setScreen('home')}
+        onOpenFriends={openFriends}
+        onMessageUser={(friend) => startDirectConversation(friend, 'nearby')}
+      />
+    );
   }
 
   if (screen === 'friends') {

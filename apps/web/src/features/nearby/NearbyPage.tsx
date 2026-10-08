@@ -1,8 +1,16 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  getFriends,
+  getIncomingFriendRequests,
+  getOutgoingFriendRequests,
+  sendFriendRequest,
+} from '../../api/friends';
+import { openDirectConversation } from '../../api/chats';
 import { getNearbyUsers, updateCurrentLocation } from '../../api/location';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
-import { NearbyUser } from '../../types';
+import { FriendRelationship, NearbyUser } from '../../types';
 
 const radiusOptions = [1000, 5000, 10000, 25000];
 
@@ -31,11 +39,15 @@ function formatDistance(distanceMeters: number) {
 
 export function NearbyPage() {
   const { token } = useAuth();
+  const navigate = useNavigate();
   const [radius, setRadius] = useState(5000);
   const [people, setPeople] = useState<NearbyUser[]>([]);
+  const [relationships, setRelationships] = useState<Record<number, FriendRelationship>>({});
   const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [busyUserId, setBusyUserId] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const findNearby = async () => {
     if (!token) {
@@ -44,6 +56,7 @@ export function NearbyPage() {
     }
     setLoading(true);
     setError('');
+    setNotice('');
     setHasSearched(false);
     try {
       const position = await getLocation();
@@ -52,15 +65,60 @@ export function NearbyPage() {
         longitude: position.coords.longitude,
       }, token);
       const response = await getNearbyUsers(radius, token);
+      if (response.items.length > 0) {
+        const [friends, incoming, outgoing] = await Promise.all([
+          getFriends(token),
+          getIncomingFriendRequests(token),
+          getOutgoingFriendRequests(token),
+        ]);
+        const friendIds = new Set(friends.items.map((friend) => friend.userId));
+        const incomingIds = new Set(incoming.items.map((request) => request.user.userId));
+        const outgoingIds = new Set(outgoing.items.map((request) => request.user.userId));
+        setRelationships(Object.fromEntries(response.items.map((person) => [
+          person.userId,
+          friendIds.has(person.userId) ? 'FRIENDS'
+            : incomingIds.has(person.userId) ? 'PENDING_INCOMING'
+              : outgoingIds.has(person.userId) ? 'PENDING_OUTGOING' : 'NONE',
+        ])) as Record<number, FriendRelationship>);
+      } else {
+        setRelationships({});
+      }
       setPeople(response.items);
       setHasSearched(true);
     } catch (nearbyError) {
       setPeople([]);
+      setRelationships({});
       setError(nearbyError instanceof ApiError || nearbyError instanceof Error
         ? nearbyError.message
         : 'Unable to find nearby users right now.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRelationshipAction = async (person: NearbyUser) => {
+    if (!token || busyUserId !== null) return;
+    setBusyUserId(person.userId);
+    setError('');
+    setNotice('');
+    try {
+      const relationship = relationships[person.userId] ?? 'NONE';
+      if (relationship === 'NONE') {
+        await sendFriendRequest(person.userId, token);
+        setRelationships((current) => ({ ...current, [person.userId]: 'PENDING_OUTGOING' }));
+        setNotice(`Friend request sent to ${person.displayName}.`);
+      } else if (relationship === 'FRIENDS') {
+        const conversation = await openDirectConversation(person.userId, token);
+        navigate(`/app/chat/${conversation.conversationId}`);
+      } else if (relationship === 'PENDING_INCOMING') {
+        navigate('/app/friends?tab=incoming');
+      } else {
+        navigate('/app/friends?tab=outgoing');
+      }
+    } catch (actionError) {
+      setError(actionError instanceof ApiError ? actionError.message : 'Unable to update this connection.');
+    } finally {
+      setBusyUserId(null);
     }
   };
 
@@ -83,6 +141,7 @@ export function NearbyPage() {
         </button>
       </div>
       {error ? <div className="inline-error" role="alert">{error}<button type="button" onClick={() => void findNearby()}>Try again</button></div> : null}
+      {notice ? <p className="inline-notice" role="status">{notice}</p> : null}
       {loading ? <div className="result-state" role="status"><span className="spinner" />Checking your location…</div> : null}
       {!loading && hasSearched && people.length === 0 ? <div className="result-state empty-state">No nearby users found in this radius.</div> : null}
       {!loading && hasSearched && people.length > 0 ? (
@@ -92,10 +151,28 @@ export function NearbyPage() {
               <span className="person-avatar nearby-avatar">{person.displayName.charAt(0).toUpperCase()}</span>
               <span className="person-details"><strong>{person.displayName}</strong><small>GeoChat member</small></span>
               <span className="distance-label">{formatDistance(person.distanceMeters)}</span>
+              <button
+                className={relationships[person.userId] === 'NONE' || relationships[person.userId] === 'FRIENDS'
+                  ? 'primary-button compact-button' : 'quiet-light-button compact-button'}
+                type="button"
+                onClick={() => void handleRelationshipAction(person)}
+                disabled={busyUserId !== null}
+              >
+                {busyUserId === person.userId ? 'Working…' : relationshipActionLabel(relationships[person.userId] ?? 'NONE')}
+              </button>
             </article>
           ))}
         </div>
       ) : null}
     </section>
   );
+}
+
+function relationshipActionLabel(relationship: FriendRelationship) {
+  switch (relationship) {
+    case 'FRIENDS': return 'Chat';
+    case 'PENDING_INCOMING': return 'Review request';
+    case 'PENDING_OUTGOING': return 'Request sent · manage';
+    default: return 'Add friend';
+  }
 }

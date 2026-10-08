@@ -212,6 +212,26 @@ public class FriendRequestService {
                 .toList());
     }
 
+    @Transactional
+    public void removeFriend(String username, Long friendId) {
+        User currentUser = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        if (friendId == null || currentUser.getId().equals(friendId)) {
+            throw new IllegalArgumentException("A different friend ID is required");
+        }
+
+        userRepository.findById(friendId)
+                .orElseThrow(() -> new EntityNotFoundException("Friend not found"));
+        if (!friendRequestRepository.areFriends(currentUser.getId(), friendId)) {
+            throw new IllegalArgumentException("Users are not friends");
+        }
+
+        friendRequestRepository.deleteBySenderIdAndReceiverIdAndStatus(
+                currentUser.getId(), friendId, FriendRequestStatus.ACCEPTED);
+        friendRequestRepository.deleteBySenderIdAndReceiverIdAndStatus(
+                friendId, currentUser.getId(), FriendRequestStatus.ACCEPTED);
+    }
+
         private void addAcceptedFriends(Long currentUserId, Map<Long, User> friendsById, boolean asSender) {
         List<FriendRequest> requests = asSender
                 ? friendRequestRepository.findBySenderIdAndStatusOrderByCreatedAtDesc(currentUserId, FriendRequestStatus.ACCEPTED)

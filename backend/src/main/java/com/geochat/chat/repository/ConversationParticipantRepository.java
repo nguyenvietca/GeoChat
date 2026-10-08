@@ -27,4 +27,7 @@ public interface ConversationParticipantRepository extends JpaRepository<Convers
 
     @Query("select count(cp) > 0 from ConversationParticipant cp where cp.id.conversationId = :conversationId and cp.id.userId = :userId")
     boolean existsByConversationIdAndUserId(@Param("conversationId") Long conversationId, @Param("userId") Long userId);
+
+    @Query("select count(cp) from ConversationParticipant cp where cp.id.conversationId = :conversationId")
+    long countByConversationId(@Param("conversationId") Long conversationId);
 }

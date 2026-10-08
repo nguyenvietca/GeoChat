@@ -30,7 +30,6 @@ import com.geochat.chat.entity.Message;
 import com.geochat.chat.repository.ConversationParticipantRepository;
 import com.geochat.chat.repository.ConversationRepository;
 import com.geochat.chat.repository.MessageRepository;
-import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
 import com.geochat.notification.event.MessageCreatedEvent;
 import com.geochat.user.entity.User;
@@ -250,13 +249,14 @@ public class ChatService {
 		conversation.setUpdatedAt(Instant.now());
 		conversationRepository.save(conversation);
 
-		Long recipientId = conversationParticipantRepository
-				.findOtherParticipants(conversation.getId(), currentUser.getId()).stream().findFirst()
-				.map(participant -> participant.getId().getUserId()).orElse(null);
-
-		if (recipientId != null) {
-			applicationEventPublisher.publishEvent(new MessageCreatedEvent(saved.getId(), saved.getConversationId(), recipientId,
-					currentUser.getId(), currentUser.getDisplayName()));
+		if ("DIRECT".equals(conversation.getType())) {
+			Long recipientId = conversationParticipantRepository
+					.findOtherParticipants(conversation.getId(), currentUser.getId()).stream().findFirst()
+					.map(participant -> participant.getId().getUserId()).orElse(null);
+			if (recipientId != null) {
+				applicationEventPublisher.publishEvent(new MessageCreatedEvent(saved.getId(), saved.getConversationId(), recipientId,
+						currentUser.getId(), currentUser.getDisplayName()));
+			}
 		}
 
 		return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(), saved.getContent(),
@@ -271,14 +271,7 @@ public class ChatService {
 	}
 
 	private boolean areFriends(Long firstUserId, Long secondUserId) {
-		return friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(firstUserId, secondUserId,
-				FriendRequestStatus.ACCEPTED)
-				|| friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(firstUserId, secondUserId,
-						FriendRequestStatus.ACCEPTED)
-				|| friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(secondUserId, firstUserId,
-						FriendRequestStatus.ACCEPTED)
-				|| friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(secondUserId, firstUserId,
-						FriendRequestStatus.ACCEPTED);
+		return friendRequestRepository.areFriends(firstUserId, secondUserId);
 	}
 
 	private String buildConversationKey(Long firstUserId, Long secondUserId) {

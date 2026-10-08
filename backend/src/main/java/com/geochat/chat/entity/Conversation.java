@@ -6,8 +6,13 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
+import com.geochat.user.entity.User;
 
 @Entity
 @Table(name = "conversations")
@@ -22,6 +27,14 @@ public class Conversation {
 
     @Column(name = "conversation_key", nullable = false, unique = true, length = 100)
     private String conversationKey;
+
+    @Column(name = "group_name", length = 100)
+    private String groupName;
+
+    @ManyToOne
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    @JoinColumn(name = "owner_id")
+    private User owner;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
@@ -51,6 +64,22 @@ public class Conversation {
 
     public void setConversationKey(String conversationKey) {
         this.conversationKey = conversationKey;
+    }
+
+    public String getGroupName() {
+        return groupName;
+    }
+
+    public void setGroupName(String groupName) {
+        this.groupName = groupName;
+    }
+
+    public User getOwner() {
+        return owner;
+    }
+
+    public void setOwner(User owner) {
+        this.owner = owner;
     }
 
     public Instant getCreatedAt() {

@@ -50,4 +50,23 @@ public class ChatDtos {
             String username,
             String displayName
     ) {}
+
+    public record GroupInfoResponse(
+            Long groupId,
+            String name,
+            UserSummaryResponse owner,
+            int memberCount,
+            Instant createdAt,
+            Instant updatedAt
+    ) {}
+
+    public record GroupMembersResponse(
+            List<GroupMemberResponse> items
+    ) {}
+
+    public record GroupMemberResponse(
+            UserSummaryResponse user,
+            String role,
+            Instant joinedAt
+    ) {}
 }

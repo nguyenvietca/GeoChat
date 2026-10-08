@@ -14,6 +14,7 @@ import {
   getFriends,
   getIncomingFriendRequests,
   getOutgoingFriendRequests,
+  removeFriend,
   rejectFriendRequest,
 } from '../api/friendApi';
 import { Friend, FriendRequestItem } from '../types/friend';
@@ -49,6 +50,8 @@ export function FriendsScreen({ token, onBack, onMessageFriend, initialTab = 'fr
   const [refreshing, setRefreshing] = useState(false);
   const [busyRequestIds, setBusyRequestIds] = useState<number[]>([]);
   const busyRequestIdsRef = useRef(new Set<number>());
+  const [removingFriendIds, setRemovingFriendIds] = useState<number[]>([]);
+  const removingFriendIdsRef = useRef(new Set<number>());
   const [openingFriendId, setOpeningFriendId] = useState<number | null>(null);
   const openingFriendIdsRef = useRef(new Set<number>());
   const [error, setError] = useState('');
@@ -145,6 +148,27 @@ export function FriendsScreen({ token, onBack, onMessageFriend, initialTab = 'fr
     }
   };
 
+  const handleRemoveFriend = async (friend: Friend) => {
+    if (!token || removingFriendIdsRef.current.has(friend.userId)) {
+      return;
+    }
+
+    removingFriendIdsRef.current.add(friend.userId);
+    setRemovingFriendIds((ids) => [...ids, friend.userId]);
+    setError('');
+    setNotice('');
+    try {
+      await removeFriend(friend.userId, token);
+      setFriends((current) => current.filter((item) => item.userId !== friend.userId));
+      setNotice(`${friend.displayName} removed from friends.`);
+    } catch (removeError) {
+      setError(removeError instanceof ApiError ? removeError.message : 'Unable to remove this friend.');
+    } finally {
+      removingFriendIdsRef.current.delete(friend.userId);
+      setRemovingFriendIds((ids) => ids.filter((id) => id !== friend.userId));
+    }
+  };
+
   const activeItems: FriendRow[] = activeTab === 'friends'
     ? friends.map((friend) => ({ key: `friend-${friend.userId}`, userId: friend.userId, displayName: friend.displayName }))
     : (activeTab === 'incoming' ? incoming : outgoing).map((request) => ({
@@ -220,17 +244,30 @@ export function FriendsScreen({ token, onBack, onMessageFriend, initialTab = 'fr
               <View style={styles.row}>
                 <Text style={styles.displayName}>{item.displayName}</Text>
                 {activeTab === 'friends' ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Message ${item.displayName}`}
-                    style={[styles.messageButton, isOpening && styles.buttonDisabled]}
-                    onPress={() => void handleMessageFriend({ userId: item.userId, displayName: item.displayName })}
-                    disabled={openingFriendId !== null}
-                  >
-                    {isOpening
-                      ? <ActivityIndicator color="#102a2a" size="small" />
-                      : <Text style={styles.messageButtonText}>Message</Text>}
-                  </Pressable>
+                  <View style={styles.friendActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Message ${item.displayName}`}
+                      style={[styles.messageButton, isOpening && styles.buttonDisabled]}
+                      onPress={() => void handleMessageFriend({ userId: item.userId, displayName: item.displayName })}
+                      disabled={openingFriendId !== null || removingFriendIds.length > 0}
+                    >
+                      {isOpening
+                        ? <ActivityIndicator color="#102a2a" size="small" />
+                        : <Text style={styles.messageButtonText}>Message</Text>}
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${item.displayName}`}
+                      style={[styles.removeButton, removingFriendIds.includes(item.userId) && styles.buttonDisabled]}
+                      onPress={() => void handleRemoveFriend({ userId: item.userId, displayName: item.displayName })}
+                      disabled={removingFriendIds.length > 0 || openingFriendId !== null}
+                    >
+                      <Text style={styles.removeButtonText}>
+                        {removingFriendIds.includes(item.userId) ? 'Removing...' : 'Remove'}
+                      </Text>
+                    </Pressable>
+                  </View>
                 ) : null}
                 {activeTab === 'incoming' && request ? (
                   <View style={styles.actions}>
@@ -387,6 +424,24 @@ const styles = StyleSheet.create({
     color: '#102a2a',
     fontSize: 13,
     fontWeight: '700',
+  },
+  friendActions: {
+    flexDirection: 'row',
+    columnGap: 8,
+    marginTop: 10,
+  },
+  removeButton: {
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+  },
+  removeButtonText: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',

@@ -21,6 +21,7 @@ import org.springframework.web.context.WebApplicationContext;
 import java.time.Instant;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -169,6 +170,37 @@ class FriendIntegrationTest {
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].userId").value(userB.getId()))
                 .andExpect(jsonPath("$.data.items[0].username").value(userB.getUsername()));
+    }
+
+    @Test
+    void eitherFriendCanRemoveAnAcceptedFriendship() throws Exception {
+        User userA = createUser("friend-remove-a");
+        User userB = createUser("friend-remove-b");
+        String requestId = createRequest(userA, userB);
+        mockMvc.perform(post("/api/v1/friends/requests/" + requestId + "/accept")
+                        .header("Authorization", bearer(tokenFor(userB))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/friends/" + userB.getId())
+                        .header("Authorization", bearer(tokenFor(userA))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/friends").header("Authorization", bearer(tokenFor(userA))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(0));
+        mockMvc.perform(get("/api/v1/friends").header("Authorization", bearer(tokenFor(userB))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(0));
+    }
+
+    @Test
+    void cannotRemoveSomeoneWhoIsNotAFriend() throws Exception {
+        User userA = createUser("friend-remove-not-a");
+        User userB = createUser("friend-remove-not-b");
+
+        mockMvc.perform(delete("/api/v1/friends/" + userB.getId())
+                        .header("Authorization", bearer(tokenFor(userA))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

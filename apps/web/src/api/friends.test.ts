@@ -6,6 +6,7 @@ import {
   getFriends,
   getIncomingFriendRequests,
   getOutgoingFriendRequests,
+  removeFriend,
   rejectFriendRequest,
   sendFriendRequest,
 } from './friends';
@@ -38,5 +39,11 @@ describe('friend API', () => {
     expect(mockApiRequest).toHaveBeenNthCalledWith(2, '/api/v1/friends/requests/21/accept', { method: 'POST', token: 'jwt' });
     expect(mockApiRequest).toHaveBeenNthCalledWith(3, '/api/v1/friends/requests/22/reject', { method: 'POST', token: 'jwt' });
     expect(mockApiRequest).toHaveBeenNthCalledWith(4, '/api/v1/friends/requests/23/cancel', { method: 'POST', token: 'jwt' });
+  });
+
+  it('removes a friend using the authenticated DELETE endpoint', () => {
+    removeFriend(18, 'jwt');
+
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/friends/18', { method: 'DELETE', token: 'jwt' });
   });
 });
