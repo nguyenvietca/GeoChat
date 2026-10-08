@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { getCurrentUser, loginUser, registerUser } from '../api/authApi';
 import { clearTokens, getToken, saveTokens } from '../storage/tokenStorage';
 import { registerForPushNotifications, unregisterCurrentPushDevice } from '../services/pushNotificationService';
+import { disconnectAllChatWebSockets } from '../services/chatWebSocketService';
+import { setUnauthorizedHandler } from '../api/client';
 import { LoginRequest, RegisterRequest, User } from '../types/auth';
 
 type AuthContextValue = {
@@ -23,6 +25,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const clearSession = useCallback(async () => {
+    disconnectAllChatWebSockets();
+    await clearTokens();
+    setUser(null);
+    setToken(null);
+  }, []);
+
   const refreshSession = async () => {
     const currentToken = await getToken();
 
@@ -39,9 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(currentToken);
       void registerForPushNotifications(currentToken);
     } catch (_error) {
-      await clearTokens();
-      setUser(null);
-      setToken(null);
+      await clearSession();
     } finally {
       setIsLoading(false);
     }
@@ -49,7 +56,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     void refreshSession();
-  }, []);
+  }, [clearSession]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      void clearSession().catch(() => {
+        setUser(null);
+        setToken(null);
+      });
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [clearSession]);
 
   const login = async (payload: LoginRequest) => {
     const authData = await loginUser(payload);
@@ -69,9 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (token) {
       void unregisterCurrentPushDevice(token).catch(() => undefined);
     }
-    await clearTokens();
-    setUser(null);
-    setToken(null);
+    await clearSession();
   };
 
   const updateUser = useCallback((updatedUser: User) => {

@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
@@ -24,6 +25,7 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
@@ -32,6 +34,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geochat.auth.security.JwtService;
 import com.geochat.chat.dto.OpenDirectChatRequest;
+import com.geochat.chat.dto.SendMessageRequest;
 import com.geochat.chat.service.ChatService;
 import com.geochat.friend.entity.FriendRequest;
 import com.geochat.friend.entity.FriendRequestStatus;
@@ -60,6 +63,12 @@ class ChatWebSocketIntegrationTest {
 
 	@Autowired
 	private ChatService chatService;
+
+	@Autowired
+	private SimpUserRegistry simpUserRegistry;
+
+	@Value("${jwt.secret}")
+	private String jwtSecret;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -126,6 +135,29 @@ class ChatWebSocketIntegrationTest {
 	}
 
 	@Test
+	void validJwtForDeletedUserIsRejected() {
+		User alice = createUser("alice-deleted-ws", "Alice");
+		String token = tokenFor(alice);
+		userRepository.delete(alice);
+
+		assertThatThrownBy(() -> connectSession(token)).isInstanceOf(Exception.class);
+	}
+
+	@Test
+	void websocketConnectionClosesWhenJwtExpires() throws Exception {
+		User alice = createUser("alice-expiring-ws", "Alice");
+		String shortLivedToken = new JwtService(jwtSecret, 1000).generateToken(alice.getId(), alice.getUsername());
+		StompSession session = connectSession(shortLivedToken);
+
+		long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(5);
+		while (session.isConnected() && System.currentTimeMillis() < deadline) {
+			Thread.sleep(50);
+		}
+
+		assertThat(session.isConnected()).isFalse();
+	}
+
+	@Test
 	void restSentMessageIsBroadcastToConversationSubscribers() throws Exception {
 		User alice = createUser("alice-rest-ws", "Alice");
 		User bob = createUser("bob-rest-ws", "Bob");
@@ -165,6 +197,41 @@ class ChatWebSocketIntegrationTest {
 	}
 
 	@Test
+	void persistedMessageSendsOneUserScopedNotificationToItsRecipient() throws Exception {
+		User alice = createUser("alice-notification-ws", "Alice");
+		User bob = createUser("bob-notification-ws", "Bob");
+		markFriends(alice, bob);
+		Long conversationId = openConversation(alice, bob);
+
+		StompSession bobSession = connectSession(tokenFor(bob));
+		BlockingQueue<Map<String, Object>> bobNotifications = new LinkedBlockingQueue<>();
+		bobSession.subscribe("/user/queue/notifications", new StompFrameHandler() {
+			@Override
+			public Type getPayloadType(StompHeaders headers) {
+				return Map.class;
+			}
+
+			@Override
+			public void handleFrame(StompHeaders headers, Object payload) {
+				bobNotifications.add((Map<String, Object>) payload);
+			}
+		});
+		assertThat(simpUserRegistry.getUser(bob.getUsername())).isNotNull();
+
+		var savedMessage = chatService.sendMessage(alice.getUsername(), conversationId,
+				new SendMessageRequest("Notification event"));
+		Map<String, Object> notification = bobNotifications.poll(10, TimeUnit.SECONDS);
+
+		assertThat(notification).isNotNull();
+		assertThat(notification.get("id")).isNotNull();
+		assertThat(notification.get("recipientId")).isEqualTo(bob.getId().intValue());
+		assertThat(notification.get("type")).isEqualTo("NEW_MESSAGE");
+		assertThat(notification.get("referenceId")).isEqualTo(savedMessage.messageId().intValue());
+		assertThat(notification.get("conversationId")).isEqualTo(conversationId.intValue());
+		assertThat(bobNotifications).isEmpty();
+	}
+
+	@Test
 	void nonParticipantCannotSendToConversation() throws Exception {
 		User alice = createUser("alice-nonparticipant", "Alice");
 		User bob = createUser("bob-nonparticipant", "Bob");
@@ -181,6 +248,39 @@ class ChatWebSocketIntegrationTest {
 
 		var after = chatService.listMessages(alice.getUsername(), conversationId, 50);
 		assertThat(after.items()).isEmpty();
+	}
+
+	@Test
+	void participantCannotPublishForgedMessageDirectlyToConversationTopic() throws Exception {
+		User alice = createUser("alice-forged-ws", "Alice");
+		User bob = createUser("bob-forged-ws", "Bob");
+		markFriends(alice, bob);
+		Long conversationId = openConversation(alice, bob);
+
+		StompSession aliceSession = connectSession(tokenFor(alice));
+		StompSession bobSession = connectSession(tokenFor(bob));
+		BlockingQueue<Map<String, Object>> bobQueue = new LinkedBlockingQueue<>();
+		bobSession.subscribe("/topic/chat/" + conversationId, new StompFrameHandler() {
+			@Override
+			public Type getPayloadType(StompHeaders headers) {
+				return Map.class;
+			}
+
+			@Override
+			public void handleFrame(StompHeaders headers, Object payload) {
+				bobQueue.add((Map<String, Object>) payload);
+			}
+		});
+
+		aliceSession.send("/topic/chat/" + conversationId, Map.of(
+				"messageId", 999,
+				"conversationId", conversationId,
+				"senderId", bob.getId(),
+				"content", "Forged message",
+				"createdAt", Instant.now().toString()));
+
+		assertThat(bobQueue.poll(1, TimeUnit.SECONDS)).isNull();
+		assertThat(chatService.listMessages(alice.getUsername(), conversationId, 50).items()).isEmpty();
 	}
 
 	private Long openConversation(User alice, User bob) {

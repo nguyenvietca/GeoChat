@@ -15,6 +15,7 @@ import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -96,7 +97,7 @@ public class FriendRequestService {
                 .orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
 
         if (!request.getReceiverId().equals(currentUser.getId())) {
-            throw new IllegalArgumentException("You are not allowed to modify this request");
+            throw new AccessDeniedException("You are not allowed to modify this request");
         }
         if (request.getStatus() != FriendRequestStatus.PENDING) {
             throw new IllegalArgumentException("Friend request is not pending");
@@ -125,7 +126,7 @@ public class FriendRequestService {
                 .orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
 
         if (!request.getReceiverId().equals(currentUser.getId())) {
-            throw new IllegalArgumentException("You are not allowed to modify this request");
+            throw new AccessDeniedException("You are not allowed to modify this request");
         }
         if (request.getStatus() != FriendRequestStatus.PENDING) {
             throw new IllegalArgumentException("Friend request is not pending");
@@ -146,7 +147,7 @@ public class FriendRequestService {
                 .orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
 
         if (!request.getSenderId().equals(currentUser.getId())) {
-            throw new IllegalArgumentException("You are not allowed to modify this request");
+            throw new AccessDeniedException("You are not allowed to modify this request");
         }
         if (request.getStatus() != FriendRequestStatus.PENDING) {
             throw new IllegalArgumentException("Friend request is not pending");

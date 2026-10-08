@@ -21,6 +21,7 @@ import {
   PushNotificationDestination,
 } from './notificationNavigation';
 import { addPushNotificationListeners } from '../services/pushNotificationService';
+import { subscribeToNotifications } from '../services/chatWebSocketService';
 
 type AuthenticatedScreen =
   | 'home'
@@ -118,6 +119,45 @@ export function AppNavigator() {
       active = false;
     };
   }, [isAuthenticated, screen, token]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !token || !user) {
+      return undefined;
+    }
+
+    let active = true;
+    const cleanup = subscribeToNotifications(token, {
+      onNotification: (notification) => {
+        if (!active || notification.recipientId !== user.id) {
+          return;
+        }
+        setNotificationRefreshVersion((version) => version + 1);
+        void getUnreadNotificationCount(token)
+          .then((response) => {
+            if (active) {
+              setNotificationCount(response.unreadCount);
+            }
+          })
+          .catch(() => undefined);
+      },
+      onStateChange: (state) => {
+        if (active && state === 'connected') {
+          void getUnreadNotificationCount(token)
+            .then((response) => {
+              if (active) {
+                setNotificationCount(response.unreadCount);
+              }
+            })
+            .catch(() => undefined);
+        }
+      },
+    });
+
+    return () => {
+      active = false;
+      cleanup();
+    };
+  }, [isAuthenticated, token, user?.id]);
 
   const startDirectConversation = async (friend: Friend) => {
     if (!token) {

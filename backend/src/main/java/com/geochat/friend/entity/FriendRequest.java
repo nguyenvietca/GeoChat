@@ -8,14 +8,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 
 @Entity
 @Table(
         name = "friend_requests",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"sender_id", "receiver_id", "status"}),
         indexes = {
                 @jakarta.persistence.Index(name = "idx_friend_requests_sender_status", columnList = "sender_id, status"),
                 @jakarta.persistence.Index(name = "idx_friend_requests_receiver_status", columnList = "receiver_id, status"),

@@ -51,6 +51,10 @@ public class JwtService {
 		return claims.get("userId", Number.class).longValue();
 	}
 
+	public Instant getExpiration(String token) {
+		return parseClaims(token).getExpiration().toInstant();
+	}
+
 	private Claims parseClaims(String token) {
 		return Jwts.parser().verifyWith(getSigningKey()).build().parseSignedClaims(token).getPayload();
 	}

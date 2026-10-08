@@ -13,7 +13,12 @@
  */
 
 import { Client } from '@stomp/stompjs';
-import { subscribeToConversation, buildChatWebSocketUrl } from '../services/chatWebSocketService';
+import {
+  subscribeToConversation,
+  subscribeToNotifications,
+  buildChatWebSocketUrl,
+  disconnectAllChatWebSockets,
+} from '../services/chatWebSocketService';
 import type { ChatConnectionState } from '../services/chatWebSocketService';
 
 // Access the mocked Client
@@ -56,11 +61,42 @@ function makeMessage(overrides: Partial<{
   });
 }
 
+function makeNotification(overrides: Partial<{
+  id: number;
+  recipientId: number;
+  type: string;
+  title: string;
+  message: string;
+  referenceType: string;
+  referenceId: number;
+  conversationId: number | null;
+  read: boolean;
+  createdAt: string;
+  readAt: string | null;
+}> = {}) {
+  return JSON.stringify({
+    id: 4,
+    recipientId: 9,
+    type: 'NEW_MESSAGE',
+    title: 'New message',
+    message: 'A message arrived.',
+    referenceType: 'MESSAGE',
+    referenceId: 20,
+    conversationId: 30,
+    read: false,
+    createdAt: '2026-10-06T12:00:00Z',
+    readAt: null,
+    ...overrides,
+  });
+}
+
 describe('chatWebSocketService', () => {
   beforeEach(() => {
     lastClientInstance = null;
     jest.clearAllMocks();
   });
+
+  afterEach(() => disconnectAllChatWebSockets());
 
   // -------------------------------------------------------------------------
   // buildChatWebSocketUrl
@@ -111,6 +147,34 @@ describe('chatWebSocketService', () => {
       // The mock Client auto-calls onConnect which calls subscribe
       // Verify via message delivery (indirect)
       expect(lastClientInstance).not.toBeNull();
+    });
+  });
+
+  describe('notification subscription', () => {
+    it('authenticates, parses stable notification IDs, and replaces the subscription after reconnect', () => {
+      const received: unknown[] = [];
+      const states: ChatConnectionState[] = [];
+      subscribeToNotifications('notification-token', {
+        onNotification: (notification) => received.push(notification),
+        onStateChange: (state) => states.push(state),
+      });
+
+      expect(lastClientInstance?.connectHeaders?.Authorization).toBe('Bearer notification-token');
+      expect(states).toContain('connected');
+      const client = lastClientInstance as unknown as {
+        _simulateMessage: (body: string) => void;
+        _simulateDisconnect: () => void;
+        onConnect: (() => void) | null;
+      };
+      client._simulateMessage(makeNotification());
+      client._simulateMessage('{invalid');
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ id: 4, recipientId: 9, conversationId: 30 });
+
+      client._simulateDisconnect();
+      client.onConnect?.();
+      expect(states).toContain('reconnecting');
+      expect(states.filter((state) => state === 'connected')).toHaveLength(2);
     });
   });
 
@@ -250,6 +314,20 @@ describe('chatWebSocketService', () => {
 
       // No new states should have been pushed after teardown
       expect(states).toEqual(statesAfterSetup);
+    });
+
+    it('disconnects active sockets when the authenticated session ends', () => {
+      const received: unknown[] = [];
+      subscribeToConversation(10, 'tok', {
+        onMessage: (message) => received.push(message),
+        onStateChange: () => undefined,
+      });
+      const client = lastClientInstance as unknown as { _simulateMessage: (body: string) => void };
+
+      disconnectAllChatWebSockets();
+      client._simulateMessage(makeMessage({ conversationId: 10 }));
+
+      expect(received).toHaveLength(0);
     });
   });
 });

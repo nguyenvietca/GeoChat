@@ -13,6 +13,7 @@ export type AppNotification = {
   message: string;
   referenceType: NotificationReferenceType;
   referenceId: number;
+  conversationId: number | null;
   read: boolean;
   createdAt: string;
   readAt: string | null;

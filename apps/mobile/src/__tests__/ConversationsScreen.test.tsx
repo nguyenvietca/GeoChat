@@ -29,6 +29,7 @@ const makeConversation = (id: number, displayName: string, username: string) => 
   type: 'DIRECT',
   participant: { userId: id + 100, username, displayName },
   updatedAt: '2024-06-01T10:00:00Z',
+  lastMessage: null,
 });
 
 describe('ConversationsScreen', () => {

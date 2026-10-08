@@ -9,6 +9,7 @@ export type Conversation = {
   type: string;
   participant: ChatUserSummary;
   updatedAt: string;
+  lastMessage: string | null;
 };
 
 export type ConversationListResponse = {

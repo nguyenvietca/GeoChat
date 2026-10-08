@@ -114,6 +114,44 @@ class FriendIntegrationTest {
     }
 
     @Test
+    void onlyTheRequestParticipantsCanModifyAFriendRequest() throws Exception {
+        User sender = createUser("friend-auth-sender");
+        User receiver = createUser("friend-auth-receiver");
+        User otherUser = createUser("friend-auth-other");
+        String requestId = createRequest(sender, receiver);
+
+        mockMvc.perform(post("/api/v1/friends/requests/" + requestId + "/accept")
+                        .header("Authorization", bearer(tokenFor(sender))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/friends/requests/" + requestId + "/accept")
+                        .header("Authorization", bearer(tokenFor(otherUser))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/friends/requests/" + requestId + "/cancel")
+                        .header("Authorization", bearer(tokenFor(receiver))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/friends/requests/" + requestId + "/accept")
+                        .header("Authorization", bearer(tokenFor(receiver))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void rejectedFriendRequestCanBeSentAndRejectedAgain() throws Exception {
+        User sender = createUser("friend-repeat-sender");
+        User receiver = createUser("friend-repeat-receiver");
+        String firstRequestId = createRequest(sender, receiver);
+
+        mockMvc.perform(post("/api/v1/friends/requests/" + firstRequestId + "/reject")
+                        .header("Authorization", bearer(tokenFor(receiver))))
+                .andExpect(status().isOk());
+
+        String secondRequestId = createRequest(sender, receiver);
+        mockMvc.perform(post("/api/v1/friends/requests/" + secondRequestId + "/reject")
+                        .header("Authorization", bearer(tokenFor(receiver))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value(FriendRequestStatus.REJECTED.name()));
+    }
+
+    @Test
     void friendListExcludesPendingAndSelf() throws Exception {
         User userA = createUser("friend-a");
         User userB = createUser("friend-b");

@@ -189,6 +189,16 @@ class AuthFlowIntegrationTest {
 	}
 
 	@Test
+	void protectedEndpointRejectsTokenForDeletedUser() throws Exception {
+		Instant now = Instant.now();
+		String token = Jwts.builder().subject("deleted-user").claim("userId", -1L)
+				.issuedAt(Date.from(now)).expiration(Date.from(now.plusSeconds(60)))
+				.signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8))).compact();
+
+		assertUnauthorizedWithToken(token);
+	}
+
+	@Test
 	void jwtServiceRejectsWeakSecret() {
 		assertThrows(IllegalStateException.class, () -> new JwtService("weak-secret", 3600000));
 	}

@@ -42,6 +42,12 @@ const statusDetails: Record<number, { code: ApiErrorCode; message: string }> = {
   500: { code: 'server', message: 'The server encountered a problem. Please try again.' },
 };
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
@@ -57,6 +63,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });
+    if (response.status === 401) {
+      unauthorizedHandler?.();
+    }
 
     let payload: ApiEnvelope<T> | null = null;
     const responseBody = await response.text();

@@ -33,6 +33,7 @@ function makeNotification(overrides: Partial<AppNotification> = {}): AppNotifica
     message: 'Alice sent you a friend request.',
     referenceType: 'FRIEND_REQUEST',
     referenceId: 42,
+    conversationId: null,
     read: false,
     createdAt: new Date().toISOString(),
     readAt: null,

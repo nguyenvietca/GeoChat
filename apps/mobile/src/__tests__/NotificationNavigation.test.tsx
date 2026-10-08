@@ -23,6 +23,7 @@ function makeNotification(overrides: Partial<AppNotification> = {}): AppNotifica
     message: 'A friend request arrived.',
     referenceType: 'FRIEND_REQUEST',
     referenceId: 9,
+    conversationId: null,
     read: false,
     createdAt: '2026-10-05T10:00:00Z',
     readAt: null,
