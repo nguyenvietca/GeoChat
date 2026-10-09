@@ -135,7 +135,7 @@ export function parseGroupManagementEvent(body: string): GroupManagementEvent | 
     const group = value.group;
     const groupInfo = group as Partial<GroupManagementEvent['group']>;
     const owner = groupInfo.owner;
-    const eventTypes: GroupManagementEventType[] = ['GROUP_RENAMED', 'MEMBER_ADDED', 'MEMBER_REMOVED', 'MEMBER_LEFT'];
+    const eventTypes: GroupManagementEventType[] = ['GROUP_RENAMED', 'MEMBER_ADDED', 'MEMBER_REMOVED', 'MEMBER_LEFT', 'GROUP_DELETED'];
     if (
       !eventTypes.includes(value.type as GroupManagementEventType)
       || !Number.isSafeInteger(groupInfo.groupId) || Number(groupInfo.groupId) <= 0

@@ -129,7 +129,7 @@ export type GroupMember = {
 
 export type GroupMembersResponse = { items: GroupMember[] };
 
-export type GroupManagementEventType = 'GROUP_RENAMED' | 'MEMBER_ADDED' | 'MEMBER_REMOVED' | 'MEMBER_LEFT';
+export type GroupManagementEventType = 'GROUP_RENAMED' | 'MEMBER_ADDED' | 'MEMBER_REMOVED' | 'MEMBER_LEFT' | 'GROUP_DELETED';
 
 export type GroupManagementEvent = {
   type: GroupManagementEventType;

@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { getFriends, sendFriendRequest } from '../../api/friends';
 import { openContextualConversation, openDirectConversation } from '../../api/chats';
-import { addGroupMembers, getGroupMembers, GROUP_NAME_MAX_LENGTH, leaveGroup, MAX_GROUP_MEMBERS, removeGroupMember, renameGroup } from '../../api/groups';
+import { addGroupMembers, deleteGroup, getGroupMembers, GROUP_NAME_MAX_LENGTH, leaveGroup, MAX_GROUP_MEMBERS, removeGroupMember, renameGroup } from '../../api/groups';
 import { FriendSummary, GroupInfo, GroupMember } from '../../types';
 
 type GroupInfoPanelProps = {
@@ -15,7 +15,7 @@ type GroupInfoPanelProps = {
   onGroupChanged: (group: GroupInfo) => void;
 };
 
-type Confirmation = { action: 'remove'; member: GroupMember } | { action: 'leave' };
+type Confirmation = { action: 'remove'; member: GroupMember } | { action: 'leave' } | { action: 'delete' };
 
 export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, onOpenConversation, onGroupChanged }: GroupInfoPanelProps) {
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -176,14 +176,16 @@ export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, o
     if (!confirmation || leaving || removingId !== null) return;
     setError('');
     setNotice('');
-    if (confirmation.action === 'leave') {
+    if (confirmation.action === 'leave' || confirmation.action === 'delete') {
       setLeaving(true);
       try {
-        await leaveGroup(group.groupId, token);
+        if (confirmation.action === 'leave') await leaveGroup(group.groupId, token);
+        else await deleteGroup(group.groupId, token);
         setConfirmation(null);
         onLeft();
       } catch (leaveError) {
-        setError(leaveError instanceof ApiError ? leaveError.message : 'Unable to leave this group.');
+        setError(leaveError instanceof ApiError ? leaveError.message
+          : confirmation.action === 'leave' ? 'Unable to leave this group.' : 'Unable to delete this group.');
         setLeaving(false);
       }
       return;
@@ -286,6 +288,9 @@ export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, o
             </fieldset>
           ) : null}
           <p className="group-owner-note">Owners cannot leave until ownership transfer is supported.</p>
+          <button className="group-leave-button" type="button" onClick={() => setConfirmation({ action: 'delete' })} disabled={leaving}>
+            Delete group
+          </button>
         </>
       ) : (
         <button className="group-leave-button" type="button" onClick={() => setConfirmation({ action: 'leave' })} disabled={leaving}>
@@ -295,17 +300,19 @@ export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, o
       {confirmation ? (
         <div className="group-confirm-backdrop">
           <section className="group-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="group-confirm-title">
-            <h2 id="group-confirm-title">{confirmation.action === 'leave' ? 'Leave this group?' : 'Remove this member?'}</h2>
+            <h2 id="group-confirm-title">{confirmation.action === 'leave' ? 'Leave this group?' : confirmation.action === 'delete' ? 'Delete this group?' : 'Remove this member?'}</h2>
             <p>{confirmation.action === 'leave'
               ? 'You will lose access to this conversation and its messages.'
-              : `${confirmation.member.user.displayName} will lose access to this group and its messages.`}</p>
+              : confirmation.action === 'delete'
+                ? 'The group, all its messages, and every membership will be permanently deleted for everyone.'
+                : `${confirmation.member.user.displayName} will lose access to this group and its messages.`}</p>
             {error ? <p className="inline-error" role="alert">{error}</p> : null}
             <div className="group-confirm-actions">
               <button className="quiet-light-button" type="button" onClick={() => { setConfirmation(null); setError(''); }}
                 disabled={leaving || removingId !== null}>Cancel</button>
               <button className="group-confirm-danger" type="button" onClick={() => void handleConfirm()}
                 disabled={leaving || removingId !== null}>
-                {leaving || removingId !== null ? 'Working…' : confirmation.action === 'leave' ? 'Leave group' : 'Remove member'}
+                {leaving || removingId !== null ? 'Working…' : confirmation.action === 'leave' ? 'Leave group' : confirmation.action === 'delete' ? 'Delete group' : 'Remove member'}
               </button>
             </div>
           </section>

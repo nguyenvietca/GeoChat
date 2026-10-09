@@ -515,3 +515,7 @@ Tài liệu hợp đồng: `docs/technical/realtime.md`, `docs/technical/securit
 - Đã từng gặp lỗi 500 một lần trên server đang chạy mà không tái hiện lại được; nếu xuất hiện lại cần stack trace từ console server.
 - Các tài khoản thử `zzprobe_*` còn trong DB dev (không có API xóa).
 - Chưa thực hiện kiểm thử thủ công ba tài khoản theo mục 17 trên trình duyệt.
+
+### Bổ sung lần 2: layout giật + xóa group
+- **Nguyên nhân giật:** `useNavigate()` đổi identity mỗi lần đổi route, mà `load()` của `MessagesPage` phụ thuộc vào nó → mỗi lần click hội thoại là hiện spinner "Loading conversations…" và tải lại toàn bộ (conversations, friends, N lần `getGroup`), đồng thời đăng ký lại subscription group-events. Đã giữ `navigate` trong ref, `load` chỉ phụ thuộc `token`; mở chat từ friend cập nhật danh sách cục bộ, không gọi lại API. Thêm `titleHint` để header không nháy tên, `scrollbar-gutter: stable`, và `min-width` cho nhãn presence.
+- **Group không thành viên:** `listConversations` trước đây bỏ qua group chỉ có owner (nên "biến mất"); nay vẫn hiển thị. Thêm `DELETE /api/v1/groups/{groupId}` (chỉ owner) xóa tin nhắn, thành viên và group, phát `GROUP_DELETED` tới từng thành viên (`GroupManagementEvent.member` = người nhận). Web: nút "Delete group" có dialog xác nhận cho owner; form tạo group yêu cầu chọn ít nhất 1 bạn (backend vẫn cho tạo group chỉ có owner để tương thích Mobile).

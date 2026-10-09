@@ -4,7 +4,7 @@ import App from '../../App';
 import { getCurrentUser } from '../../api/auth';
 import { getFriends } from '../../api/friends';
 import { getConversationDetail, getConversationPresence, getConversations, getMessages, openContextualConversation, openDirectConversation } from '../../api/chats';
-import { addGroupMembers, createGroup, getGroup, getGroupMembers, leaveGroup, removeGroupMember, renameGroup } from '../../api/groups';
+import { addGroupMembers, createGroup, deleteGroup, getGroup, getGroupMembers, leaveGroup, removeGroupMember, renameGroup } from '../../api/groups';
 import { ChatMessage, ConversationDetail, GroupInfo, GroupManagementEvent, User } from '../../types';
 
 type Handlers = { onMessage: (message: ChatMessage) => void };
@@ -39,6 +39,7 @@ vi.mock('../../api/chats', () => ({
 vi.mock('../../api/groups', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/groups')>()),
   createGroup: vi.fn(),
+  deleteGroup: vi.fn(),
   getGroup: vi.fn(),
   getGroupMembers: vi.fn(),
   leaveGroup: vi.fn(),
@@ -210,6 +211,60 @@ describe('web messages split view and group chat', () => {
 
     expect(await screen.findByText(/Owners cannot leave/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Leave group' })).toBeNull();
+  });
+
+  it('lets the owner delete a group after confirming and clears the selection', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [groupConversation] });
+    vi.mocked(getGroup).mockResolvedValue(groupInfo(9));
+    vi.mocked(deleteGroup).mockResolvedValue(undefined);
+    await openMessages('/app/chat/50');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Group info' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete group' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete this group?' });
+    expect(deleteGroup).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete group' }));
+
+    await waitFor(() => expect(deleteGroup).toHaveBeenCalledWith(50, 'session-token'));
+    expect(await screen.findByText('Select a friend or group')).toBeTruthy();
+  });
+
+  it('removes a group deleted by its owner from the list and closes it', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [groupConversation] });
+    await openMessages('/app/chat/50');
+    await screen.findAllByText('Trip crew');
+
+    const handlers = socket.groupEventHandlers as { onEvent: (event: GroupManagementEvent) => void };
+    act(() => handlers.onEvent({
+      type: 'GROUP_DELETED', group: { ...groupInfo(22), memberCount: 0 },
+      member: { user: mira, role: 'MEMBER', joinedAt: '' },
+    }));
+
+    expect(await screen.findByText('Select a friend or group')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Trip crew/ })).toBeNull();
+  });
+
+  it('requires at least one friend before creating a group', async () => {
+    await openMessages();
+    fireEvent.click(await screen.findByRole('button', { name: 'Create group' }));
+    const form = await screen.findByRole('form', { name: 'Create group' });
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'Solo' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Create group' }));
+
+    expect(await screen.findByText('Select at least one friend to add to the group.')).toBeTruthy();
+    expect(createGroup).not.toHaveBeenCalled();
+  });
+
+  it('does not reload the conversation list when switching conversations', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [directConversation, groupConversation] });
+    await openMessages();
+    fireEvent.click(await screen.findByRole('link', { name: /Earlier note/ }));
+    await screen.findByLabelText('Message');
+    fireEvent.click(await screen.findByRole('link', { name: /Trip crew/ }));
+    await waitFor(() => expect(socket.handlers.has(50)).toBe(true));
+
+    expect(getConversations).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Loading conversations…')).toBeNull();
   });
 
   it('shows management controls only to the group owner', async () => {

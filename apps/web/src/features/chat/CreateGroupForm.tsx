@@ -28,6 +28,7 @@ export function CreateGroupForm({ friends, currentUserId, token, onCreated, onCa
     const trimmed = name.trim();
     if (!trimmed) { setError('Enter a group name.'); return; }
     if (trimmed.length > GROUP_NAME_MAX_LENGTH) { setError(`Group names must be ${GROUP_NAME_MAX_LENGTH} characters or fewer.`); return; }
+    if (selected.length === 0) { setError('Select at least one friend to add to the group.'); return; }
     if (creating) return;
     setCreating(true);
     setError('');

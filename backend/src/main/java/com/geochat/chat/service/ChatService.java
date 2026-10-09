@@ -165,11 +165,13 @@ public class ChatService {
 			}
 			List<ConversationParticipant> others = conversationParticipantRepository
 					.findOtherParticipants(conversation.getId(), currentUser.getId());
-			if (others.isEmpty()) {
+			boolean ownerOnlyGroup = others.isEmpty() && "GROUP".equals(conversation.getType());
+			if (others.isEmpty() && !ownerOnlyGroup) {
 				continue;
 			}
 
-			User otherUser = userRepository.findById(others.get(0).getUserId()).orElse(null);
+			User otherUser = ownerOnlyGroup ? currentUser
+					: userRepository.findById(others.get(0).getUserId()).orElse(null);
 			if (otherUser == null) {
 				continue;
 			}

@@ -367,6 +367,36 @@ class GroupChatIntegrationTest {
                                 .andReturn().getResponse().getStatus();
         }
 
+    @Test
+    void ownerOnlyGroupIsListedAndOnlyTheOwnerCanDeleteItWithItsMessagesAndMembers() throws Exception {
+        User owner = createUser("group-delete-owner", "Owner");
+        User member = createUser("group-delete-member", "Member");
+        markFriends(owner, member);
+        long emptyGroupId = createGroup(owner, List.of());
+        mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].conversationId").value(emptyGroupId));
+        long groupId = createGroup(owner, List.of(member.getId()));
+        mockMvc.perform(post("/api/v1/chats/{groupId}/messages", groupId)
+                        .header("Authorization", bearer(member)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"bye\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/groups/{groupId}", groupId).header("Authorization", bearer(member)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/groups/{groupId}", groupId).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+
+        assertThat(conversationRepository.existsById(groupId)).isFalse();
+        assertThat(participantRepository.countByConversationId(groupId)).isZero();
+        assertThat(messageRepository.countByConversationId(groupId)).isZero();
+        mockMvc.perform(get("/api/v1/groups/{groupId}", groupId).header("Authorization", bearer(member)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/v1/groups/{groupId}", groupId).header("Authorization", bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
     private String memberBody(List<Long> memberIds) throws Exception {
         return objectMapper.writeValueAsString(java.util.Map.of("memberIds", memberIds));
     }

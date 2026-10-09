@@ -48,6 +48,13 @@ public class GroupController {
         return ApiResponse.ok(groupService.renameGroup(principal.getUsername(), groupId, request));
     }
 
+    @DeleteMapping("/{groupId}")
+    public ApiResponse<Void> deleteGroup(@AuthenticationPrincipal UserDetails principal,
+                                         @PathVariable Long groupId) {
+        groupService.deleteGroup(principal.getUsername(), groupId);
+        return ApiResponse.ok(null);
+    }
+
     @GetMapping("/{groupId}/members")
     public ApiResponse<GroupMembersResponse> getMembers(@AuthenticationPrincipal UserDetails principal,
                                                         @PathVariable Long groupId) {

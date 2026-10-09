@@ -12,6 +12,7 @@ import com.geochat.chat.entity.Conversation;
 import com.geochat.chat.entity.ConversationParticipant;
 import com.geochat.chat.repository.ConversationParticipantRepository;
 import com.geochat.chat.repository.ConversationRepository;
+import com.geochat.chat.repository.MessageRepository;
 import com.geochat.friend.repository.FriendRequestRepository;
 import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
@@ -42,7 +43,10 @@ public class GroupService {
     private final ApplicationEventPublisher applicationEventPublisher;
     private final int maxGroupMembers;
 
+    private final MessageRepository messageRepository;
+
     public GroupService(ConversationRepository conversationRepository,
+                        MessageRepository messageRepository,
                         ConversationParticipantRepository participantRepository,
                         UserRepository userRepository,
                         FriendRequestRepository friendRequestRepository,
@@ -54,6 +58,7 @@ public class GroupService {
         this.friendRequestRepository = friendRequestRepository;
         this.applicationEventPublisher = applicationEventPublisher;
         this.maxGroupMembers = maxGroupMembers;
+        this.messageRepository = messageRepository;
     }
 
     @Transactional
@@ -251,6 +256,29 @@ public class GroupService {
         GroupInfoResponse response = toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
         applicationEventPublisher.publishEvent(new GroupManagementEvent("MEMBER_REMOVED", response, removedMember));
         return response;
+    }
+
+    @Transactional
+    public void deleteGroup(String username, Long groupId) {
+        Conversation conversation = requireGroupMember(username, groupId, true);
+        User owner = requireOwner(conversation, username);
+        var participants = participantRepository.findByConversationIdOrderByIdAsc(groupId);
+        Map<Long, User> users = userRepository.findAllById(participants.stream()
+                        .map(ConversationParticipant::getUserId).toList()).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+        GroupInfoResponse snapshot = toGroupInfo(conversation, owner, 0);
+        List<GroupMemberResponse> formerMembers = participants.stream()
+                .filter(participant -> users.containsKey(participant.getUserId()))
+                .map(participant -> new GroupMemberResponse(toUserSummary(users.get(participant.getUserId())),
+                        participant.getRole(), participant.getCreatedAt()))
+                .toList();
+
+        messageRepository.deleteAllByConversationId(groupId);
+        participantRepository.deleteAll(participants);
+        conversationRepository.delete(conversation);
+        for (GroupMemberResponse member : formerMembers) {
+            applicationEventPublisher.publishEvent(new GroupManagementEvent("GROUP_DELETED", snapshot, member));
+        }
     }
 
     private User requireOwner(Conversation conversation, String username) {

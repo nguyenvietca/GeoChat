@@ -14,6 +14,7 @@ const MAX_MESSAGE_LENGTH = 5000;
 type ChatPanelProps = {
   conversationId: number;
   groupInfo: GroupInfo | null;
+  titleHint?: string;
   onBack: () => void;
   onLeftGroup: () => void;
   onGroupChanged: (group: GroupInfo) => void;
@@ -21,7 +22,7 @@ type ChatPanelProps = {
 };
 
 // Rendered with key={conversationId} so switching conversations resets all state and subscriptions.
-export function ChatPanel({ conversationId, groupInfo, onBack, onLeftGroup, onGroupChanged, onOpenConversation }: ChatPanelProps) {
+export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeftGroup, onGroupChanged, onOpenConversation }: ChatPanelProps) {
   const { token, user } = useAuth();
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [group, setGroup] = useState<GroupInfo | null>(null);
@@ -226,7 +227,7 @@ export function ChatPanel({ conversationId, groupInfo, onBack, onLeftGroup, onGr
 
   const isGroup = conversation?.type === 'GROUP';
   const participant = conversation?.participants.find((item) => item.userId !== user?.id);
-  const title = isGroup ? group?.name ?? 'Group' : participant?.displayName ?? 'Conversation';
+  const title = isGroup ? group?.name ?? 'Group' : participant?.displayName ?? titleHint ?? 'Conversation';
   const subtitle = isGroup ? `${group?.memberCount ?? conversation?.participants.length ?? 0} members`
     : participant ? `@${participant.username}` : 'Direct chat';
   const connectionLabel: Record<ChatConnectionState, string> = {

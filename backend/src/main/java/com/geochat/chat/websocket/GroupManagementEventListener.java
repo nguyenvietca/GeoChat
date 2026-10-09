@@ -36,7 +36,8 @@ public class GroupManagementEventListener {
                 .findByConversationIdOrderByIdAsc(event.group().groupId()).stream()
                 .map(participant -> participant.getId().getUserId())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        if (event.member() != null && ("MEMBER_REMOVED".equals(event.type()) || "MEMBER_LEFT".equals(event.type()))) {
+        if (event.member() != null && ("MEMBER_REMOVED".equals(event.type()) || "MEMBER_LEFT".equals(event.type())
+                || "GROUP_DELETED".equals(event.type()))) {
             recipientIds.add(event.member().user().userId());
         }
 

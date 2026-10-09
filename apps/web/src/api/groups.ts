@@ -27,6 +27,10 @@ export function leaveGroup(groupId: number, token: string) {
   return apiRequest<void>(`/api/v1/groups/${groupId}/members/me`, { method: 'DELETE', token });
 }
 
+export function deleteGroup(groupId: number, token: string) {
+  return apiRequest<void>(`/api/v1/groups/${groupId}`, { method: 'DELETE', token });
+}
+
 export function addGroupMembers(groupId: number, memberIds: number[], token: string) {
   return apiRequest<GroupInfo>(`/api/v1/groups/${groupId}/members`, { method: 'POST', body: { memberIds }, token });
 }
