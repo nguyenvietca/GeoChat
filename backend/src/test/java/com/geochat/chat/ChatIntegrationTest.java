@@ -3,11 +3,18 @@ package com.geochat.chat;
 import com.geochat.auth.security.JwtService;
 import com.geochat.chat.dto.SendMessageRequest;
 import com.geochat.chat.service.ChatService;
+import com.geochat.chat.service.GroupService;
+import com.geochat.chat.dto.CreateGroupRequest;
+import com.geochat.chat.repository.ConversationParticipantRepository;
+import com.geochat.chat.repository.ConversationRepository;
+import com.geochat.chat.repository.MessageRepository;
 import com.geochat.friend.entity.FriendRequest;
 import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
 import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
+import com.geochat.location.entity.UserLocation;
+import com.geochat.location.repository.UserLocationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +44,18 @@ class ChatIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+        @Autowired
+        private ConversationRepository conversationRepository;
+
+        @Autowired
+        private ConversationParticipantRepository participantRepository;
+
+        @Autowired
+        private MessageRepository messageRepository;
+
+        @Autowired
+        private UserLocationRepository locationRepository;
+
     @Autowired
     private FriendRequestRepository friendRequestRepository;
 
@@ -49,6 +68,9 @@ class ChatIntegrationTest {
         @Autowired
         private ChatService chatService;
 
+        @Autowired
+        private GroupService groupService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -56,6 +78,10 @@ class ChatIntegrationTest {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .addFilters(webApplicationContext.getBean(FilterChainProxy.class))
                 .build();
+        messageRepository.deleteAll();
+        participantRepository.deleteAll();
+        conversationRepository.deleteAll();
+        locationRepository.deleteAll();
         friendRequestRepository.deleteAll();
         userRepository.deleteAll();
     }
@@ -90,6 +116,108 @@ class ChatIntegrationTest {
                 new com.fasterxml.jackson.databind.ObjectMapper().readTree(first).path("data").path("conversationId").asText(),
                 new com.fasterxml.jackson.databind.ObjectMapper().readTree(second).path("data").path("conversationId").asText());
     }
+
+    @Test
+    void nearbyNonFriendsCanOpenLimitedChatButDistantUsersCannotAndBothShareFiveMessages() throws Exception {
+        User alice = createUser("nearby-chat-alice", "Alice");
+        User bob = createUser("nearby-chat-bob", "Bob");
+        User distant = createUser("nearby-chat-distant", "Distant");
+        locationRepository.saveAll(java.util.List.of(
+                buildLocation(alice.getId(), 0.0, 0.0),
+                buildLocation(bob.getId(), 0.01, 0.0),
+                buildLocation(distant.getId(), 0.2, 0.0)));
+
+        mockMvc.perform(post("/api/v1/chats/direct")
+                        .header("Authorization", bearer(tokenFor(alice)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonBody(bob.getId())))
+                .andExpect(status().isBadRequest());
+
+        String response = mockMvc.perform(post("/api/v1/chats/contextual")
+                        .header("Authorization", bearer(tokenFor(alice)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":" + bob.getId() + ",\"radiusMeters\":5000}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.type").value("DIRECT"))
+                .andReturn().getResponse().getContentAsString();
+        long conversationId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response)
+                .path("data").path("conversationId").asLong();
+
+        mockMvc.perform(get("/api/v1/chats/{conversationId}", conversationId)
+                        .header("Authorization", bearer(tokenFor(alice))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.limitedMessagesRemaining").value(5));
+        mockMvc.perform(post("/api/v1/chats/contextual")
+                        .header("Authorization", bearer(tokenFor(alice)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":" + distant.getId() + ",\"radiusMeters\":5000}"))
+                .andExpect(status().isForbidden());
+
+        for (int messageNumber = 0; messageNumber < 3; messageNumber++) {
+            mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
+                            .header("Authorization", bearer(tokenFor(alice)))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"content\":\"Alice " + messageNumber + "\"}"))
+                    .andExpect(status().isOk());
+        }
+        for (int messageNumber = 0; messageNumber < 2; messageNumber++) {
+            mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
+                            .header("Authorization", bearer(tokenFor(bob)))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"content\":\"Bob " + messageNumber + "\"}"))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
+                        .header("Authorization", bearer(tokenFor(bob)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Sixth message\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void becomingFriendsAfterALimitedChatReusesOneUnlimitedConversation() throws Exception {
+        User alice = createUser("limited-then-friend-alice", "Alice");
+        User bob = createUser("limited-then-friend-bob", "Bob");
+        locationRepository.saveAll(java.util.List.of(
+                buildLocation(alice.getId(), 0.0, 0.0), buildLocation(bob.getId(), 0.01, 0.0)));
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String limited = mockMvc.perform(post("/api/v1/chats/contextual")
+                        .header("Authorization", bearer(tokenFor(alice)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":" + bob.getId() + ",\"radiusMeters\":5000}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long limitedId = mapper.readTree(limited).path("data").path("conversationId").asLong();
+        markFriends(alice, bob);
+
+        String friend = mockMvc.perform(post("/api/v1/chats/direct")
+                        .header("Authorization", bearer(tokenFor(alice)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonBody(bob.getId())))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        org.junit.jupiter.api.Assertions.assertEquals(limitedId,
+                mapper.readTree(friend).path("data").path("conversationId").asLong());
+        mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1));
+        mockMvc.perform(get("/api/v1/chats/{id}", limitedId).header("Authorization", bearer(tokenFor(alice))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.limitedMessagesRemaining").doesNotExist());
+    }
+
+        @Test
+        void membersOfTheSameGroupCanOpenAContextualChatWithoutLocationSharing() throws Exception {
+                User owner = createUser("context-group-owner", "Owner");
+                User member = createUser("context-group-member", "Member");
+                markFriends(owner, member);
+                groupService.createGroup(owner.getUsername(), new CreateGroupRequest("Shared group", java.util.List.of(member.getId())));
+
+                mockMvc.perform(post("/api/v1/chats/contextual")
+                                                .header("Authorization", bearer(tokenFor(member)))
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"userId\":" + owner.getId() + "}"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.data.type").value("DIRECT"));
+        }
 
     @Test
     void listAndDetailConversationForAuthenticatedParticipant() throws Exception {
@@ -234,6 +362,9 @@ class ChatIntegrationTest {
         mockMvc.perform(get("/api/v1/chats/{conversationId}", conversationIdValue)
                         .header("Authorization", bearer(tokenFor(carol))))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/chats/{conversationId}/presence", conversationIdValue)
+                        .header("Authorization", bearer(tokenFor(carol))))
+                .andExpect(status().isForbidden());
     }
 
     private void markFriends(User first, User second) {
@@ -267,4 +398,13 @@ class ChatIntegrationTest {
     private String jsonBody(Long userId) {
         return "{\"userId\":" + userId + "}";
     }
+
+        private UserLocation buildLocation(Long userId, Double latitude, Double longitude) {
+                UserLocation location = new UserLocation();
+                location.setUserId(userId);
+                location.setLatitude(latitude);
+                location.setLongitude(longitude);
+                location.setUpdatedAt(Instant.now());
+                return location;
+        }
 }

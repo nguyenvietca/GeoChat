@@ -10,7 +10,7 @@ import {
   getOutgoingFriendRequests,
   sendFriendRequest,
 } from './api/friends';
-import { getConversationDetail, getMessages, openDirectConversation } from './api/chats';
+import { getConversationDetail, getConversationPresence, getMessages, openContextualConversation, openDirectConversation } from './api/chats';
 import { searchUsers, updateMyProfile } from './api/users';
 import { User } from './types';
 
@@ -32,12 +32,16 @@ vi.mock('./api/friends', () => ({
 vi.mock('./api/chats', () => ({
   getConversations: vi.fn(),
   getConversationDetail: vi.fn(),
+  getConversationPresence: vi.fn(),
   getMessages: vi.fn(),
   openDirectConversation: vi.fn(),
+  openContextualConversation: vi.fn(),
   sendMessage: vi.fn(),
 }));
 vi.mock('./services/chatWebSocket', () => ({
   subscribeToConversation: vi.fn(() => vi.fn()),
+  subscribeToPresence: vi.fn(() => vi.fn()),
+  subscribeToGroupEvents: vi.fn(() => vi.fn()),
   subscribeToNotifications: vi.fn(() => vi.fn()),
   disconnectAllChatWebSockets: vi.fn(),
 }));
@@ -59,8 +63,10 @@ const mockGetIncoming = vi.mocked(getIncomingFriendRequests);
 const mockGetOutgoing = vi.mocked(getOutgoingFriendRequests);
 const mockSendFriendRequest = vi.mocked(sendFriendRequest);
 const mockGetConversationDetail = vi.mocked(getConversationDetail);
+const mockGetConversationPresence = vi.mocked(getConversationPresence);
 const mockGetMessages = vi.mocked(getMessages);
 const mockOpenDirectConversation = vi.mocked(openDirectConversation);
+const mockOpenContextualConversation = vi.mocked(openContextualConversation);
 const mockSearchUsers = vi.mocked(searchUsers);
 const mockUpdateMyProfile = vi.mocked(updateMyProfile);
 
@@ -96,6 +102,7 @@ async function renderSignedInAt(path: string, heading: string) {
 describe('web authentication and protected routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetConversationPresence.mockResolvedValue({ items: [{ userId: 3, online: false }] });
     mockGetCurrentUser.mockResolvedValue(currentUser);
     setPath('/');
   });
@@ -310,6 +317,8 @@ describe('nearby location flow', () => {
     mockGetOutgoing.mockResolvedValue({ items: [] });
     mockSendFriendRequest.mockResolvedValue({ requestId: 81, senderId: 9, receiverId: 3, status: 'PENDING', createdAt: '', updatedAt: '' });
     mockOpenDirectConversation.mockResolvedValue({ conversationId: 41, type: 'DIRECT', participant: { userId: 3, username: 'kai', displayName: 'Kai' } });
+    mockOpenContextualConversation.mockResolvedValue({ conversationId: 41, type: 'DIRECT', participant: { userId: 3, username: 'kai', displayName: 'Kai' } });
+    mockGetConversationPresence.mockResolvedValue({ items: [{ userId: 3, online: false }] });
     mockGetConversationDetail.mockResolvedValue({ conversationId: 41, type: 'DIRECT', participants: [currentUser, { userId: 3, username: 'kai', displayName: 'Kai' }], createdAt: '', updatedAt: '' });
     mockGetMessages.mockResolvedValue({ items: [], total: 0, page: 0, size: 20 });
   });
@@ -417,6 +426,32 @@ describe('nearby location flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Chat' }));
 
     expect(mockOpenDirectConversation).toHaveBeenCalledWith(3, 'session-token');
+    expect(await screen.findByLabelText('Message')).toBeTruthy();
+  });
+
+  it('opens a limited chat with a nearby non-friend without requiring a friend request', async () => {
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition: vi.fn((success: PositionCallback) => success({
+        coords: { latitude: 41.2, longitude: -72.8 },
+      } as GeolocationPosition)) },
+    });
+    mockUpdateLocation.mockResolvedValue(undefined);
+    mockGetNearbyUsers.mockResolvedValue({ items: [{ userId: 3, displayName: 'Kai', distanceMeters: 600 }], radiusMeters: 5000 });
+    mockGetConversationDetail.mockResolvedValue({
+      conversationId: 41, type: 'DIRECT',
+      participants: [currentUser, { userId: 3, username: 'kai', displayName: 'Kai' }],
+      createdAt: '', updatedAt: '', limitedMessagesRemaining: 5,
+    });
+    await renderSignedIn();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /nearby/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Message' }));
+
+    expect(mockOpenContextualConversation).toHaveBeenCalledWith(3, 5000, 'session-token');
+    expect(mockSendFriendRequest).not.toHaveBeenCalled();
+    expect(await screen.findByText('5 of 5 messages remaining.')).toBeTruthy();
     expect(await screen.findByLabelText('Message')).toBeTruthy();
   });
 });

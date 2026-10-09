@@ -17,12 +17,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.geochat.chat.dto.ChatDtos.ConversationDetailResponse;
 import com.geochat.chat.dto.ChatDtos.ConversationListResponse;
+import com.geochat.chat.dto.ChatDtos.ConversationPresenceResponse;
 import com.geochat.chat.dto.ChatDtos.ConversationSummaryResponse;
 import com.geochat.chat.dto.ChatDtos.MessageListResponse;
 import com.geochat.chat.dto.ChatDtos.MessageResponse;
 import com.geochat.chat.dto.ChatDtos.OpenDirectChatResponse;
 import com.geochat.chat.dto.ChatDtos.UserSummaryResponse;
+import com.geochat.chat.dto.ChatDtos.UserPresenceResponse;
 import com.geochat.chat.dto.OpenDirectChatRequest;
+import com.geochat.chat.dto.OpenContextualChatRequest;
 import com.geochat.chat.dto.SendMessageRequest;
 import com.geochat.chat.entity.Conversation;
 import com.geochat.chat.entity.ConversationParticipant;
@@ -34,6 +37,8 @@ import com.geochat.friend.repository.FriendRequestRepository;
 import com.geochat.notification.event.MessageCreatedEvent;
 import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
+import com.geochat.location.service.LocationService;
+import com.geochat.chat.websocket.WebSocketSessionRegistry;
 
 import jakarta.persistence.EntityNotFoundException;
 
@@ -46,17 +51,23 @@ public class ChatService {
 	private final UserRepository userRepository;
 	private final FriendRequestRepository friendRequestRepository;
 	private final ApplicationEventPublisher applicationEventPublisher;
+	private final LocationService locationService;
+	private final WebSocketSessionRegistry webSocketSessionRegistry;
+	private static final int CONTEXTUAL_MESSAGE_LIMIT = 5;
 
 	public ChatService(ConversationRepository conversationRepository,
 			ConversationParticipantRepository conversationParticipantRepository, MessageRepository messageRepository,
 			UserRepository userRepository, FriendRequestRepository friendRequestRepository,
-			ApplicationEventPublisher applicationEventPublisher) {
+				ApplicationEventPublisher applicationEventPublisher, LocationService locationService,
+				WebSocketSessionRegistry webSocketSessionRegistry) {
 		this.conversationRepository = conversationRepository;
 		this.conversationParticipantRepository = conversationParticipantRepository;
 		this.messageRepository = messageRepository;
 		this.userRepository = userRepository;
 		this.friendRequestRepository = friendRequestRepository;
 		this.applicationEventPublisher = applicationEventPublisher;
+		this.locationService = locationService;
+		this.webSocketSessionRegistry = webSocketSessionRegistry;
 	}
 
 	@Transactional
@@ -81,6 +92,11 @@ public class ChatService {
 
 		String conversationKey = buildConversationKey(currentUser.getId(), otherUserId);
 		Conversation conversation = conversationRepository.findByTypeAndConversationKey("DIRECT", conversationKey)
+				.or(() -> conversationRepository.findByTypeAndConversationKey("DIRECT", "LIMITED:" + conversationKey)
+						.map(limited -> {
+							limited.setContextualLimited(false);
+							return conversationRepository.save(limited);
+						}))
 				.orElseGet(() -> {
 					Conversation newConversation = new Conversation();
 					newConversation.setType("DIRECT");
@@ -96,12 +112,49 @@ public class ChatService {
 		return new OpenDirectChatResponse(conversation.getId(), conversation.getType(), toUserSummary(otherUser));
 	}
 
+	@Transactional
+	public OpenDirectChatResponse openContextualConversation(String username, OpenContextualChatRequest request) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+		if (request.userId() == null || currentUser.getId().equals(request.userId())) {
+			throw new IllegalArgumentException("A different userId is required");
+		}
+		User otherUser = userRepository.findById(request.userId())
+				.orElseThrow(() -> new EntityNotFoundException("Target user not found"));
+		if (areFriends(currentUser.getId(), otherUser.getId())) {
+			return openDirectConversation(username, new OpenDirectChatRequest(otherUser.getId()));
+		}
+
+		String key = "LIMITED:" + buildConversationKey(currentUser.getId(), otherUser.getId());
+		Conversation conversation = conversationRepository.findByTypeAndConversationKey("DIRECT", key).orElse(null);
+		if (conversation == null) {
+			boolean shareGroup = conversationParticipantRepository.shareGroup(currentUser.getId(), otherUser.getId());
+			boolean nearby = locationService.isWithinRadius(username, otherUser.getId(), request.radiusMeters());
+			if (!shareGroup && !nearby) {
+				throw new AccessDeniedException("You can only message nearby people or members of your groups");
+			}
+			Instant now = Instant.now();
+			conversation = new Conversation();
+			conversation.setType("DIRECT");
+			conversation.setConversationKey(key);
+			conversation.setContextualLimited(true);
+			conversation.setCreatedAt(now);
+			conversation.setUpdatedAt(now);
+			conversation = conversationRepository.save(conversation);
+			addParticipantIfMissing(conversation.getId(), currentUser.getId());
+			addParticipantIfMissing(conversation.getId(), otherUser.getId());
+		}
+		return new OpenDirectChatResponse(conversation.getId(), conversation.getType(), toUserSummary(otherUser));
+	}
+
 	@Transactional(readOnly = true)
 	public ConversationListResponse listConversations(String username) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
 		List<ConversationSummaryResponse> items = new ArrayList<>();
+		Map<Long, Integer> directIndexByUser = new java.util.HashMap<>();
+		java.util.Set<Long> limitedConversationIds = new java.util.HashSet<>();
 		List<ConversationParticipant> participants = conversationParticipantRepository
 				.findByUserIdOrderByConversationIdDesc(currentUser.getId());
 
@@ -120,8 +173,24 @@ public class ChatService {
 			if (otherUser == null) {
 				continue;
 			}
-			    items.add(new ConversationSummaryResponse(conversation.getId(), conversation.getType(),
-				    toUserSummary(otherUser), conversation.getUpdatedAt(), null));
+			    ConversationSummaryResponse summary = new ConversationSummaryResponse(conversation.getId(),
+				    conversation.getType(), toUserSummary(otherUser), conversation.getUpdatedAt(), null);
+			if ("DIRECT".equals(conversation.getType())) {
+				Integer existingIndex = directIndexByUser.get(otherUser.getId());
+				if (existingIndex != null) {
+					// Legacy duplicates: keep one entry per person, preferring the unlimited chat.
+					if (limitedConversationIds.contains(items.get(existingIndex).conversationId())
+							&& !conversation.isContextualLimited()) {
+						items.set(existingIndex, summary);
+					}
+					continue;
+				}
+				directIndexByUser.put(otherUser.getId(), items.size());
+				if (conversation.isContextualLimited()) {
+					limitedConversationIds.add(conversation.getId());
+				}
+			}
+			items.add(summary);
 		}
 
 			List<Long> conversationIds = items.stream().map(ConversationSummaryResponse::conversationId).toList();
@@ -153,8 +222,34 @@ public class ChatService {
 				.map(participant -> userRepository.findById(participant.getUserId()).orElse(null))
 				.filter(user -> user != null).map(this::toUserSummary).toList();
 
+		Integer limitedMessagesRemaining = conversation.isContextualLimited()
+				? Math.max(0, CONTEXTUAL_MESSAGE_LIMIT - (int) messageRepository.countByConversationId(conversationId))
+				: null;
 		return new ConversationDetailResponse(conversation.getId(), conversation.getType(), participants,
-				conversation.getCreatedAt(), conversation.getUpdatedAt());
+				conversation.getCreatedAt(), conversation.getUpdatedAt(), limitedMessagesRemaining);
+	}
+
+	@Transactional(readOnly = true)
+	public ConversationPresenceResponse getConversationPresence(String username, Long conversationId) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+		if (!conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, currentUser.getId())) {
+			throw new AccessDeniedException("You are not a participant in this conversation");
+		}
+		List<UserPresenceResponse> items = conversationParticipantRepository
+				.findByConversationIdOrderByIdAsc(conversationId).stream()
+				.map(participant -> new UserPresenceResponse(participant.getUserId(),
+						webSocketSessionRegistry.isOnline(participant.getUserId())))
+				.toList();
+		return new ConversationPresenceResponse(items);
+	}
+
+	@Transactional(readOnly = true)
+	public boolean canViewPresence(String username, Long targetUserId) {
+		if (username == null || targetUserId == null) return false;
+		User currentUser = userRepository.findByUsernameIgnoreCase(username).orElse(null);
+		return currentUser != null
+				&& conversationParticipantRepository.shareDirectConversation(currentUser.getId(), targetUserId);
 	}
 
 	@Transactional
@@ -181,6 +276,10 @@ public class ChatService {
 
 		Conversation conversation = conversationRepository.findById(conversationId)
 				.orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+		if (conversation.isContextualLimited()) {
+			conversation = conversationRepository.findByIdForUpdate(conversationId)
+					.orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+		}
 
 		if (!conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, currentUser.getId())) {
 			throw new AccessDeniedException("You are not a participant in this conversation");
@@ -236,6 +335,10 @@ public class ChatService {
 
 		if (content.length() > 5000) {
 			throw new IllegalArgumentException("message content must be at most 5000 characters");
+		}
+		if (conversation.isContextualLimited()
+				&& messageRepository.countByConversationId(conversationId) >= CONTEXTUAL_MESSAGE_LIMIT) {
+			throw new IllegalArgumentException("This conversation is limited to 5 messages. Add each other as friends to continue");
 		}
 
 		Message message = new Message();

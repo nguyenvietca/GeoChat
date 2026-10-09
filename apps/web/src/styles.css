@@ -217,6 +217,10 @@ h1, h2 { color: var(--ink); font-family: 'Manrope', sans-serif; }
 .connection-state i { width: 7px; height: 7px; border-radius: 50%; background: #d79a39; }
 .connection-state.connected { color: #34805c; }
 .connection-state.connected i { background: #51a475; }
+.presence-state { display: inline-flex; align-items: center; gap: 6px; color: #727f7b; font-size: 11px; white-space: nowrap; }
+.presence-state i { width: 7px; height: 7px; border-radius: 50%; background: #9aa6a1; }
+.presence-state.online { color: #34805c; }
+.presence-state.online i { background: #51a475; }
 .chat-message-area { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; padding: 18px clamp(14px, 4vw, 34px); background: #f7faf8; }
 .chat-message-area .result-state { min-height: 100px; border: 0; background: transparent; }
 .load-older-button { align-self: center; min-height: 34px; padding: 0 10px; border: 0; color: var(--teal); background: transparent; font-size: 12px; font-weight: 700; cursor: pointer; }
@@ -267,10 +271,36 @@ h1, h2 { color: var(--ink); font-family: 'Manrope', sans-serif; }
 .group-info-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .group-info-heading div { display: grid; gap: 2px; }
 .group-info-heading small { color: var(--muted); font-size: 12px; }
+.group-rename-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 5px 9px; margin-top: 10px; }
+.group-rename-form label { grid-column: 1 / -1; color: var(--muted); font-size: 11px; font-weight: 700; }
+.group-rename-form input { min-width: 0; min-height: 36px; padding: 0 9px; border: 1px solid #d3e0d9; border-radius: 6px; font-size: 13px; }
+.group-rename-form input:focus { border-color: var(--teal); outline: 3px solid rgba(18, 107, 98, 0.12); }
 .group-member-list { margin: 8px 0; padding: 0; list-style: none; }
 .group-member-list li { display: flex; align-items: center; justify-content: space-between; min-height: 32px; font-size: 13px; }
 .group-owner-badge { color: var(--teal); font-size: 11px; }
 .group-owner-note { margin: 4px 0 0; color: #a36e24; font-size: 12px; }
+.nearby-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.group-member-actions { display: flex; align-items: center; gap: 7px; }
+.group-member-menu { position: relative; }
+.group-member-menu-trigger { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: 5px; color: #48675f; background: transparent; font-size: 17px; letter-spacing: 0; cursor: pointer; }
+.group-member-menu-trigger:hover, .group-member-menu-trigger[aria-expanded="true"] { border-color: var(--line); background: #fff; }
+.group-member-menu-list { position: absolute; z-index: 4; top: calc(100% + 4px); right: 0; display: grid; min-width: 160px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: 0 8px 24px rgba(20, 49, 42, 0.15); }
+.group-member-menu-list button { min-height: 34px; padding: 0 9px; border: 0; border-radius: 4px; color: var(--ink); background: transparent; font-size: 12px; text-align: left; cursor: pointer; }
+.group-member-menu-list button:hover:not(:disabled) { background: #eef6f1; }
+.group-member-menu-list button:disabled { color: var(--muted); cursor: default; }
+.group-member-menu-list .menu-danger-action { color: var(--danger); }
+.group-leave-button { display: flex; justify-content: center; width: 100%; min-height: 39px; margin-top: 8px; border: 1px solid #e8c9c3; border-radius: 6px; color: #9a3e35; background: #fff8f6; font-size: 12px; font-weight: 700; cursor: pointer; }
+.group-leave-button:hover:not(:disabled) { border-color: #d7958b; background: #fff0ed; }
+.group-leave-button:disabled { opacity: 0.55; cursor: wait; }
+.group-confirm-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(13, 31, 27, 0.52); }
+.group-confirm-dialog { width: min(100%, 420px); padding: 23px; border: 1px solid #d8e2dc; border-radius: 8px; background: #fff; box-shadow: 0 20px 60px rgba(10, 30, 25, 0.24); }
+.group-confirm-dialog h2 { margin: 0; color: var(--ink); font: 700 18px 'Manrope', sans-serif; }
+.group-confirm-dialog > p { margin: 10px 0 0; color: #60736c; font-size: 13px; line-height: 1.55; }
+.group-confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.group-confirm-danger { min-height: 40px; padding: 0 13px; border: 1px solid #9c4138; border-radius: 6px; color: #fff; background: #aa4b40; font-size: 12px; font-weight: 700; cursor: pointer; }
+.group-confirm-danger:hover:not(:disabled) { background: #923c33; }
+.group-confirm-danger:disabled { opacity: 0.6; cursor: wait; }
+.limited-chat-notice { margin: 0; padding: 6px 12px; border-top: 1px solid var(--line); color: #79602e; background: #fff9e9; font-size: 11px; text-align: center; }
 .radius-control { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .radius-control select { min-height: 38px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #fff; font-size: 12px; }
 .nearby-intro { display: flex; align-items: center; gap: 14px; padding: 17px; border: 1px solid #d6e4dc; border-radius: 8px; background: #eaf4ed; }
@@ -327,6 +357,11 @@ h1, h2 { color: var(--ink); font-family: 'Manrope', sans-serif; }
   .nearby-intro { flex-wrap: wrap; }
   .nearby-intro > div { flex-basis: calc(100% - 58px); }
   .nearby-intro .primary-button { width: 100%; }
+  .nearby-person-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 8px 10px; }
+  .nearby-person-row .person-avatar { grid-row: span 2; }
+  .nearby-person-row .person-details { grid-column: 2; }
+  .nearby-person-row .distance-label { grid-column: 2; }
+  .nearby-person-row .nearby-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .chat-page { height: calc(100dvh - 150px); min-height: 400px; margin: 0 -6px; }
   .messages-layout { height: calc(100dvh - 210px); min-height: 400px; }
   .messages-layout .chat-page { margin: 0; }

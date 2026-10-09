@@ -49,6 +49,37 @@ public class UserLocationSearchRepositoryImpl implements UserLocationSearchRepos
 		return results;
 	}
 
+	@Override
+	public boolean isWithinRadius(Long currentUserId, Long targetUserId, Double currentLatitude,
+			Double currentLongitude, Double radiusMeters) {
+		boolean isPostgreSql = databaseProductName().equalsIgnoreCase("PostgreSQL");
+		String sql = isPostgreSql ? """
+				SELECT COUNT(*) FROM user_locations current
+				JOIN user_locations target ON target.user_id = :targetUserId
+				WHERE current.user_id = :currentUserId
+				  AND ST_DWithin(current.location, target.location, :radiusMeters)
+				""" : """
+				SELECT COUNT(*) FROM user_locations target
+				WHERE target.user_id = :targetUserId
+				  AND (6371000 * ACOS(LEAST(1,
+				      COS(RADIANS(:currentLatitude)) * COS(RADIANS(target.latitude))
+				      * COS(RADIANS(target.longitude) - RADIANS(:currentLongitude))
+				      + SIN(RADIANS(:currentLatitude)) * SIN(RADIANS(target.latitude))
+				  ))) <= :radiusMeters
+				""";
+
+		Query query = entityManager.createNativeQuery(sql)
+				.setParameter("targetUserId", targetUserId)
+				.setParameter("radiusMeters", radiusMeters);
+		if (isPostgreSql) {
+			query.setParameter("currentUserId", currentUserId);
+		} else {
+			query.setParameter("currentLatitude", currentLatitude)
+					.setParameter("currentLongitude", currentLongitude);
+		}
+		return ((Number) query.getSingleResult()).longValue() > 0;
+	}
+
 	private String databaseProductName() {
 		try (Connection connection = dataSource.getConnection()) {
 			return connection.getMetaData().getDatabaseProductName();

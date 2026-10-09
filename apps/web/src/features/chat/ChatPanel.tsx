@@ -1,10 +1,10 @@
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getConversationDetail, getMessages, sendMessage } from '../../api/chats';
+import { getConversationDetail, getConversationPresence, getMessages, sendMessage } from '../../api/chats';
 import { ApiError } from '../../api/client';
 import { getGroup } from '../../api/groups';
 import { useAuth } from '../../app/providers/AuthContext';
-import { ChatConnectionState, subscribeToConversation } from '../../services/chatWebSocket';
+import { ChatConnectionState, subscribeToConversation, subscribeToPresence } from '../../services/chatWebSocket';
 import { ChatMessage, ConversationDetail, GroupInfo } from '../../types';
 import { GroupInfoPanel } from './GroupInfoPanel';
 
@@ -13,12 +13,15 @@ const MAX_MESSAGE_LENGTH = 5000;
 
 type ChatPanelProps = {
   conversationId: number;
+  groupInfo: GroupInfo | null;
   onBack: () => void;
   onLeftGroup: () => void;
+  onGroupChanged: (group: GroupInfo) => void;
+  onOpenConversation: (conversationId: number) => void;
 };
 
 // Rendered with key={conversationId} so switching conversations resets all state and subscriptions.
-export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProps) {
+export function ChatPanel({ conversationId, groupInfo, onBack, onLeftGroup, onGroupChanged, onOpenConversation }: ChatPanelProps) {
   const { token, user } = useAuth();
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [group, setGroup] = useState<GroupInfo | null>(null);
@@ -26,6 +29,7 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [limitedMessagesRemaining, setLimitedMessagesRemaining] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [sending, setSending] = useState(false);
@@ -33,6 +37,8 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
   const [error, setError] = useState('');
   const [sendError, setSendError] = useState('');
   const [connection, setConnection] = useState<ChatConnectionState>('connecting');
+  const [participantOnline, setParticipantOnline] = useState<boolean | null>(null);
+  const [presenceLoading, setPresenceLoading] = useState(false);
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const shouldScrollToBottomRef = useRef(true);
@@ -63,7 +69,9 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
       const info = detail.type === 'GROUP' ? await getGroup(conversationId, token) : null;
       if (!active) return;
       setConversation(detail);
+      setLimitedMessagesRemaining(detail.limitedMessagesRemaining ?? null);
       setGroup(info);
+      if (info) onGroupChanged(info);
       for (const message of response.items) knownMessageIds.current.add(message.messageId);
       setMessages((current) => mergeMessages(current, response.items));
       setTotal(Math.max(response.total, response.items.length));
@@ -79,6 +87,58 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
 
     return () => { active = false; };
   }, [conversationId, token]);
+
+  useEffect(() => {
+    if (groupInfo?.groupId === conversationId) setGroup(groupInfo);
+  }, [conversationId, groupInfo]);
+
+  useEffect(() => {
+    if (!token || !conversation || conversation.type !== 'DIRECT') {
+      setParticipantOnline(null);
+      setPresenceLoading(false);
+      return undefined;
+    }
+    const otherParticipant = conversation.participants.find((item) => item.userId !== user?.id);
+    if (!otherParticipant) return undefined;
+
+    let active = true;
+    let realtimeVersion = 0;
+    setParticipantOnline(null);
+    setPresenceLoading(true);
+    const refreshPresence = () => {
+      const version = realtimeVersion;
+      void getConversationPresence(conversationId, token)
+        .then((response) => {
+          if (!active || version !== realtimeVersion) return;
+          const presence = response.items.find((item) => item.userId === otherParticipant.userId);
+          setParticipantOnline(presence?.online ?? false);
+        })
+        .catch(() => {
+          if (active && version === realtimeVersion) setParticipantOnline(null);
+        })
+        .finally(() => { if (active && version === realtimeVersion) setPresenceLoading(false); });
+    };
+    const unsubscribe = subscribeToPresence(otherParticipant.userId, token, {
+      onPresence: (presence) => {
+        realtimeVersion += 1;
+        if (active) {
+          setParticipantOnline(presence.online);
+          setPresenceLoading(false);
+        }
+      },
+      onStateChange: (state) => {
+        if (state === 'reconnecting') {
+          setParticipantOnline(null);
+          setPresenceLoading(true);
+        } else if (state === 'connected') {
+          refreshPresence();
+        }
+      },
+    });
+    refreshPresence();
+
+    return () => { active = false; unsubscribe(); };
+  }, [conversation, conversationId, token, user?.id]);
 
   useEffect(() => {
     if (!token || !Number.isSafeInteger(conversationId) || conversationId <= 0) return undefined;
@@ -107,6 +167,7 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
     shouldScrollToBottomRef.current = nearBottomRef.current;
     setMessages((current) => mergeMessages(current, [message]));
     setTotal((current) => current + 1);
+    setLimitedMessagesRemaining((current) => current === null ? null : Math.max(0, current - 1));
   }
 
   const canLoadOlder = total > (page + 1) * PAGE_SIZE;
@@ -146,6 +207,7 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
         knownMessageIds.current.add(savedMessage.messageId);
         setMessages((current) => mergeMessages(current, [savedMessage]));
         setTotal((current) => current + 1);
+        setLimitedMessagesRemaining((current) => current === null ? null : Math.max(0, current - 1));
       }
       setDraft((current) => current === draft ? '' : current);
     } catch (sendFailure) {
@@ -172,6 +234,9 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
     connected: 'Live',
     reconnecting: 'Reconnecting…',
   };
+  const statusLabel = isGroup ? connectionLabel[connection]
+    : participantOnline === null ? presenceLoading ? 'Checking…' : 'Unavailable'
+      : participantOnline ? 'Online' : 'Offline';
 
   return (
     <section className="chat-page" aria-label="Conversation">
@@ -184,10 +249,18 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
             Group info
           </button>
         ) : null}
-        <span className={connection === 'connected' ? 'connection-state connected' : 'connection-state'}><i />{connectionLabel[connection]}</span>
+        {isGroup ? (
+          <span className={connection === 'connected' ? 'connection-state connected' : 'connection-state'}><i />{statusLabel}</span>
+        ) : (
+          <span className={participantOnline === true ? 'presence-state online' : 'presence-state'} aria-live="polite">
+            <i />{statusLabel}
+          </span>
+        )}
       </header>
       {showInfo && isGroup && group && token ? (
-        <GroupInfoPanel group={group} currentUserId={user?.id ?? null} token={token} onClose={() => setShowInfo(false)} onLeft={onLeftGroup} onGroupChanged={setGroup} />
+        <GroupInfoPanel group={group} currentUserId={user?.id ?? null} token={token} onClose={() => setShowInfo(false)} onLeft={onLeftGroup}
+          onOpenConversation={onOpenConversation}
+          onGroupChanged={(updated) => { setGroup(updated); onGroupChanged(updated); }} />
       ) : null}
       {error && !conversation ? (
         <div className="chat-load-error" role="alert">{error}<Link to="/app/chat">Back to Messages</Link></div>
@@ -221,9 +294,13 @@ export function ChatPanel({ conversationId, onBack, onLeftGroup }: ChatPanelProp
           <form className="chat-composer" onSubmit={(event) => void submitMessage(event)}>
             <label className="visually-hidden" htmlFor="chat-message">Message</label>
             <textarea id="chat-message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}
-              placeholder="Write a message…" maxLength={MAX_MESSAGE_LENGTH} rows={1} disabled={loading || !conversation} />
-            <button className="primary-button" type="submit" disabled={sending || loading || !conversation || !draft.trim()}>{sending ? 'Sending…' : 'Send'}</button>
+              placeholder={limitedMessagesRemaining === 0 ? 'Message limit reached' : 'Write a message…'} maxLength={MAX_MESSAGE_LENGTH} rows={1}
+              disabled={loading || !conversation || limitedMessagesRemaining === 0} />
+            <button className="primary-button" type="submit" disabled={sending || loading || !conversation || !draft.trim() || limitedMessagesRemaining === 0}>{sending ? 'Sending…' : 'Send'}</button>
           </form>
+          {limitedMessagesRemaining !== null ? <p className="limited-chat-notice" role="status">
+            {limitedMessagesRemaining > 0 ? `${limitedMessagesRemaining} of 5 messages remaining.` : 'Message limit reached.'}
+          </p> : null}
         </>
       )}
     </section>

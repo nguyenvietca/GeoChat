@@ -15,6 +15,7 @@ import {
 } from '../../api/friends';
 import {
   getConversationDetail,
+  getConversationPresence,
   getConversations,
   getMessages,
   openDirectConversation,
@@ -55,6 +56,7 @@ vi.mock('../../api/friends', () => ({
 vi.mock('../../api/chats', () => ({
   getConversations: vi.fn(),
   getConversationDetail: vi.fn(),
+  getConversationPresence: vi.fn(),
   getMessages: vi.fn(),
   openDirectConversation: vi.fn(),
   sendMessage: vi.fn(),
@@ -64,6 +66,8 @@ vi.mock('../../services/chatWebSocket', () => ({
     socketHarness.handlers = handlers;
     return socketHarness.disconnect;
   }),
+  subscribeToPresence: vi.fn(() => socketHarness.disconnect),
+  subscribeToGroupEvents: vi.fn(() => socketHarness.disconnect),
   subscribeToNotifications: vi.fn(() => socketHarness.disconnect),
   disconnectAllChatWebSockets: vi.fn(),
 }));
@@ -79,6 +83,7 @@ const mockCancelFriendRequest = vi.mocked(cancelFriendRequest);
 const mockRemoveFriend = vi.mocked(removeFriend);
 const mockGetConversations = vi.mocked(getConversations);
 const mockGetConversationDetail = vi.mocked(getConversationDetail);
+const mockGetConversationPresence = vi.mocked(getConversationPresence);
 const mockGetMessages = vi.mocked(getMessages);
 const mockOpenConversation = vi.mocked(openDirectConversation);
 const mockSendMessage = vi.mocked(sendMessage);
@@ -133,6 +138,7 @@ describe('web friends and direct chat', () => {
       createdAt: '2026-10-06T12:00:00Z',
       updatedAt: '2026-10-06T12:00:00Z',
     });
+    mockGetConversationPresence.mockResolvedValue({ items: [{ userId: rowan.userId, online: false }] });
     mockGetMessages.mockResolvedValue({ items: [], total: 0, page: 0, size: 20 });
     mockOpenConversation.mockResolvedValue({ conversationId: 41, type: 'DIRECT', participant: rowan });
     mockSendFriendRequest.mockResolvedValue({ requestId: 72, senderId: 9, receiverId: 22, status: 'PENDING', createdAt: '', updatedAt: '' });

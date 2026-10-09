@@ -15,6 +15,10 @@ export function getGroup(groupId: number, token: string) {
   return apiRequest<GroupInfo>(`/api/v1/groups/${groupId}`, { token });
 }
 
+export function renameGroup(groupId: number, name: string, token: string) {
+  return apiRequest<GroupInfo>(`/api/v1/groups/${groupId}`, { method: 'PATCH', body: { name }, token });
+}
+
 export function getGroupMembers(groupId: number, token: string) {
   return apiRequest<GroupMembersResponse>(`/api/v1/groups/${groupId}/members`, { token });
 }

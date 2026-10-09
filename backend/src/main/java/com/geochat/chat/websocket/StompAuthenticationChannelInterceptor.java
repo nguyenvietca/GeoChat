@@ -69,7 +69,13 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
             sessionAttributes.put("jwtToken", token);
             sessionAttributes.put("username", username);
             accessor.setSessionAttributes(sessionAttributes);
+            webSocketSessionRegistry.registerUsername(accessor.getSessionId(), username, jwtService.getUserId(token));
             webSocketSessionRegistry.scheduleExpiration(accessor.getSessionId(), jwtService.getExpiration(token));
+            return message;
+        }
+
+        if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
+            webSocketSessionRegistry.disconnect(accessor.getSessionId());
             return message;
         }
 
@@ -77,7 +83,15 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
             String username = resolveUsername(accessor);
             String destination = accessor.getDestination();
             if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
-                if ("/user/queue/notifications".equals(destination)) {
+                if ("/user/queue/notifications".equals(destination)
+                        || "/user/queue/group-events".equals(destination)) {
+                    return message;
+                }
+                Long presenceUserId = extractConversationId(destination, "/topic/presence/", "");
+                if (presenceUserId != null) {
+                    if (!chatService.canViewPresence(username, presenceUserId)) {
+                        throw new AccessDeniedException("You cannot view this user's presence.");
+                    }
                     return message;
                 }
             }

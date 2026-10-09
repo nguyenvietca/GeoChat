@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiRequest } from './client';
 import {
   getConversationDetail,
+  getConversationPresence,
   getConversations,
   getMessages,
   openDirectConversation,
+  openContextualConversation,
   sendMessage,
 } from './chats';
 
@@ -17,9 +19,11 @@ describe('chat API', () => {
   it('loads conversation list and protected detail', () => {
     getConversations('jwt');
     getConversationDetail(42, 'jwt');
+    getConversationPresence(42, 'jwt');
 
     expect(mockApiRequest).toHaveBeenNthCalledWith(1, '/api/v1/chats', { token: 'jwt' });
     expect(mockApiRequest).toHaveBeenNthCalledWith(2, '/api/v1/chats/42', { token: 'jwt' });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(3, '/api/v1/chats/42/presence', { token: 'jwt' });
   });
 
   it('opens an idempotent direct conversation with a friend', () => {
@@ -27,6 +31,13 @@ describe('chat API', () => {
 
     expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/chats/direct', {
       method: 'POST', body: { userId: 18 }, token: 'jwt',
+    });
+  });
+
+  it('opens a server-validated contextual chat with the requested nearby radius', () => {
+    openContextualConversation(18, 5000, 'jwt');
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/chats/contextual', {
+      method: 'POST', body: { userId: 18, radiusMeters: 5000 }, token: 'jwt',
     });
   });
 

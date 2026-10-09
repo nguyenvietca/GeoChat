@@ -2,10 +2,12 @@ package com.geochat.chat.controller;
 
 import com.geochat.chat.dto.ChatDtos.ConversationDetailResponse;
 import com.geochat.chat.dto.ChatDtos.ConversationListResponse;
+import com.geochat.chat.dto.ChatDtos.ConversationPresenceResponse;
 import com.geochat.chat.dto.ChatDtos.MessageListResponse;
 import com.geochat.chat.dto.ChatDtos.MessageResponse;
 import com.geochat.chat.dto.ChatDtos.OpenDirectChatResponse;
 import com.geochat.chat.dto.OpenDirectChatRequest;
+import com.geochat.chat.dto.OpenContextualChatRequest;
 import com.geochat.chat.dto.SendMessageRequest;
 import com.geochat.chat.service.ChatService;
 import com.geochat.common.response.ApiResponse;
@@ -40,6 +42,13 @@ public class ChatController {
         return ApiResponse.ok(chatService.openDirectConversation(principal.getUsername(), request));
     }
 
+    @PostMapping("/chats/contextual")
+    public ApiResponse<OpenDirectChatResponse> openContextualConversation(
+            @AuthenticationPrincipal UserDetails principal,
+            @Valid @RequestBody OpenContextualChatRequest request) {
+        return ApiResponse.ok(chatService.openContextualConversation(principal.getUsername(), request));
+    }
+
     @GetMapping("/chats")
     public ApiResponse<ConversationListResponse> listConversations(@AuthenticationPrincipal UserDetails principal) {
         return ApiResponse.ok(chatService.listConversations(principal.getUsername()));
@@ -50,6 +59,13 @@ public class ChatController {
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable Long conversationId) {
         return ApiResponse.ok(chatService.getConversationDetail(principal.getUsername(), conversationId));
+    }
+
+    @GetMapping("/chats/{conversationId}/presence")
+    public ApiResponse<ConversationPresenceResponse> getConversationPresence(
+            @AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long conversationId) {
+        return ApiResponse.ok(chatService.getConversationPresence(principal.getUsername(), conversationId));
     }
 
     @PostMapping("/chats/{conversationId}/messages")

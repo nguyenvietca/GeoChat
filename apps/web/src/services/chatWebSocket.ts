@@ -1,4 +1,4 @@
-import { AppNotification, ChatMessage, NotificationReferenceType, NotificationType } from '../types';
+import { AppNotification, ChatMessage, GroupManagementEvent, GroupManagementEventType, NotificationReferenceType, NotificationType, UserPresence } from '../types';
 import {
   buildWebSocketUrl,
   disconnectAllStompConnections,
@@ -107,6 +107,96 @@ export function parseChatMessage(body: string): ChatMessage | null {
     }
 
     return message as ChatMessage;
+  } catch {
+    return null;
+  }
+}
+
+export type GroupManagementHandlers = {
+  onEvent: (event: GroupManagementEvent) => void;
+  onStateChange: (state: StompConnectionState) => void;
+};
+
+export function subscribeToGroupEvents(token: string, handlers: GroupManagementHandlers) {
+  return subscribeToStompDestination(token, '/user/queue/group-events', {
+    onStateChange: handlers.onStateChange,
+    onFrame: (body) => {
+      const event = parseGroupManagementEvent(body);
+      if (event) handlers.onEvent(event);
+    },
+  });
+}
+
+export function parseGroupManagementEvent(body: string): GroupManagementEvent | null {
+  try {
+    const value: unknown = JSON.parse(body);
+    if (!isRecord(value) || !isRecord(value.group)) return null;
+
+    const group = value.group;
+    const groupInfo = group as Partial<GroupManagementEvent['group']>;
+    const owner = groupInfo.owner;
+    const eventTypes: GroupManagementEventType[] = ['GROUP_RENAMED', 'MEMBER_ADDED', 'MEMBER_REMOVED', 'MEMBER_LEFT'];
+    if (
+      !eventTypes.includes(value.type as GroupManagementEventType)
+      || !Number.isSafeInteger(groupInfo.groupId) || Number(groupInfo.groupId) <= 0
+      || typeof groupInfo.name !== 'string'
+      || !isRecord(owner)
+      || !Number.isSafeInteger(owner.userId) || Number(owner.userId) <= 0
+      || typeof owner.username !== 'string' || typeof owner.displayName !== 'string'
+      || !Number.isSafeInteger(groupInfo.memberCount) || Number(groupInfo.memberCount) < 0
+      || typeof groupInfo.createdAt !== 'string' || Number.isNaN(Date.parse(groupInfo.createdAt))
+      || typeof groupInfo.updatedAt !== 'string' || Number.isNaN(Date.parse(groupInfo.updatedAt))
+    ) {
+      return null;
+    }
+
+    let member: GroupManagementEvent['member'] = null;
+    if (value.member !== null) {
+      if (!isRecord(value.member) || !isRecord(value.member.user)) return null;
+      const user = value.member.user;
+      if (
+        !Number.isSafeInteger(user.userId) || Number(user.userId) <= 0
+        || typeof user.username !== 'string' || typeof user.displayName !== 'string'
+        || typeof value.member.role !== 'string'
+        || typeof value.member.joinedAt !== 'string' || Number.isNaN(Date.parse(value.member.joinedAt))
+      ) {
+        return null;
+      }
+      member = value.member as GroupManagementEvent['member'];
+    }
+
+    return { type: value.type as GroupManagementEventType, group: group as GroupManagementEvent['group'], member };
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export type PresenceHandlers = {
+  onPresence: (presence: UserPresence) => void;
+  onStateChange: (state: StompConnectionState) => void;
+};
+
+export function subscribeToPresence(userId: number, token: string, handlers: PresenceHandlers) {
+  return subscribeToStompDestination(token, `/topic/presence/${userId}`, {
+    onStateChange: handlers.onStateChange,
+    onFrame: (body) => {
+      const presence = parseUserPresence(body);
+      if (presence?.userId === userId) handlers.onPresence(presence);
+    },
+  });
+}
+
+export function parseUserPresence(body: string): UserPresence | null {
+  try {
+    const value: unknown = JSON.parse(body);
+    if (!isRecord(value)
+      || !Number.isSafeInteger(value.userId) || Number(value.userId) <= 0
+      || typeof value.online !== 'boolean') return null;
+    return { userId: Number(value.userId), online: value.online };
   } catch {
     return null;
   }

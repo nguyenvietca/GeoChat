@@ -6,7 +6,7 @@ import {
   getOutgoingFriendRequests,
   sendFriendRequest,
 } from '../../api/friends';
-import { openDirectConversation } from '../../api/chats';
+import { openContextualConversation, openDirectConversation } from '../../api/chats';
 import { getNearbyUsers, updateCurrentLocation } from '../../api/location';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
@@ -122,6 +122,23 @@ export function NearbyPage() {
     }
   };
 
+  const handleMessage = async (person: NearbyUser) => {
+    if (!token || busyUserId !== null) return;
+    setBusyUserId(person.userId);
+    setError('');
+    try {
+      const relationship = relationships[person.userId] ?? 'NONE';
+      const conversation = relationship === 'FRIENDS'
+        ? await openDirectConversation(person.userId, token)
+        : await openContextualConversation(person.userId, radius, token);
+      navigate(`/app/chat/${conversation.conversationId}`);
+    } catch (messageError) {
+      setError(messageError instanceof ApiError ? messageError.message : 'Unable to open this conversation.');
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
   return (
     <section className="page-content">
       <div className="page-heading">
@@ -147,19 +164,27 @@ export function NearbyPage() {
       {!loading && hasSearched && people.length > 0 ? (
         <div className="results-list" aria-label="Nearby users">
           {people.map((person) => (
-            <article className="person-row" key={person.userId}>
+            <article className="person-row nearby-person-row" key={person.userId}>
               <span className="person-avatar nearby-avatar">{person.displayName.charAt(0).toUpperCase()}</span>
               <span className="person-details"><strong>{person.displayName}</strong><small>GeoChat member</small></span>
               <span className="distance-label">{formatDistance(person.distanceMeters)}</span>
-              <button
-                className={relationships[person.userId] === 'NONE' || relationships[person.userId] === 'FRIENDS'
-                  ? 'primary-button compact-button' : 'quiet-light-button compact-button'}
-                type="button"
-                onClick={() => void handleRelationshipAction(person)}
-                disabled={busyUserId !== null}
-              >
-                {busyUserId === person.userId ? 'Working…' : relationshipActionLabel(relationships[person.userId] ?? 'NONE')}
-              </button>
+              <div className="nearby-actions">
+                {relationships[person.userId] !== 'FRIENDS' ? (
+                  <button className="primary-button compact-button" type="button"
+                    onClick={() => void handleMessage(person)} disabled={busyUserId !== null}>
+                    {busyUserId === person.userId ? 'Opening…' : 'Message'}
+                  </button>
+                ) : null}
+                <button
+                  className={relationships[person.userId] === 'FRIENDS'
+                    ? 'primary-button compact-button' : 'quiet-light-button compact-button'}
+                  type="button"
+                  onClick={() => void handleRelationshipAction(person)}
+                  disabled={busyUserId !== null}
+                >
+                  {busyUserId === person.userId ? 'Working…' : relationshipActionLabel(relationships[person.userId] ?? 'NONE')}
+                </button>
+              </div>
             </article>
           ))}
         </div>

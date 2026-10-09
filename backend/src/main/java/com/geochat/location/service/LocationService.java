@@ -92,6 +92,21 @@ public class LocationService {
         return new NearbyUsersResponse(items, radiusMeters);
     }
 
+    @Transactional(readOnly = true)
+    public boolean isWithinRadius(String username, Long targetUserId, Double radiusMeters) {
+        if (radiusMeters == null || radiusMeters <= 0 || radiusMeters > MAX_RADIUS_METERS) {
+            return false;
+        }
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        UserLocation currentLocation = locationRepository.findByUserId(user.getId()).orElse(null);
+        if (currentLocation == null) {
+            return false;
+        }
+        return locationRepository.isWithinRadius(user.getId(), targetUserId,
+                currentLocation.getLatitude(), currentLocation.getLongitude(), radiusMeters);
+    }
+
     private LocationResponse toResponse(UserLocation location) {
         return new LocationResponse(location.getLatitude(), location.getLongitude(), location.getUpdatedAt());
     }

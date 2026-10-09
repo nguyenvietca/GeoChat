@@ -3,11 +3,15 @@ import {
   buildChatWebSocketUrl,
   disconnectAllChatWebSockets,
   parseChatMessage,
+  parseGroupManagementEvent,
+  parseUserPresence,
   parseNotification,
   subscribeToNotifications,
+  subscribeToGroupEvents,
+  subscribeToPresence,
   subscribeToConversation,
 } from './chatWebSocket';
-import { AppNotification, ChatMessage } from '../types';
+import { AppNotification, ChatMessage, GroupManagementEvent } from '../types';
 
 const stompHarness = vi.hoisted(() => ({
   configuration: null as unknown,
@@ -61,6 +65,22 @@ function notification(overrides: Partial<AppNotification> = {}): AppNotification
     read: false,
     createdAt: '2026-10-06T12:00:00Z',
     readAt: null,
+    ...overrides,
+  };
+}
+
+function groupManagementEvent(overrides: Partial<GroupManagementEvent> = {}): GroupManagementEvent {
+  return {
+    type: 'GROUP_RENAMED',
+    group: {
+      groupId: 42,
+      name: 'Weekend crew',
+      owner: { userId: 9, username: 'mira', displayName: 'Mira Vale' },
+      memberCount: 2,
+      createdAt: '2026-10-06T12:00:00Z',
+      updatedAt: '2026-10-06T12:01:00Z',
+    },
+    member: null,
     ...overrides,
   };
 }
@@ -151,5 +171,35 @@ describe('web chat WebSocket service', () => {
     expect(parseNotification(JSON.stringify(notification({ id: 0 })))).toBeNull();
     expect(parseNotification(JSON.stringify(notification({ conversationId: -1 })))).toBeNull();
     expect(parseNotification('{not json')).toBeNull();
+  });
+
+  it('validates group management events and subscribes to the user-scoped destination', () => {
+    const event = groupManagementEvent();
+    expect(parseGroupManagementEvent(JSON.stringify(event))).toEqual(event);
+    expect(parseGroupManagementEvent(JSON.stringify(groupManagementEvent({ type: 'UNKNOWN' as GroupManagementEvent['type'] })))).toBeNull();
+
+    const onEvent = vi.fn();
+    const cleanup = subscribeToGroupEvents('jwt', { onEvent, onStateChange: vi.fn() });
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/user/queue/group-events', expect.any(Function));
+    (stompHarness.frameCallback as (frame: { body: string }) => void)({ body: JSON.stringify(event) });
+    expect(onEvent).toHaveBeenCalledWith(event);
+    cleanup();
+  });
+
+  it('subscribes to authorized presence updates and ignores malformed or unrelated users', () => {
+    const onPresence = vi.fn();
+    const cleanup = subscribeToPresence(22, 'jwt', { onPresence, onStateChange: vi.fn() });
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/topic/presence/22', expect.any(Function));
+    expect(parseUserPresence('{bad json')).toBeNull();
+    expect(parseUserPresence(JSON.stringify({ userId: 22, online: 'yes' }))).toBeNull();
+
+    const receiveFrame = stompHarness.frameCallback as (frame: { body: string }) => void;
+    receiveFrame({ body: JSON.stringify({ userId: 23, online: true }) });
+    receiveFrame({ body: JSON.stringify({ userId: 22, online: false }) });
+    expect(onPresence).toHaveBeenCalledTimes(1);
+    expect(onPresence).toHaveBeenCalledWith({ userId: 22, online: false });
+    cleanup();
   });
 });

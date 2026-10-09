@@ -4,6 +4,7 @@ import com.geochat.chat.dto.AddGroupMembersRequest;
 import com.geochat.chat.dto.ChatDtos.GroupInfoResponse;
 import com.geochat.chat.dto.ChatDtos.GroupMembersResponse;
 import com.geochat.chat.dto.CreateGroupRequest;
+import com.geochat.chat.dto.RenameGroupRequest;
 import com.geochat.chat.service.GroupService;
 import com.geochat.common.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +39,13 @@ public class GroupController {
     public ApiResponse<GroupInfoResponse> getGroup(@AuthenticationPrincipal UserDetails principal,
                                                     @PathVariable Long groupId) {
         return ApiResponse.ok(groupService.getGroup(principal.getUsername(), groupId));
+    }
+
+    @PatchMapping("/{groupId}")
+    public ApiResponse<GroupInfoResponse> renameGroup(@AuthenticationPrincipal UserDetails principal,
+                                                       @PathVariable Long groupId,
+                                                       @Valid @RequestBody RenameGroupRequest request) {
+        return ApiResponse.ok(groupService.renameGroup(principal.getUsername(), groupId, request));
     }
 
     @GetMapping("/{groupId}/members")

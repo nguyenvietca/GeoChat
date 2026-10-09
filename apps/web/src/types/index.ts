@@ -83,7 +83,11 @@ export type ConversationDetail = {
   participants: ConversationUser[];
   createdAt: string;
   updatedAt: string;
+  limitedMessagesRemaining?: number | null;
 };
+
+export type UserPresence = { userId: number; online: boolean };
+export type ConversationPresenceResponse = { items: UserPresence[] };
 
 export type OpenDirectConversationResponse = {
   conversationId: number;
@@ -124,6 +128,14 @@ export type GroupMember = {
 };
 
 export type GroupMembersResponse = { items: GroupMember[] };
+
+export type GroupManagementEventType = 'GROUP_RENAMED' | 'MEMBER_ADDED' | 'MEMBER_REMOVED' | 'MEMBER_LEFT';
+
+export type GroupManagementEvent = {
+  type: GroupManagementEventType;
+  group: GroupInfo;
+  member: GroupMember | null;
+};
 
 export type CreateGroupRequest = { name: string; memberIds: number[] };
 

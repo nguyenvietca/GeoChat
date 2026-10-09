@@ -120,6 +120,71 @@ class ChatWebSocketIntegrationTest {
 	}
 
 	@Test
+	void directConversationPresenceChangesToOfflineAfterTheLastSessionDisconnects() throws Exception {
+		User alice = createUser("presence-alice-ws", "Alice");
+		User bob = createUser("presence-bob-ws", "Bob");
+		markFriends(alice, bob);
+		Long conversationId = openConversation(alice, bob);
+
+		StompSession bobSession = connectSession(tokenFor(bob));
+		BlockingQueue<Map<String, Object>> presenceEvents = new LinkedBlockingQueue<>();
+		bobSession.subscribe("/topic/presence/" + alice.getId(), frameHandler(presenceEvents));
+		StompSession aliceSession = connectSession(tokenFor(alice));
+
+		Map<String, Object> onlineEvent = presenceEvents.poll(10, TimeUnit.SECONDS);
+		assertThat(onlineEvent).containsEntry("userId", alice.getId().intValue()).containsEntry("online", true);
+		HttpRequest presenceRequest = HttpRequest.newBuilder()
+				.uri(URI.create("http://localhost:" + port + "/api/v1/chats/" + conversationId + "/presence"))
+				.header("Authorization", "Bearer " + tokenFor(bob)).GET().build();
+		HttpResponse<String> onlineSnapshot = HttpClient.newHttpClient()
+				.send(presenceRequest, HttpResponse.BodyHandlers.ofString());
+		assertThat(onlineSnapshot.statusCode()).isEqualTo(200);
+		assertThat(objectMapper.readTree(onlineSnapshot.body()).path("data").path("items").findValue("userId"))
+				.isNotNull();
+		assertThat(objectMapper.readTree(onlineSnapshot.body()).path("data").path("items").findValuesAsText("online"))
+				.contains("true");
+
+		aliceSession.disconnect();
+		Map<String, Object> offlineEvent = presenceEvents.poll(10, TimeUnit.SECONDS);
+		assertThat(offlineEvent).containsEntry("userId", alice.getId().intValue()).containsEntry("online", false);
+
+		HttpResponse<String> offlineSnapshot = HttpClient.newHttpClient()
+				.send(presenceRequest, HttpResponse.BodyHandlers.ofString());
+		assertThat(objectMapper.readTree(offlineSnapshot.body()).path("data").path("items").findValuesAsText("online"))
+				.contains("false");
+	}
+
+	@Test
+	void removedMemberReceivesRemovalEventButNoFurtherGroupMessages() throws Exception {
+		User owner = createUser("owner-group-revoke-ws", "Owner");
+		User member = createUser("member-group-revoke-ws", "Member");
+		markFriends(owner, member);
+		Long groupId = groupService.createGroup(owner.getUsername(),
+				new CreateGroupRequest("Revoked group", java.util.List.of(member.getId()))).groupId();
+
+		StompSession ownerSession = connectSession(tokenFor(owner));
+		StompSession memberSession = connectSession(tokenFor(member));
+		BlockingQueue<Map<String, Object>> ownerMessages = new LinkedBlockingQueue<>();
+		BlockingQueue<Map<String, Object>> memberMessages = new LinkedBlockingQueue<>();
+		BlockingQueue<Map<String, Object>> memberEvents = new LinkedBlockingQueue<>();
+		ownerSession.subscribe("/topic/chat/" + groupId, frameHandler(ownerMessages));
+		memberSession.subscribe("/topic/chat/" + groupId, frameHandler(memberMessages));
+		memberSession.subscribe("/user/queue/group-events", frameHandler(memberEvents));
+
+		groupService.removeMember(owner.getUsername(), groupId, member.getId());
+
+		Map<String, Object> removalEvent = memberEvents.poll(10, TimeUnit.SECONDS);
+		assertThat(removalEvent).isNotNull();
+		assertThat(removalEvent.get("type")).isEqualTo("MEMBER_REMOVED");
+		assertThat(((Map<?, ?>) removalEvent.get("member")).get("user").toString()).contains("userId");
+		ownerSession.send("/app/chat/" + groupId + "/send", Map.of("content", "After removal"));
+
+		assertThat(ownerMessages.poll(10, TimeUnit.SECONDS).get("content")).isEqualTo("After removal");
+		assertThat(memberMessages.poll(1, TimeUnit.SECONDS)).isNull();
+		assertThat(memberEvents.poll(1, TimeUnit.SECONDS)).isNull();
+	}
+
+	@Test
 	void validJwtCanConnectAndReceiveRealtimeMessage() throws Exception {
 		User alice = createUser("alice-ws", "Alice");
 		User bob = createUser("bob-ws", "Bob");

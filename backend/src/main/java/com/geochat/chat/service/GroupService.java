@@ -6,6 +6,8 @@ import com.geochat.chat.dto.ChatDtos.GroupMemberResponse;
 import com.geochat.chat.dto.ChatDtos.GroupMembersResponse;
 import com.geochat.chat.dto.ChatDtos.UserSummaryResponse;
 import com.geochat.chat.dto.CreateGroupRequest;
+import com.geochat.chat.dto.RenameGroupRequest;
+import com.geochat.chat.event.GroupManagementEvent;
 import com.geochat.chat.entity.Conversation;
 import com.geochat.chat.entity.ConversationParticipant;
 import com.geochat.chat.repository.ConversationParticipantRepository;
@@ -15,6 +17,7 @@ import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,8 +26,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class GroupService {
@@ -33,17 +39,20 @@ public class GroupService {
     private final ConversationParticipantRepository participantRepository;
     private final UserRepository userRepository;
     private final FriendRequestRepository friendRequestRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private final int maxGroupMembers;
 
     public GroupService(ConversationRepository conversationRepository,
                         ConversationParticipantRepository participantRepository,
                         UserRepository userRepository,
                         FriendRequestRepository friendRequestRepository,
+                        ApplicationEventPublisher applicationEventPublisher,
                         @Value("${app.chat.max-group-members:100}") int maxGroupMembers) {
         this.conversationRepository = conversationRepository;
         this.participantRepository = participantRepository;
         this.userRepository = userRepository;
         this.friendRequestRepository = friendRequestRepository;
+        this.applicationEventPublisher = applicationEventPublisher;
         this.maxGroupMembers = maxGroupMembers;
     }
 
@@ -114,22 +123,41 @@ public class GroupService {
                 (int) participantRepository.countByConversationId(groupId));
     }
 
+    @Transactional
+    public GroupInfoResponse renameGroup(String username, Long groupId, RenameGroupRequest request) {
+        Conversation conversation = requireGroupMember(username, groupId, true);
+        User owner = requireOwner(conversation, username);
+        String name = request.name().trim();
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("group name is required");
+        }
+        conversation.setGroupName(name);
+        conversation.setUpdatedAt(Instant.now());
+        conversationRepository.save(conversation);
+        GroupInfoResponse response = toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
+        applicationEventPublisher.publishEvent(new GroupManagementEvent("GROUP_RENAMED", response, null));
+        return response;
+    }
+
     @Transactional(readOnly = true)
     public GroupMembersResponse getMembers(String username, Long groupId) {
         requireGroupMember(username, groupId);
-        List<GroupMemberResponse> members = participantRepository.findByConversationIdOrderByIdAsc(groupId).stream()
-                .map(participant -> userRepository.findById(participant.getUserId())
-                        .map(user -> new GroupMemberResponse(toUserSummary(user), participant.getRole(),
-                                participant.getCreatedAt()))
-                        .orElse(null))
-                .filter(member -> member != null)
+        var participants = participantRepository.findByConversationIdOrderByIdAsc(groupId);
+        Map<Long, User> users = userRepository.findAllById(participants.stream()
+                .map(ConversationParticipant::getUserId).toList()).stream()
+            .collect(Collectors.toMap(User::getId, Function.identity()));
+        List<GroupMemberResponse> members = participants.stream()
+            .map(participant -> users.get(participant.getUserId()) == null ? null
+                : new GroupMemberResponse(toUserSummary(users.get(participant.getUserId())), participant.getRole(),
+                participant.getCreatedAt()))
+            .filter(member -> member != null)
                 .toList();
         return new GroupMembersResponse(members);
     }
 
     @Transactional
     public void leaveGroup(String username, Long groupId) {
-        Conversation conversation = requireGroupMember(username, groupId);
+        Conversation conversation = requireGroupMember(username, groupId, true);
         Long userId = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new EntityNotFoundException("User not found")).getId();
         ConversationParticipant participant = participantRepository.findByConversationIdAndUserId(groupId, userId)
@@ -137,14 +165,21 @@ public class GroupService {
         if ("OWNER".equals(participant.getRole())) {
             throw new IllegalArgumentException("The group owner cannot leave without transferring ownership");
         }
+        User departingUser = userRepository.findById(userId)
+            .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        GroupMemberResponse departedMember = new GroupMemberResponse(toUserSummary(departingUser),
+            participant.getRole(), participant.getCreatedAt());
         participantRepository.delete(participant);
         conversation.setUpdatedAt(Instant.now());
         conversationRepository.save(conversation);
+        User owner = conversation.getOwner();
+        GroupInfoResponse response = toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
+        applicationEventPublisher.publishEvent(new GroupManagementEvent("MEMBER_LEFT", response, departedMember));
     }
 
     @Transactional
     public GroupInfoResponse addMembers(String username, Long groupId, AddGroupMembersRequest request) {
-        Conversation conversation = requireGroupMember(username, groupId);
+        Conversation conversation = requireGroupMember(username, groupId, true);
         User owner = requireOwner(conversation, username);
 
         Set<Long> newIds = new LinkedHashSet<>();
@@ -175,6 +210,7 @@ public class GroupService {
         }
         Instant now = Instant.now();
         List<ConversationParticipant> participants = new ArrayList<>();
+        List<GroupMemberResponse> addedMembers = new ArrayList<>();
         for (User user : users) {
             if (!friendRequestRepository.areFriends(owner.getId(), user.getId())) {
                 throw new IllegalArgumentException("All group members must be friends with the owner");
@@ -183,26 +219,38 @@ public class GroupService {
             participant.setRole("MEMBER");
             participant.setCreatedAt(now);
             participants.add(participant);
+            addedMembers.add(new GroupMemberResponse(toUserSummary(user), "MEMBER", now));
         }
         participantRepository.saveAll(participants);
         conversation.setUpdatedAt(now);
         conversationRepository.save(conversation);
-        return toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
+        GroupInfoResponse response = toGroupInfo(conversation, owner,
+                (int) participantRepository.countByConversationId(groupId));
+        for (GroupMemberResponse member : addedMembers) {
+            applicationEventPublisher.publishEvent(new GroupManagementEvent("MEMBER_ADDED", response, member));
+        }
+        return response;
     }
 
     @Transactional
     public GroupInfoResponse removeMember(String username, Long groupId, Long memberId) {
-        Conversation conversation = requireGroupMember(username, groupId);
+        Conversation conversation = requireGroupMember(username, groupId, true);
         User owner = requireOwner(conversation, username);
         if (owner.getId().equals(memberId)) {
             throw new IllegalArgumentException("The group owner cannot be removed");
         }
         ConversationParticipant participant = participantRepository.findByConversationIdAndUserId(groupId, memberId)
                 .orElseThrow(() -> new EntityNotFoundException("Member not found in this group"));
+        User removedUser = userRepository.findById(memberId)
+            .orElseThrow(() -> new EntityNotFoundException("Member not found in this group"));
+        GroupMemberResponse removedMember = new GroupMemberResponse(toUserSummary(removedUser),
+            participant.getRole(), participant.getCreatedAt());
         participantRepository.delete(participant);
         conversation.setUpdatedAt(Instant.now());
         conversationRepository.save(conversation);
-        return toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
+        GroupInfoResponse response = toGroupInfo(conversation, owner, (int) participantRepository.countByConversationId(groupId));
+        applicationEventPublisher.publishEvent(new GroupManagementEvent("MEMBER_REMOVED", response, removedMember));
+        return response;
     }
 
     private User requireOwner(Conversation conversation, String username) {
@@ -215,7 +263,12 @@ public class GroupService {
     }
 
     private Conversation requireGroupMember(String username, Long groupId) {
-        Conversation conversation = conversationRepository.findById(groupId)
+        return requireGroupMember(username, groupId, false);
+    }
+
+    private Conversation requireGroupMember(String username, Long groupId, boolean lock) {
+        Conversation conversation = (lock ? conversationRepository.findByIdForUpdate(groupId)
+                : conversationRepository.findById(groupId))
                 .filter(item -> "GROUP".equals(item.getType()))
                 .orElseThrow(() -> new EntityNotFoundException("Group not found"));
         User user = userRepository.findByUsernameIgnoreCase(username)

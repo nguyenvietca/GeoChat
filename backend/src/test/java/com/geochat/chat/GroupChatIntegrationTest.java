@@ -25,6 +25,11 @@ import org.springframework.web.context.WebApplicationContext;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -122,6 +127,40 @@ class GroupChatIntegrationTest {
     }
 
     @Test
+    void onlyOwnerCanRenameGroupAndNameIsTrimmedAndValidated() throws Exception {
+        User owner = createUser("group-rename-owner", "Owner");
+        User member = createUser("group-rename-member", "Member");
+        markFriends(owner, member);
+        long groupId = createGroup(owner, List.of(member.getId()));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                "/api/v1/groups/{groupId}", groupId)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"  New name  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("New name"));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                "/api/v1/groups/{groupId}", groupId)
+                        .header("Authorization", bearer(member))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Not allowed\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                "/api/v1/groups/{groupId}", groupId)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                "/api/v1/groups/{groupId}", groupId)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + "x".repeat(101) + "\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void invalidMembersNamesAndGroupSizeAreRejectedWithoutCreatingConversation() throws Exception {
         User owner = createUser("group-rules-owner", "Owner");
         User friend = createUser("group-rules-friend", "Friend");
@@ -201,6 +240,13 @@ class GroupChatIntegrationTest {
         mockMvc.perform(get("/api/v1/groups/{groupId}", groupId)
                         .header("Authorization", bearer(member)))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/chats/{groupId}/messages", groupId)
+                        .header("Authorization", bearer(member)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/chats/{groupId}/messages", groupId)
+                        .header("Authorization", bearer(member)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"After leaving\"}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -250,6 +296,13 @@ class GroupChatIntegrationTest {
         mockMvc.perform(get("/api/v1/groups/{groupId}", groupId)
                         .header("Authorization", bearer(second)))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/chats/{groupId}/messages", groupId)
+                        .header("Authorization", bearer(second)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/chats/{groupId}/messages", groupId)
+                        .header("Authorization", bearer(second)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"After removal\"}"))
+                .andExpect(status().isForbidden());
         mockMvc.perform(delete("/api/v1/groups/{groupId}/members/{memberId}", groupId, second.getId())
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isNotFound());
@@ -275,6 +328,44 @@ class GroupChatIntegrationTest {
                         .content(memberBody(List.of(second.getId()))))
                 .andExpect(status().isOk());
     }
+
+        @Test
+        void concurrentMemberAdditionsRespectTheMaximumGroupSize() throws Exception {
+                User owner = createUser("group-race-owner", "Owner");
+                User existing = createUser("group-race-existing", "Existing");
+                User first = createUser("group-race-first", "First");
+                User second = createUser("group-race-second", "Second");
+                markFriends(owner, existing);
+                markFriends(owner, first);
+                markFriends(owner, second);
+                long groupId = createGroup(owner, List.of(existing.getId()));
+                CountDownLatch ready = new CountDownLatch(2);
+                CountDownLatch start = new CountDownLatch(1);
+                ExecutorService executor = Executors.newFixedThreadPool(2);
+
+                try {
+                        Future<Integer> firstResult = executor.submit(() -> addMemberConcurrently(owner, groupId, first, ready, start));
+                        Future<Integer> secondResult = executor.submit(() -> addMemberConcurrently(owner, groupId, second, ready, start));
+                        assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+                        start.countDown();
+
+                        assertThat(List.of(firstResult.get(10, TimeUnit.SECONDS), secondResult.get(10, TimeUnit.SECONDS)))
+                                        .containsExactlyInAnyOrder(200, 400);
+                        assertThat(participantRepository.countByConversationId(groupId)).isEqualTo(3);
+                } finally {
+                        executor.shutdownNow();
+                }
+        }
+
+        private int addMemberConcurrently(User owner, long groupId, User member,
+                                                                          CountDownLatch ready, CountDownLatch start) throws Exception {
+                ready.countDown();
+                start.await();
+                return mockMvc.perform(post("/api/v1/groups/{groupId}/members", groupId)
+                                                .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                                                .content(memberBody(List.of(member.getId()))))
+                                .andReturn().getResponse().getStatus();
+        }
 
     private String memberBody(List<Long> memberIds) throws Exception {
         return objectMapper.writeValueAsString(java.util.Map.of("memberIds", memberIds));

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getConversations, openDirectConversation } from '../../api/chats';
 import { ApiError } from '../../api/client';
 import { getFriends } from '../../api/friends';
 import { getGroup } from '../../api/groups';
 import { useAuth } from '../../app/providers/AuthContext';
+import { subscribeToGroupEvents } from '../../services/chatWebSocket';
 import { Conversation, ConversationUser, FriendSummary, GroupInfo } from '../../types';
 import { ChatPanel } from './ChatPanel';
 import { CreateGroupForm } from './CreateGroupForm';
@@ -14,6 +15,8 @@ type DirectEntry = { key: string; user: ConversationUser; conversationId: number
 export function MessagesPage() {
   const { conversationId: routeId } = useParams();
   const selectedId = routeId === undefined ? null : Number(routeId);
+  const selectedIdRef = useRef<number | null>(selectedId);
+  selectedIdRef.current = selectedId;
   const navigate = useNavigate();
   const { token, user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -24,7 +27,7 @@ export function MessagesPage() {
   const [openingUserId, setOpeningUserId] = useState<number | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (clearMissingSelection = false) => {
     if (!token) {
       setError('Your session has expired. Please sign in again.');
       setLoading(false);
@@ -33,6 +36,11 @@ export function MessagesPage() {
     setError('');
     try {
       const [conversationResponse, friendResponse] = await Promise.all([getConversations(token), getFriends(token)]);
+      const activeConversationId = selectedIdRef.current;
+      if (clearMissingSelection && activeConversationId !== null
+        && !conversationResponse.items.some((item) => item.conversationId === activeConversationId)) {
+        navigate('/app/chat');
+      }
       const groupConversations = conversationResponse.items.filter((item) => item.type === 'GROUP');
       const groupResults = await Promise.allSettled(groupConversations.map((item) => getGroup(item.conversationId, token)));
       const groupById: Record<number, GroupInfo> = {};
@@ -47,12 +55,43 @@ export function MessagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [navigate, token]);
 
   useEffect(() => {
     setLoading(true);
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let hasConnected = false;
+    return subscribeToGroupEvents(token, {
+      onStateChange: (state) => {
+        if (state === 'connected') {
+          if (hasConnected) void load(true);
+          hasConnected = true;
+        }
+      },
+      onEvent: (event) => {
+        setGroups((current) => {
+          const previous = current[event.group.groupId];
+          if (previous && previous.name === event.group.name
+            && previous.memberCount === event.group.memberCount
+            && previous.updatedAt === event.group.updatedAt) return current;
+          return { ...current, [event.group.groupId]: event.group };
+        });
+        const leftCurrentGroup = (event.type === 'MEMBER_REMOVED' || event.type === 'MEMBER_LEFT')
+          && event.member?.user.userId === user?.id;
+        const joinedCurrentGroup = event.type === 'MEMBER_ADDED' && event.member?.user.userId === user?.id;
+        if (leftCurrentGroup) {
+          navigate('/app/chat');
+          void load();
+        } else if (joinedCurrentGroup) {
+          void load();
+        }
+      },
+    });
+  }, [load, navigate, token, user?.id]);
 
   const openFriend = async (friend: ConversationUser) => {
     if (!token || openingUserId !== null) return;
@@ -145,7 +184,10 @@ export function MessagesPage() {
         </aside>
         <div className="chat-panel-area">
           {selectedId !== null ? (
-            <ChatPanel key={selectedId} conversationId={selectedId} onBack={closeConversation} onLeftGroup={handleLeftGroup} />
+            <ChatPanel key={selectedId} conversationId={selectedId} groupInfo={groups[selectedId] ?? null}
+              onBack={closeConversation} onLeftGroup={handleLeftGroup}
+              onGroupChanged={(group) => setGroups((current) => ({ ...current, [group.groupId]: group }))}
+              onOpenConversation={(id) => { navigate(`/app/chat/${id}`); void load(); }} />
           ) : (
             <div className="chat-panel-empty"><strong>Select a friend or group</strong><span>to start chatting.</span></div>
           )}

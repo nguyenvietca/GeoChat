@@ -18,13 +18,16 @@ import java.util.List;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthenticationChannelInterceptor stompAuthenticationChannelInterceptor;
+    private final GroupConversationOutboundInterceptor groupConversationOutboundInterceptor;
     private final List<String> allowedOrigins;
     private final WebSocketSessionRegistry webSocketSessionRegistry;
 
     public WebSocketConfig(StompAuthenticationChannelInterceptor stompAuthenticationChannelInterceptor,
+                           GroupConversationOutboundInterceptor groupConversationOutboundInterceptor,
                            @Value("${app.cors.allowed-origins}") List<String> allowedOrigins,
                            WebSocketSessionRegistry webSocketSessionRegistry) {
         this.stompAuthenticationChannelInterceptor = stompAuthenticationChannelInterceptor;
+        this.groupConversationOutboundInterceptor = groupConversationOutboundInterceptor;
         this.allowedOrigins = allowedOrigins;
         this.webSocketSessionRegistry = webSocketSessionRegistry;
     }
@@ -45,6 +48,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(stompAuthenticationChannelInterceptor);
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(groupConversationOutboundInterceptor);
     }
 
     @Override

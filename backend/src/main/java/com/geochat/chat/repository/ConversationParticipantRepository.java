@@ -30,4 +30,20 @@ public interface ConversationParticipantRepository extends JpaRepository<Convers
 
     @Query("select count(cp) from ConversationParticipant cp where cp.id.conversationId = :conversationId")
     long countByConversationId(@Param("conversationId") Long conversationId);
+
+    @Query("select count(groupMember) > 0 from ConversationParticipant firstMember, "
+            + "ConversationParticipant groupMember, Conversation conversation "
+            + "where conversation.id = firstMember.id.conversationId "
+            + "and conversation.id = groupMember.id.conversationId "
+            + "and conversation.type = 'GROUP' "
+            + "and firstMember.id.userId = :firstUserId and groupMember.id.userId = :secondUserId")
+    boolean shareGroup(@Param("firstUserId") Long firstUserId, @Param("secondUserId") Long secondUserId);
+
+    @Query("select count(firstMember) > 0 from ConversationParticipant firstMember, "
+            + "ConversationParticipant secondMember, Conversation conversation "
+            + "where conversation.id = firstMember.id.conversationId "
+            + "and conversation.id = secondMember.id.conversationId "
+            + "and conversation.type = 'DIRECT' "
+            + "and firstMember.id.userId = :firstUserId and secondMember.id.userId = :secondUserId")
+    boolean shareDirectConversation(@Param("firstUserId") Long firstUserId, @Param("secondUserId") Long secondUserId);
 }

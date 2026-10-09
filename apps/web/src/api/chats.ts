@@ -3,6 +3,7 @@ import {
   ChatMessage,
   ConversationDetail,
   ConversationListResponse,
+  ConversationPresenceResponse,
   MessageListResponse,
   OpenDirectConversationResponse,
   SendMessageRequest,
@@ -35,4 +36,16 @@ export function sendMessage(conversationId: number, payload: SendMessageRequest,
     body: payload,
     token,
   });
+}
+
+export function openContextualConversation(userId: number, radiusMeters: number | undefined, token: string) {
+  return apiRequest<OpenDirectConversationResponse>('/api/v1/chats/contextual', {
+    method: 'POST',
+    body: { userId, ...(radiusMeters === undefined ? {} : { radiusMeters }) },
+    token,
+  });
+}
+
+export function getConversationPresence(conversationId: number, token: string) {
+  return apiRequest<ConversationPresenceResponse>(`/api/v1/chats/${conversationId}/presence`, { token });
 }

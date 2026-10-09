@@ -27,7 +27,8 @@ public class ChatDtos {
             String type,
             List<UserSummaryResponse> participants,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            Integer limitedMessagesRemaining
     ) {}
 
     public record MessageResponse(
@@ -69,4 +70,8 @@ public class ChatDtos {
             String role,
             Instant joinedAt
     ) {}
+
+        public record UserPresenceResponse(Long userId, boolean online) {}
+
+        public record ConversationPresenceResponse(List<UserPresenceResponse> items) {}
 }

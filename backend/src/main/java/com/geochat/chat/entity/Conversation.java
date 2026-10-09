@@ -31,6 +31,9 @@ public class Conversation {
     @Column(name = "group_name", length = 100)
     private String groupName;
 
+    @Column(name = "contextual_limited", nullable = false)
+    private boolean contextualLimited;
+
     @ManyToOne
     @OnDelete(action = OnDeleteAction.CASCADE)
     @JoinColumn(name = "owner_id")
@@ -72,6 +75,14 @@ public class Conversation {
 
     public void setGroupName(String groupName) {
         this.groupName = groupName;
+    }
+
+    public boolean isContextualLimited() {
+        return contextualLimited;
+    }
+
+    public void setContextualLimited(boolean contextualLimited) {
+        this.contextualLimited = contextualLimited;
     }
 
     public User getOwner() {
