@@ -12,6 +12,9 @@ import java.util.Optional;
 
 @Repository
 public interface ConversationRepository extends JpaRepository<Conversation, Long> {
+    @Query("select conversation from Conversation conversation left join fetch conversation.owner where conversation.id in :ids")
+    java.util.List<Conversation> findSummariesByIds(@Param("ids") java.util.List<Long> ids);
+
     Optional<Conversation> findByTypeAndConversationKey(String type, String conversationKey);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

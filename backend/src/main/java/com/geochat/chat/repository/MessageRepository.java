@@ -24,6 +24,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     long countByConversationId(Long conversationId);
 
+    long countByConversationIdAndSenderId(Long conversationId, Long senderId);
+
     @org.springframework.data.jpa.repository.Modifying
     @Query("DELETE FROM Message message WHERE message.conversationId = :conversationId")
     void deleteAllByConversationId(@Param("conversationId") Long conversationId);

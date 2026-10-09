@@ -13,6 +13,8 @@ import java.util.Optional;
 @Repository
 public interface ConversationParticipantRepository extends JpaRepository<ConversationParticipant, ConversationParticipantId> {
 
+    List<ConversationParticipant> findByIdConversationIdIn(List<Long> conversationIds);
+
     @Query("select cp from ConversationParticipant cp where cp.id.userId = :userId order by cp.id.conversationId desc")
     List<ConversationParticipant> findByUserIdOrderByConversationIdDesc(@Param("userId") Long userId);
 

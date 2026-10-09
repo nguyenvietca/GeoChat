@@ -109,11 +109,21 @@ public class ChatService {
 		addParticipantIfMissing(conversation.getId(), currentUser.getId());
 		addParticipantIfMissing(conversation.getId(), otherUserId);
 
-		return new OpenDirectChatResponse(conversation.getId(), conversation.getType(), toUserSummary(otherUser));
+		return new OpenDirectChatResponse(conversation.getId(), conversation.getType(), toUserSummary(otherUser), conversation.getUpdatedAt());
 	}
 
 	@Transactional
 	public OpenDirectChatResponse openContextualConversation(String username, OpenContextualChatRequest request) {
+        return openNonFriendConversation(username, request, false);
+    }
+
+    @Transactional
+    public OpenDirectChatResponse openDiscoveryConversation(String username, OpenDirectChatRequest request) {
+        return openNonFriendConversation(username, new OpenContextualChatRequest(request.userId(), null), true);
+    }
+
+    private OpenDirectChatResponse openNonFriendConversation(String username, OpenContextualChatRequest request,
+                                                             boolean fromSearch) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 		if (request.userId() == null || currentUser.getId().equals(request.userId())) {
@@ -128,9 +138,9 @@ public class ChatService {
 		String key = "LIMITED:" + buildConversationKey(currentUser.getId(), otherUser.getId());
 		Conversation conversation = conversationRepository.findByTypeAndConversationKey("DIRECT", key).orElse(null);
 		if (conversation == null) {
-			boolean shareGroup = conversationParticipantRepository.shareGroup(currentUser.getId(), otherUser.getId());
-			boolean nearby = locationService.isWithinRadius(username, otherUser.getId(), request.radiusMeters());
-			if (!shareGroup && !nearby) {
+            boolean shareGroup = fromSearch || conversationParticipantRepository.shareGroup(currentUser.getId(), otherUser.getId());
+            boolean nearby = !fromSearch && locationService.isWithinRadius(username, otherUser.getId(), request.radiusMeters());
+            if (!shareGroup && !nearby) {
 				throw new AccessDeniedException("You can only message nearby people or members of your groups");
 			}
 			Instant now = Instant.now();
@@ -144,7 +154,7 @@ public class ChatService {
 			addParticipantIfMissing(conversation.getId(), currentUser.getId());
 			addParticipantIfMissing(conversation.getId(), otherUser.getId());
 		}
-		return new OpenDirectChatResponse(conversation.getId(), conversation.getType(), toUserSummary(otherUser));
+		return new OpenDirectChatResponse(conversation.getId(), conversation.getType(), toUserSummary(otherUser), conversation.getUpdatedAt());
 	}
 
 	@Transactional(readOnly = true)
@@ -158,25 +168,45 @@ public class ChatService {
 		List<ConversationParticipant> participants = conversationParticipantRepository
 				.findByUserIdOrderByConversationIdDesc(currentUser.getId());
 
+        List<Long> visibleIds = participants.stream().map(ConversationParticipant::getConversationId).toList();
+        Map<Long, Conversation> visibleConversations = conversationRepository.findSummariesByIds(visibleIds).stream()
+                .collect(Collectors.toMap(Conversation::getId, java.util.function.Function.identity()));
+        Map<Long, List<ConversationParticipant>> members = visibleIds.isEmpty() ? Map.of()
+                : conversationParticipantRepository.findByIdConversationIdIn(visibleIds).stream()
+                    .collect(Collectors.groupingBy(ConversationParticipant::getConversationId));
+        Map<Long, Message> latestMessages = visibleIds.isEmpty() ? Map.of()
+                : messageRepository.findLatestMessagesByConversationIds(visibleIds).stream()
+                    .collect(Collectors.toMap(Message::getConversationId, java.util.function.Function.identity()));
+        java.util.Set<Long> userIds = members.values().stream().flatMap(List::stream)
+                .map(ConversationParticipant::getUserId).collect(Collectors.toSet());
+        latestMessages.values().forEach(message -> userIds.add(message.getSenderId()));
+        Map<Long, User> users = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, java.util.function.Function.identity()));
 		for (ConversationParticipant participant : participants) {
-			Conversation conversation = conversationRepository.findById(participant.getConversationId()).orElse(null);
+			Conversation conversation = visibleConversations.get(participant.getConversationId());
 			if (conversation == null) {
 				continue;
 			}
-			List<ConversationParticipant> others = conversationParticipantRepository
-					.findOtherParticipants(conversation.getId(), currentUser.getId());
+			List<ConversationParticipant> others = members.getOrDefault(conversation.getId(), List.of()).stream()
+                    .filter(member -> !member.getUserId().equals(currentUser.getId()))
+                    .sorted(Comparator.comparing(ConversationParticipant::getUserId)).toList();
 			boolean ownerOnlyGroup = others.isEmpty() && "GROUP".equals(conversation.getType());
 			if (others.isEmpty() && !ownerOnlyGroup) {
 				continue;
 			}
 
 			User otherUser = ownerOnlyGroup ? currentUser
-					: userRepository.findById(others.get(0).getUserId()).orElse(null);
+					: users.get(others.get(0).getUserId());
 			if (otherUser == null) {
 				continue;
 			}
-			    ConversationSummaryResponse summary = new ConversationSummaryResponse(conversation.getId(),
-				    conversation.getType(), toUserSummary(otherUser), conversation.getUpdatedAt(), null);
+            Message latest = latestMessages.get(conversation.getId());
+            User sender = latest == null ? null : users.get(latest.getSenderId());
+            ConversationSummaryResponse summary = new ConversationSummaryResponse(conversation.getId(),
+                    conversation.getType(), toUserSummary(otherUser), conversation.getUpdatedAt(),
+                    latest == null ? null : latest.getContent(), latest == null ? null : latest.getId(),
+                    latest == null ? null : latest.getCreatedAt(), sender == null ? null : sender.getDisplayName(),
+                    conversation.getGroupName());
 			if ("DIRECT".equals(conversation.getType())) {
 				Integer existingIndex = directIndexByUser.get(otherUser.getId());
 				if (existingIndex != null) {
@@ -195,16 +225,10 @@ public class ChatService {
 			items.add(summary);
 		}
 
-			List<Long> conversationIds = items.stream().map(ConversationSummaryResponse::conversationId).toList();
-			Map<Long, String> latestMessages = conversationIds.isEmpty() ? Map.of()
-				: messageRepository.findLatestMessagesByConversationIds(conversationIds).stream()
-					.collect(Collectors.toMap(Message::getConversationId, Message::getContent));
-			List<ConversationSummaryResponse> summaries = items.stream()
-				.map(item -> new ConversationSummaryResponse(item.conversationId(), item.type(), item.participant(),
-					item.updatedAt(), latestMessages.get(item.conversationId())))
-				.sorted(Comparator.comparing(ConversationSummaryResponse::updatedAt, Comparator.reverseOrder()))
-				.toList();
-			return new ConversationListResponse(summaries);
+        items.sort(Comparator.comparing(
+                (ConversationSummaryResponse item) -> item.lastMessageAt() == null ? item.updatedAt() : item.lastMessageAt(),
+                Comparator.reverseOrder()).thenComparing(ConversationSummaryResponse::conversationId));
+        return new ConversationListResponse(items);
 	}
 
 	@Transactional(readOnly = true)
@@ -225,7 +249,8 @@ public class ChatService {
 				.filter(user -> user != null).map(this::toUserSummary).toList();
 
 		Integer limitedMessagesRemaining = conversation.isContextualLimited()
-				? Math.max(0, CONTEXTUAL_MESSAGE_LIMIT - (int) messageRepository.countByConversationId(conversationId))
+                && !hasFriendParticipant(currentUser.getId(), conversationId)
+				? Math.max(0, CONTEXTUAL_MESSAGE_LIMIT - (int) messageRepository.countByConversationIdAndSenderId(conversationId, currentUser.getId()))
 				: null;
 		return new ConversationDetailResponse(conversation.getId(), conversation.getType(), participants,
 				conversation.getCreatedAt(), conversation.getUpdatedAt(), limitedMessagesRemaining);
@@ -278,10 +303,6 @@ public class ChatService {
 
 		Conversation conversation = conversationRepository.findById(conversationId)
 				.orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
-		if (conversation.isContextualLimited()) {
-			conversation = conversationRepository.findByIdForUpdate(conversationId)
-					.orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
-		}
 
 		if (!conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, currentUser.getId())) {
 			throw new AccessDeniedException("You are not a participant in this conversation");
@@ -331,6 +352,15 @@ public class ChatService {
 			throw new AccessDeniedException("You are not a participant in this conversation");
 		}
 
+        // Serialize quota checks and inserts in the same transaction for REST and STOMP sends.
+        if (conversation.isContextualLimited()) {
+            conversation = conversationRepository.findByIdForUpdate(conversationId)
+                    .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+            if (hasFriendParticipant(currentUser.getId(), conversationId)) {
+                conversation.setContextualLimited(false);
+            }
+        }
+
 		if (content == null || content.isBlank()) {
 			throw new IllegalArgumentException("message content is required");
 		}
@@ -339,8 +369,8 @@ public class ChatService {
 			throw new IllegalArgumentException("message content must be at most 5000 characters");
 		}
 		if (conversation.isContextualLimited()
-				&& messageRepository.countByConversationId(conversationId) >= CONTEXTUAL_MESSAGE_LIMIT) {
-			throw new IllegalArgumentException("This conversation is limited to 5 messages. Add each other as friends to continue");
+				&& messageRepository.countByConversationIdAndSenderId(conversationId, currentUser.getId()) >= CONTEXTUAL_MESSAGE_LIMIT) {
+			throw new IllegalArgumentException("You can send at most 5 messages before becoming friends. Add each other as friends to continue");
 		}
 
 		Message message = new Message();
@@ -364,8 +394,11 @@ public class ChatService {
 			}
 		}
 
-		return new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(), saved.getContent(),
-				saved.getCreatedAt());
+        MessageResponse response = new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
+                saved.getContent(), saved.getCreatedAt());
+        applicationEventPublisher.publishEvent(new com.geochat.chat.event.ConversationActivityEvent(response,
+                currentUser.getDisplayName()));
+        return response;
 	}
 
 	private String normalizeContent(String content) {
@@ -374,6 +407,11 @@ public class ChatService {
 		}
 		return content.trim();
 	}
+
+    private boolean hasFriendParticipant(Long userId, Long conversationId) {
+        return conversationParticipantRepository.findOtherParticipants(conversationId, userId).stream()
+                .anyMatch(participant -> areFriends(userId, participant.getUserId()));
+    }
 
 	private boolean areFriends(Long firstUserId, Long secondUserId) {
 		return friendRequestRepository.areFriends(firstUserId, secondUserId);

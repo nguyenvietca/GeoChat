@@ -7,7 +7,8 @@ public class ChatDtos {
     public record OpenDirectChatResponse(
             Long conversationId,
             String type,
-            UserSummaryResponse participant
+            UserSummaryResponse participant,
+            Instant updatedAt
     ) {}
 
     public record ConversationListResponse(
@@ -19,7 +20,11 @@ public class ChatDtos {
             String type,
             UserSummaryResponse participant,
             Instant updatedAt,
-            String lastMessage
+            String lastMessage,
+            Long lastMessageId,
+            Instant lastMessageAt,
+            String lastMessageSender,
+            String groupName
     ) {}
 
     public record ConversationDetailResponse(

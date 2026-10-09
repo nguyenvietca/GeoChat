@@ -49,6 +49,13 @@ public class ChatController {
         return ApiResponse.ok(chatService.openContextualConversation(principal.getUsername(), request));
     }
 
+    @PostMapping("/chats/discovery")
+    public ApiResponse<OpenDirectChatResponse> openDiscoveryConversation(
+            @AuthenticationPrincipal UserDetails principal,
+            @Valid @RequestBody OpenDirectChatRequest request) {
+        return ApiResponse.ok(chatService.openDiscoveryConversation(principal.getUsername(), request));
+    }
+
     @GetMapping("/chats")
     public ApiResponse<ConversationListResponse> listConversations(@AuthenticationPrincipal UserDetails principal) {
         return ApiResponse.ok(chatService.listConversations(principal.getUsername()));

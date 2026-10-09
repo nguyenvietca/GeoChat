@@ -59,6 +59,7 @@ vi.mock('../../api/chats', () => ({
   getConversationPresence: vi.fn(),
   getMessages: vi.fn(),
   openDirectConversation: vi.fn(),
+  openDiscoveryConversation: vi.fn(),
   sendMessage: vi.fn(),
 }));
 vi.mock('../../services/chatWebSocket', () => ({
@@ -67,6 +68,7 @@ vi.mock('../../services/chatWebSocket', () => ({
     return socketHarness.disconnect;
   }),
   subscribeToPresence: vi.fn(() => socketHarness.disconnect),
+  subscribeToConversationActivity: vi.fn(() => vi.fn()),
   subscribeToGroupEvents: vi.fn(() => socketHarness.disconnect),
   subscribeToNotifications: vi.fn(() => socketHarness.disconnect),
   disconnectAllChatWebSockets: vi.fn(),
@@ -248,12 +250,13 @@ describe('web friends and direct chat', () => {
     fireEvent.change(composer, { target: { value: 'Hello once' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
-    expect(await screen.findByText('Hello once')).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('.chat-bubble p')?.textContent).toBe('Hello once'));
     expect(mockSendMessage).toHaveBeenCalledWith(41, { content: 'Hello once' }, 'session-token');
     const handlers = socketHarness.handlers as TestSocketHandlers | null;
     expect(handlers).not.toBeNull();
     await act(async () => handlers?.onMessage(savedMessage));
-    expect(screen.getAllByText('Hello once')).toHaveLength(1);
+    expect(document.querySelectorAll('.chat-bubble p')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: /Hello once/ })).toBeTruthy();
   });
 
   it('loads older pages without losing the latest history', async () => {

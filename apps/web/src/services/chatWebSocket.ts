@@ -201,3 +201,20 @@ export function parseUserPresence(body: string): UserPresence | null {
     return null;
   }
 }
+// One account subscription covers activity in selected and unselected conversations.
+export function subscribeToConversationActivity(token: string, handlers: {
+  onActivity: (message: ChatMessage, senderDisplayName: string) => void;
+  onStateChange: (state: ChatConnectionState) => void;
+}) {
+  return subscribeToStompDestination(token, '/user/queue/conversation-activity', {
+    onStateChange: handlers.onStateChange,
+    onFrame: (body) => {
+      try {
+        const value: unknown = JSON.parse(body);
+        if (!isRecord(value) || typeof value.senderDisplayName !== 'string') return;
+        const message = parseChatMessage(JSON.stringify(value.message));
+        if (message) handlers.onActivity(message, value.senderDisplayName);
+      } catch { /* Ignore malformed frames. */ }
+    },
+  });
+}

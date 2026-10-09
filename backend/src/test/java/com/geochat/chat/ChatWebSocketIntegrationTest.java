@@ -389,6 +389,37 @@ class ChatWebSocketIntegrationTest {
 		assertThat(chatService.listMessages(alice.getUsername(), conversationId, 50).items()).isEmpty();
 	}
 
+    @Test
+    void accountActivityQueueReceivesOnlyMemberConversationsAndStopsAfterRemoval() throws Exception {
+        User owner = createUser("activity-owner", "Owner");
+        User member = createUser("activity-member", "Member");
+        User outsider = createUser("activity-outsider", "Outsider");
+        markFriends(owner, member);
+        Long groupId = groupService.createGroup(owner.getUsername(),
+                new CreateGroupRequest("Activity", java.util.List.of(member.getId()))).groupId();
+        var ownerSession = connectSession(tokenFor(owner));
+        var memberSession = connectSession(tokenFor(member));
+        var outsiderSession = connectSession(tokenFor(outsider));
+        BlockingQueue<Map<String, Object>> ownerQueue = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> memberQueue = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> outsiderQueue = new LinkedBlockingQueue<>();
+        ownerSession.subscribe("/user/queue/conversation-activity", frameHandler(ownerQueue));
+        memberSession.subscribe("/user/queue/conversation-activity", frameHandler(memberQueue));
+        outsiderSession.subscribe("/user/queue/conversation-activity", frameHandler(outsiderQueue));
+        // Subscription and SEND use the same session, preserving their order on the inbound channel.
+        memberSession.send("/app/chat/" + groupId + "/send", Map.of("content", "Activity message"));
+        var received = memberQueue.poll(5, TimeUnit.SECONDS);
+        assertThat(received).isNotNull();
+        assertThat(received.get("senderDisplayName")).isEqualTo("Member");
+        assertThat(ownerQueue.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(outsiderQueue.poll(1, TimeUnit.SECONDS)).isNull();
+        groupService.removeMember(owner.getUsername(), groupId, member.getId());
+        chatService.sendMessage(owner.getUsername(), groupId, new SendMessageRequest("After removal"));
+        assertThat(ownerQueue.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(memberQueue.poll(1, TimeUnit.SECONDS)).isNull();
+        ownerSession.disconnect(); memberSession.disconnect(); outsiderSession.disconnect();
+    }
+
 	private Long openConversation(User alice, User bob) {
 		return chatService.openDirectConversation(alice.getUsername(), new OpenDirectChatRequest(bob.getId()))
 				.conversationId();

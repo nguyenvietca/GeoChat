@@ -73,6 +73,10 @@ export type Conversation = {
   participant: ConversationUser;
   updatedAt: string;
   lastMessage: string | null;
+  lastMessageId?: number | null;
+  lastMessageAt?: string | null;
+  lastMessageSender?: string | null;
+  groupName?: string | null;
 };
 
 export type ConversationListResponse = { items: Conversation[] };
@@ -90,6 +94,7 @@ export type UserPresence = { userId: number; online: boolean };
 export type ConversationPresenceResponse = { items: UserPresence[] };
 
 export type OpenDirectConversationResponse = {
+  updatedAt?: string;
   conversationId: number;
   type: string;
   participant: ConversationUser;

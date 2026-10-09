@@ -10,6 +10,7 @@ import {
   subscribeToGroupEvents,
   subscribeToPresence,
   subscribeToConversation,
+  subscribeToConversationActivity,
 } from './chatWebSocket';
 import { AppNotification, ChatMessage, GroupManagementEvent } from '../types';
 
@@ -94,6 +95,24 @@ describe('web chat WebSocket service', () => {
   });
 
   afterEach(() => disconnectAllChatWebSockets());
+
+  it('uses one authenticated activity queue, validates frames and cleans up', () => {
+    const onActivity = vi.fn();
+    const cleanup = subscribeToConversationActivity('jwt', { onActivity, onStateChange: vi.fn() });
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/user/queue/conversation-activity', expect.any(Function));
+    const receive = stompHarness.frameCallback as (frame: { body: string }) => void;
+    receive({ body: '{invalid' });
+    receive({ body: JSON.stringify({ message: message(), senderDisplayName: 5 }) });
+    receive({ body: JSON.stringify({ message: message({ conversationId: -1 }), senderDisplayName: 'Mira' }) });
+    receive({ body: JSON.stringify({ message: message(), senderDisplayName: 'Mira' }) });
+    expect(onActivity).toHaveBeenCalledTimes(1);
+    expect(onActivity).toHaveBeenCalledWith(message(), 'Mira');
+    cleanup();
+    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledOnce();
+    receive({ body: JSON.stringify({ message: message(), senderDisplayName: 'Mira' }) });
+    expect(onActivity).toHaveBeenCalledTimes(1);
+  });
 
   it('builds the existing backend WebSocket URL and authenticates STOMP CONNECT with JWT', () => {
     const onMessage = vi.fn();

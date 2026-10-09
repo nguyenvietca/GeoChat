@@ -49,3 +49,8 @@ export function openContextualConversation(userId: number, radiusMeters: number 
 export function getConversationPresence(conversationId: number, token: string) {
   return apiRequest<ConversationPresenceResponse>(`/api/v1/chats/${conversationId}/presence`, { token });
 }
+export function openDiscoveryConversation(userId: number, token: string) {
+  return apiRequest<OpenDirectConversationResponse>('/api/v1/chats/discovery', {
+    method: 'POST', body: { userId }, token,
+  });
+}

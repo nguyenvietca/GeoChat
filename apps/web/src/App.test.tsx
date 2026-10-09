@@ -10,7 +10,7 @@ import {
   getOutgoingFriendRequests,
   sendFriendRequest,
 } from './api/friends';
-import { getConversationDetail, getConversationPresence, getMessages, openContextualConversation, openDirectConversation } from './api/chats';
+import { getConversations, openDiscoveryConversation, getConversationDetail, getConversationPresence, getMessages, openContextualConversation, openDirectConversation } from './api/chats';
 import { searchUsers, updateMyProfile } from './api/users';
 import { User } from './types';
 
@@ -35,12 +35,14 @@ vi.mock('./api/chats', () => ({
   getConversationPresence: vi.fn(),
   getMessages: vi.fn(),
   openDirectConversation: vi.fn(),
+  openDiscoveryConversation: vi.fn(),
   openContextualConversation: vi.fn(),
   sendMessage: vi.fn(),
 }));
 vi.mock('./services/chatWebSocket', () => ({
   subscribeToConversation: vi.fn(() => vi.fn()),
   subscribeToPresence: vi.fn(() => vi.fn()),
+  subscribeToConversationActivity: vi.fn(() => vi.fn()),
   subscribeToGroupEvents: vi.fn(() => vi.fn()),
   subscribeToNotifications: vi.fn(() => vi.fn()),
   disconnectAllChatWebSockets: vi.fn(),
@@ -272,6 +274,22 @@ describe('web authentication and protected routes', () => {
 describe('user search', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('opens a limited discovery chat from Search for a non-friend', async () => {
+    mockSearchUsers.mockResolvedValue({ items: [{ userId: 12, username: 'rowan', displayName: 'Rowan Park', relationship: 'NONE' }] });
+    vi.mocked(openDiscoveryConversation).mockResolvedValue({ conversationId: 72, type: 'DIRECT', participant: { userId: 12, username: 'rowan', displayName: 'Rowan Park' } });
+    vi.mocked(getConversations).mockResolvedValue({ items: [] });
+    mockGetConversationDetail.mockResolvedValue({ conversationId: 72, type: 'DIRECT', participants: [], createdAt: '', updatedAt: '', limitedMessagesRemaining: 5 });
+    mockGetMessages.mockResolvedValue({ items: [], total: 0, page: 0, size: 20 });
+    await renderSignedIn();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /Search people/ }));
+    fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'rowan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Message' }));
+    expect(await screen.findByText('5 of 5 messages remaining.')).toBeTruthy();
+    expect(openDiscoveryConversation).toHaveBeenCalledWith(12, 'session-token');
+    expect(mockSendFriendRequest).not.toHaveBeenCalled();
+  });
+
   it('submits the query and renders public user fields', async () => {
     mockSearchUsers.mockResolvedValue({ items: [{ userId: 12, username: 'rowan', displayName: 'Rowan Park', relationship: 'NONE' }] });
     await renderSignedIn();
@@ -427,6 +445,23 @@ describe('nearby location flow', () => {
 
     expect(mockOpenDirectConversation).toHaveBeenCalledWith(3, 'session-token');
     expect(await screen.findByLabelText('Message')).toBeTruthy();
+  });
+
+  it('opens the nearby result using its search radius even after the radius selector changes', async () => {
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+      getCurrentPosition: vi.fn((success) => success({ coords: { latitude: 0, longitude: 0 } })),
+    } });
+    mockUpdateLocation.mockResolvedValue({ latitude: 0, longitude: 0 });
+    mockGetNearbyUsers.mockResolvedValue({ items: [{ userId: 3, displayName: 'Kai', distanceMeters: 4000 }], radiusMeters: 5000 });
+    mockOpenContextualConversation.mockResolvedValue({ conversationId: 41, type: 'DIRECT', participant: { userId: 3, username: 'kai', displayName: 'Kai' } });
+    await renderSignedIn();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /nearby/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
+    await screen.findByText('Kai');
+    fireEvent.change(screen.getByLabelText('Within'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Message' }));
+    await screen.findByLabelText('Message');
+    expect(mockOpenContextualConversation).toHaveBeenCalledWith(3, 5000, 'session-token');
   });
 
   it('opens a limited chat with a nearby non-friend without requiring a friend request', async () => {

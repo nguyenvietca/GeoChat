@@ -41,6 +41,7 @@ export function NearbyPage() {
   const { token } = useAuth();
   const navigate = useNavigate();
   const [radius, setRadius] = useState(5000);
+  const [resultRadius, setResultRadius] = useState(5000);
   const [people, setPeople] = useState<NearbyUser[]>([]);
   const [relationships, setRelationships] = useState<Record<number, FriendRelationship>>({});
   const [hasSearched, setHasSearched] = useState(false);
@@ -83,6 +84,7 @@ export function NearbyPage() {
       } else {
         setRelationships({});
       }
+      setResultRadius(response.radiusMeters);
       setPeople(response.items);
       setHasSearched(true);
     } catch (nearbyError) {
@@ -130,7 +132,7 @@ export function NearbyPage() {
       const relationship = relationships[person.userId] ?? 'NONE';
       const conversation = relationship === 'FRIENDS'
         ? await openDirectConversation(person.userId, token)
-        : await openContextualConversation(person.userId, radius, token);
+        : await openContextualConversation(person.userId, resultRadius, token);
       navigate(`/app/chat/${conversation.conversationId}`);
     } catch (messageError) {
       setError(messageError instanceof ApiError ? messageError.message : 'Unable to open this conversation.');

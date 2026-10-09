@@ -6,6 +6,8 @@ import { getGroup } from '../../api/groups';
 import { useAuth } from '../../app/providers/AuthContext';
 import { ChatConnectionState, subscribeToConversation, subscribeToPresence } from '../../services/chatWebSocket';
 import { ChatMessage, ConversationDetail, GroupInfo } from '../../types';
+import { formatMessageTime } from './messagePresentation';
+import { LimitedChatFriendship } from './LimitedChatFriendship';
 import { GroupInfoPanel } from './GroupInfoPanel';
 
 const PAGE_SIZE = 20;
@@ -15,6 +17,7 @@ type ChatPanelProps = {
   conversationId: number;
   groupInfo: GroupInfo | null;
   titleHint?: string;
+  onMessage?: (message: ChatMessage, sender?: string) => void;
   onBack: () => void;
   onLeftGroup: () => void;
   onGroupChanged: (group: GroupInfo) => void;
@@ -22,7 +25,7 @@ type ChatPanelProps = {
 };
 
 // Rendered with key={conversationId} so switching conversations resets all state and subscriptions.
-export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeftGroup, onGroupChanged, onOpenConversation }: ChatPanelProps) {
+export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeftGroup, onGroupChanged, onOpenConversation, onMessage }: ChatPanelProps) {
   const { token, user } = useAuth();
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [group, setGroup] = useState<GroupInfo | null>(null);
@@ -37,13 +40,21 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [sendError, setSendError] = useState('');
+  const [checkingRecent, setCheckingRecent] = useState(false);
   const [connection, setConnection] = useState<ChatConnectionState>('connecting');
   const [participantOnline, setParticipantOnline] = useState<boolean | null>(null);
   const [presenceLoading, setPresenceLoading] = useState(false);
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const shouldScrollToBottomRef = useRef(true);
+  const smoothScrollRef = useRef(false);
   const pendingOlderScrollRef = useRef<{ height: number; top: number } | null>(null);
+  const sendingRef = useRef(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
   const knownMessageIds = useRef(new Set<number>());
 
   useEffect(() => {
@@ -143,10 +154,26 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
 
   useEffect(() => {
     if (!token || !Number.isSafeInteger(conversationId) || conversationId <= 0) return undefined;
-    return subscribeToConversation(conversationId, token, {
-      onStateChange: setConnection,
+    let active = true;
+    let connected = false;
+    const unsubscribe = subscribeToConversation(conversationId, token, {
+      onStateChange: (state) => {
+        setConnection(state);
+        if (state === 'connected') {
+          if (connected && conversationRef.current?.type === 'GROUP') void getGroup(conversationId, token).then((info) => {
+            if (active) { setGroup(info); onGroupChanged(info); }
+          }).catch(() => {});
+          if (connected) void getMessages(conversationId, 0, PAGE_SIZE, token).then((response) => {
+            if (!active) return;
+            for (const message of response.items) addMessage(message);
+            setTotal(response.total);
+          }).catch(() => {});
+          connected = true;
+        }
+      },
       onMessage: addMessage,
     });
+    return () => { active = false; unsubscribe(); };
   }, [conversationId, token]);
 
   useLayoutEffect(() => {
@@ -157,8 +184,11 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       area.scrollTop = previous.top + (area.scrollHeight - previous.height);
       pendingOlderScrollRef.current = null;
     } else if (shouldScrollToBottomRef.current) {
-      area.scrollTop = area.scrollHeight;
+      if (smoothScrollRef.current && typeof area.scrollTo === 'function') {
+        area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+      } else area.scrollTop = area.scrollHeight;
       shouldScrollToBottomRef.current = false;
+      smoothScrollRef.current = false;
     }
   }, [messages]);
 
@@ -166,22 +196,27 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
     if (message.conversationId !== conversationId || knownMessageIds.current.has(message.messageId)) return;
     knownMessageIds.current.add(message.messageId);
     shouldScrollToBottomRef.current = nearBottomRef.current;
+    smoothScrollRef.current = true;
+    if (!nearBottomRef.current) setHasNewMessages(true);
+    onMessageRef.current?.(message, conversationRef.current?.participants.find((item) => item.userId === message.senderId)?.displayName);
     setMessages((current) => mergeMessages(current, [message]));
     setTotal((current) => current + 1);
-    setLimitedMessagesRemaining((current) => current === null ? null : Math.max(0, current - 1));
+    if (message.senderId === user?.id) {
+      setLimitedMessagesRemaining((current) => current === null ? null : Math.max(0, current - 1));
+    }
   }
 
   const canLoadOlder = total > (page + 1) * PAGE_SIZE;
 
   const loadOlder = async () => {
     if (!token || loadingOlder || !canLoadOlder) return;
-    const area = messageAreaRef.current;
-    if (area) pendingOlderScrollRef.current = { height: area.scrollHeight, top: area.scrollTop };
     setLoadingOlder(true);
     setError('');
     try {
       const nextPage = page + 1;
       const response = await getMessages(conversationId, nextPage, PAGE_SIZE, token);
+      const area = messageAreaRef.current;
+      if (area) pendingOlderScrollRef.current = { height: area.scrollHeight, top: area.scrollTop };
       for (const message of response.items) knownMessageIds.current.add(message.messageId);
       setMessages((current) => mergeMessages(current, response.items));
       setTotal(response.total);
@@ -197,13 +232,15 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const submitMessage = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const content = draft.trim();
-    if (!content || content.length > MAX_MESSAGE_LENGTH || !token || sending) return;
+    if (!content || content.length > MAX_MESSAGE_LENGTH || !token || sendingRef.current || limitedMessagesRemaining === 0) return;
+    sendingRef.current = true;
     setSending(true);
     setSendError('');
     setError('');
     shouldScrollToBottomRef.current = true;
     try {
       const savedMessage = await sendMessage(conversationId, { content }, token);
+      onMessageRef.current?.(savedMessage, user?.displayName);
       if (!knownMessageIds.current.has(savedMessage.messageId)) {
         knownMessageIds.current.add(savedMessage.messageId);
         setMessages((current) => mergeMessages(current, [savedMessage]));
@@ -212,8 +249,18 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       }
       setDraft((current) => current === draft ? '' : current);
     } catch (sendFailure) {
-      setSendError(sendFailure instanceof ApiError ? sendFailure.message : 'Unable to send this message.');
+      if (sendFailure instanceof ApiError && sendFailure.status === 400 && token) {
+        // Another tab/account may have consumed the remaining quota.
+        void getConversationDetail(conversationId, token).then((detail) => {
+          setLimitedMessagesRemaining(detail.limitedMessagesRemaining ?? null);
+        }).catch(() => {});
+      }
+      const reason = sendFailure instanceof ApiError ? sendFailure.message : 'Unable to send this message.';
+      const uncertain = !(sendFailure instanceof ApiError) || sendFailure.status === undefined
+        || sendFailure.status >= 500 || sendFailure.status < 400;
+      setSendError(`${reason} Your draft is saved.${uncertain ? ' Check recent messages before sending again; the server may have saved it.' : ''}`);
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -227,7 +274,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
 
   const isGroup = conversation?.type === 'GROUP';
   const participant = conversation?.participants.find((item) => item.userId !== user?.id);
-  const title = isGroup ? group?.name ?? 'Group' : participant?.displayName ?? titleHint ?? 'Conversation';
+  const title = isGroup ? group?.name ?? titleHint ?? 'Group' : participant?.displayName ?? titleHint ?? 'Conversation';
   const subtitle = isGroup ? `${group?.memberCount ?? conversation?.participants.length ?? 0} members`
     : participant ? `@${participant.username}` : 'Direct chat';
   const connectionLabel: Record<ChatConnectionState, string> = {
@@ -270,6 +317,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
           <div className="chat-message-area" ref={messageAreaRef} onScroll={(event) => {
             const area = event.currentTarget;
             nearBottomRef.current = area.scrollHeight - area.scrollTop - area.clientHeight < 100;
+            if (nearBottomRef.current) setHasNewMessages(false);
           }}>
             {loading ? <div className="result-state" role="status"><span className="spinner" />Loading messages…</div> : null}
             {!loading && error ? <div className="inline-error" role="alert">{error}<button type="button" onClick={() => void loadOlder()}>Try again</button></div> : null}
@@ -291,7 +339,25 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
               );
             })}
           </div>
-          {sendError ? <p className="chat-send-error" role="alert">{sendError}</p> : null}
+          {hasNewMessages ? <button className="jump-latest-button" type="button" onClick={() => {
+            messageAreaRef.current?.scrollTo({ top: messageAreaRef.current.scrollHeight, behavior: 'smooth' });
+            nearBottomRef.current = true;
+            setHasNewMessages(false);
+          }}>Jump to latest</button> : null}
+          {sendError ? <div className="chat-send-error">
+            <p role="alert">{sendError}</p>
+            <button className="quiet-light-button compact-button" type="button" disabled={checkingRecent} onClick={async () => {
+              if (!token || checkingRecent) return;
+              setCheckingRecent(true);
+              try {
+                const response = await getMessages(conversationId, 0, PAGE_SIZE, token);
+                for (const message of response.items) addMessage(message);
+                setTotal(response.total);
+              } catch {
+                setSendError('Unable to check recent messages. Your draft is saved. Check the connection before sending again.');
+              } finally { setCheckingRecent(false); }
+            }}>{checkingRecent ? 'Checking recent messages...' : 'Check recent messages'}</button>
+          </div> : null}
           <form className="chat-composer" onSubmit={(event) => void submitMessage(event)}>
             <label className="visually-hidden" htmlFor="chat-message">Message</label>
             <textarea id="chat-message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}
@@ -299,9 +365,14 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
               disabled={loading || !conversation || limitedMessagesRemaining === 0} />
             <button className="primary-button" type="submit" disabled={sending || loading || !conversation || !draft.trim() || limitedMessagesRemaining === 0}>{sending ? 'Sending…' : 'Send'}</button>
           </form>
-          {limitedMessagesRemaining !== null ? <p className="limited-chat-notice" role="status">
-            {limitedMessagesRemaining > 0 ? `${limitedMessagesRemaining} of 5 messages remaining.` : 'Message limit reached.'}
-          </p> : null}
+          {limitedMessagesRemaining !== null ? <div className="limited-chat-notice">
+            <p role="status">{limitedMessagesRemaining > 0 ? `${limitedMessagesRemaining} of 5 messages remaining.` : 'Message limit reached.'}</p>
+            {!isGroup && participant && token ? <>
+              <p>Become friends to chat without the message limit.</p>
+              <LimitedChatFriendship conversationId={conversationId} participantId={participant.userId} token={token}
+                onUnlocked={() => { setLimitedMessagesRemaining(null); setSendError(''); }} />
+            </> : null}
+          </div> : null}
         </>
       )}
     </section>
@@ -316,9 +387,4 @@ export function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) 
     const delta = Date.parse(first.createdAt) - Date.parse(second.createdAt);
     return delta || first.messageId - second.messageId;
   });
-}
-
-function formatMessageTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }

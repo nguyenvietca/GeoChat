@@ -6,6 +6,7 @@ import {
   getConversations,
   getMessages,
   openDirectConversation,
+  openDiscoveryConversation,
   openContextualConversation,
   sendMessage,
 } from './chats';
@@ -30,6 +31,13 @@ describe('chat API', () => {
     openDirectConversation(18, 'jwt');
 
     expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/chats/direct', {
+      method: 'POST', body: { userId: 18 }, token: 'jwt',
+    });
+  });
+
+  it('opens a discovery chat without requiring friendship or a nearby radius', () => {
+    openDiscoveryConversation(18, 'jwt');
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/chats/discovery', {
       method: 'POST', body: { userId: 18 }, token: 'jwt',
     });
   });

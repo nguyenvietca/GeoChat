@@ -84,7 +84,8 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
             String destination = accessor.getDestination();
             if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
                 if ("/user/queue/notifications".equals(destination)
-                        || "/user/queue/group-events".equals(destination)) {
+                        || "/user/queue/group-events".equals(destination)
+                        || "/user/queue/conversation-activity".equals(destination)) {
                     return message;
                 }
                 Long presenceUserId = extractConversationId(destination, "/topic/presence/", "");

@@ -234,7 +234,7 @@ h1, h2 { color: var(--ink); font-family: 'Manrope', sans-serif; }
 .incoming-bubble { border: 1px solid #e0e9e3; border-top-left-radius: 3px; color: #243b36; background: #fff; }
 .outgoing-bubble { border-top-right-radius: 3px; color: #fff; background: #126b62; }
 .chat-bubble p { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-.chat-bubble time { display: block; margin-top: 5px; color: #859690; font-size: 9px; text-align: right; }
+.chat-bubble time { display: block; margin-top: 5px; color: #859690; font-size: 10px; text-align: right; }
 .outgoing-bubble time { color: #c0ddd4; }
 .chat-composer { display: flex; align-items: flex-end; gap: 9px; padding: 12px; border-top: 1px solid var(--line); background: #fff; }
 .chat-composer textarea { flex: 1; min-width: 0; min-height: 42px; max-height: 120px; resize: vertical; padding: 11px 12px; border: 1px solid #d3e0d9; border-radius: 6px; color: var(--ink); background: #fbfdfc; font-size: 13px; line-height: 1.4; }
@@ -385,7 +385,7 @@ h1, h2 { color: var(--ink); font-family: 'Manrope', sans-serif; }
   .search-form .primary-button { min-width: 68px; padding: 0 10px; }
   .radius-control { flex-direction: column; align-items: flex-end; gap: 3px; }
   .distance-label { font-size: 11px; }
-  .conversation-date { display: none; }
+  .conversation-date { flex-shrink: 0; font-size: 10px; }
   .request-actions { gap: 4px; }
   .request-actions .compact-button { padding: 0 8px; font-size: 11px; }
   .chat-bubble { max-width: 88%; }
@@ -402,3 +402,10 @@ h1, h2 { color: var(--ink); font-family: 'Manrope', sans-serif; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+.conversation-search { display: flex; gap: 6px; padding: 8px 12px; }
+.conversation-search input { flex: 1; min-width: 0; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
+.conversation-search button { flex-shrink: 0; }
+.jump-latest-button { align-self: center; margin: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--teal); cursor: pointer; }
+
+.limited-chat-notice p { margin: 3px 0; }
+.limited-chat-friendship { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; padding: 4px 0; }

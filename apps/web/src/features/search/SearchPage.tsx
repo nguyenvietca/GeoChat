@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { searchUsers } from '../../api/users';
 import { sendFriendRequest } from '../../api/friends';
-import { openDirectConversation } from '../../api/chats';
+import { openDiscoveryConversation, openDirectConversation } from '../../api/chats';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -75,6 +75,18 @@ export function SearchPage() {
     }
   };
 
+  const handleMessage = async (person: UserSearchResult) => {
+    if (!token || busyUserId !== null) return;
+    setBusyUserId(person.userId);
+    setError('');
+    try {
+      const conversation = await openDiscoveryConversation(person.userId, token);
+      navigate(`/app/chat/${conversation.conversationId}`);
+    } catch (messageError) {
+      setError(messageError instanceof ApiError ? messageError.message : 'Unable to open this conversation.');
+    } finally { setBusyUserId(null); }
+  };
+
   return (
     <section className="page-content">
       <div className="page-heading"><div><p className="eyebrow">DISCOVER</p><h1>Search people</h1></div></div>
@@ -95,7 +107,11 @@ export function SearchPage() {
             <article className="person-row" key={person.userId}>
               <span className="person-avatar">{person.displayName.charAt(0).toUpperCase()}</span>
               <span className="person-details"><strong>{person.displayName}</strong><small>@{person.username}</small></span>
-              {relationshipAction(person.relationship, busyUserId === person.userId, () => void handleRelationshipAction(person))}
+              <div className="nearby-actions">
+                {person.relationship !== 'FRIENDS' ? <button className="primary-button compact-button" type="button"
+                  disabled={busyUserId !== null} onClick={() => void handleMessage(person)}>Message</button> : null}
+                {relationshipAction(person.relationship, busyUserId === person.userId, () => void handleRelationshipAction(person), busyUserId !== null)}
+              </div>
             </article>
           ))}
         </div>
@@ -105,7 +121,7 @@ export function SearchPage() {
   );
 }
 
-function relationshipAction(relationship: UserSearchResult['relationship'], busy: boolean, onPress: () => void) {
+function relationshipAction(relationship: UserSearchResult['relationship'], busy: boolean, onPress: () => void, disabled: boolean) {
   const labels = {
     NONE: 'Add friend',
     PENDING_OUTGOING: 'Request sent · manage',
@@ -114,7 +130,7 @@ function relationshipAction(relationship: UserSearchResult['relationship'], busy
   } satisfies Record<UserSearchResult['relationship'], string>;
   return (
     <button className={relationship === 'NONE' || relationship === 'FRIENDS' ? 'primary-button compact-button' : 'quiet-light-button compact-button'}
-      type="button" onClick={onPress} disabled={busy}>
+      type="button" onClick={onPress} disabled={disabled}>
       {busy ? 'Working…' : labels[relationship]}
     </button>
   );
