@@ -52,6 +52,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const smoothScrollRef = useRef(false);
   const pendingOlderScrollRef = useRef<{ height: number; top: number } | null>(null);
   const sendingRef = useRef(false);
+  const composingRef = useRef(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
@@ -188,7 +189,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       pendingOlderScrollRef.current = null;
     } else if (shouldScrollToBottomRef.current) {
       if (smoothScrollRef.current && typeof area.scrollTo === 'function') {
-        area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' });
+        area.scrollTo({ top: area.scrollHeight, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       } else area.scrollTop = area.scrollHeight;
       shouldScrollToBottomRef.current = false;
       smoothScrollRef.current = false;
@@ -269,6 +270,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   };
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       void submitMessage();
@@ -343,7 +345,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
             })}
           </div>
           {hasNewMessages ? <button className="jump-latest-button" type="button" onClick={() => {
-            messageAreaRef.current?.scrollTo({ top: messageAreaRef.current.scrollHeight, behavior: 'smooth' });
+            messageAreaRef.current?.scrollTo({ top: messageAreaRef.current.scrollHeight, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
             nearBottomRef.current = true;
             setHasNewMessages(false);
           }}>Jump to latest</button> : null}
@@ -364,6 +366,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
           <form className="chat-composer" onSubmit={(event) => void submitMessage(event)}>
             <label className="visually-hidden" htmlFor="chat-message">Message</label>
             <textarea id="chat-message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}
+              onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }}
               placeholder={limitedMessagesRemaining === 0 ? 'Message limit reached' : 'Write a message…'} maxLength={MAX_MESSAGE_LENGTH} rows={1}
               disabled={loading || !conversation || limitedMessagesRemaining === 0} />
             <button className="primary-button" type="submit" disabled={sending || loading || !conversation || !draft.trim() || limitedMessagesRemaining === 0}>{sending ? 'Sending…' : 'Send'}</button>

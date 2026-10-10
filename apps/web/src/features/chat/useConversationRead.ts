@@ -20,7 +20,8 @@ export function useConversationRead(conversationId: number, token: string | null
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       if (!active.current || !token || values.current.loading
-        || document.visibilityState !== 'visible' || !document.hasFocus()) return;
+        || document.visibilityState !== 'visible' || !document.hasFocus()
+        || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       const area = areaRef.current;
       if (!area || area.clientHeight <= 0) return;
       const viewport = area.getBoundingClientRect();
@@ -64,6 +65,7 @@ export function useConversationRead(conversationId: number, token: string | null
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     document.addEventListener('visibilitychange', schedule);
+    document.addEventListener('focusin', schedule);
     return () => {
       active.current = false;
       clearTimeout(timer.current);
@@ -72,6 +74,7 @@ export function useConversationRead(conversationId: number, token: string | null
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
       document.removeEventListener('visibilitychange', schedule);
+      document.removeEventListener('focusin', schedule);
     };
   }, [schedule, areaRef]);
 

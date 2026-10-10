@@ -259,6 +259,21 @@ describe('web authentication and protected routes', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Display name is already invalid.');
   });
 
+  it('links profile validation to its input and cancels unsaved edits without an API request', async () => {
+    await renderSignedInAt('/app/profile', 'Profile');
+    const input = screen.getByLabelText('Display name') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toContain(screen.getByRole('alert').id);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+    expect(input.value).toBe(currentUser.displayName);
+    expect(input.getAttribute('aria-invalid')).toBe('false');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(mockUpdateMyProfile).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Skip to content' }).getAttribute('href')).toBe('#main-content');
+  });
+
   it('shows only supported settings and reuses logout cleanup', async () => {
     await renderSignedInAt('/app/settings', 'Settings');
 
@@ -281,7 +296,7 @@ describe('user search', () => {
     mockGetConversationDetail.mockResolvedValue({ conversationId: 72, type: 'DIRECT', participants: [], createdAt: '', updatedAt: '', limitedMessagesRemaining: 5 });
     mockGetMessages.mockResolvedValue({ items: [], total: 0, page: 0, size: 20 });
     await renderSignedIn();
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /Search people/ }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^Search$/ }));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'rowan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Message' }));
@@ -293,7 +308,7 @@ describe('user search', () => {
   it('submits the query and renders public user fields', async () => {
     mockSearchUsers.mockResolvedValue({ items: [{ userId: 12, username: 'rowan', displayName: 'Rowan Park', relationship: 'NONE' }] });
     await renderSignedIn();
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /search people/i }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^search$/i }));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'rowan' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
@@ -304,7 +319,7 @@ describe('user search', () => {
 
   it('requires two characters before searching', async () => {
     await renderSignedIn();
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /search people/i }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^search$/i }));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'a' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
@@ -315,7 +330,7 @@ describe('user search', () => {
   it('renders empty search results and an API error', async () => {
     mockSearchUsers.mockResolvedValueOnce({ items: [] });
     await renderSignedIn();
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /search people/i }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^search$/i }));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'nobody' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('No users found. Try another name.')).toBeTruthy();

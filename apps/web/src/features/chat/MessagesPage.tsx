@@ -330,7 +330,7 @@ export function MessagesPage() {
                 aria-current={selectedId === item.conversationId ? 'page' : undefined}>
                 <span className="person-avatar">{title.charAt(0).toUpperCase()}</span>
                 <span className="person-details"><strong>{title}</strong><span className="conversation-preview">{preview}</span></span>
-                {(item.unreadCount ?? 0) > 0 ? <span className="unread-badge" aria-label={`${item.unreadCount} unread messages`}>{item.unreadCount! > 99 ? '99+' : item.unreadCount}</span> : null}
+                {(item.unreadCount ?? 0) > 0 ? <span className="unread-badge" aria-label={`${item.unreadCount} unread messages`}>{item.unreadCount! > 99 ? '99+' : item.unreadCount}</span> : <span className="unread-slot" aria-hidden="true" />}
                 <time className="conversation-date" dateTime={timestamp}>{formatConversationTime(timestamp)}</time>
               </Link>;
             })}

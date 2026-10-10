@@ -213,7 +213,7 @@ describe('web friends and direct chat', () => {
     mockGetIncoming.mockResolvedValue({ items: [{ ...request, requestId: 80, user: people[1] }] });
     mockGetOutgoing.mockResolvedValue({ items: [{ ...request, requestId: 81, user: people[2] }] });
     await renderSignedIn('/app/home');
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /Search people/ }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^Search$/ }));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'people' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
@@ -224,7 +224,7 @@ describe('web friends and direct chat', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
     expect((await screen.findByRole('tab', { name: /Incoming/ })).getAttribute('aria-selected')).toBe('true');
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /Search people/ }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^Search$/ }));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'people' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     await screen.findByRole('button', { name: 'Request sent · manage' });

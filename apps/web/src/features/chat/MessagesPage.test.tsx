@@ -463,6 +463,43 @@ describe('web messages split view and group chat', () => {
     expect(screen.getByText('No unread conversations.')).toBeTruthy();
   });
 
+  it('preserves IME composition and Shift+Enter without sending until a normal Enter', async () => {
+    await openMessages('/app/chat/41');
+    const input = await screen.findByLabelText('Message');
+    await waitFor(() => expect(input.hasAttribute('disabled')).toBe(false));
+    fireEvent.change(input, { target: { value: 'Xin ch\u00e0o' } });
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(sendMessage).not.toHaveBeenCalled();
+    vi.mocked(sendMessage).mockResolvedValueOnce(message(9, 41, 9, 'Xin ch\u00e0o'));
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(''));
+    expect(sendMessage).toHaveBeenCalledWith(41, { content: 'Xin ch\u00e0o' }, 'session-token');
+  });
+
+  it('respects reduced-motion preference for new messages and Jump to latest', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    try {
+      await openMessages('/app/chat/41');
+      await waitFor(() => expect(screen.getByLabelText('Message').hasAttribute('disabled')).toBe(false));
+      const area = document.querySelector('.chat-message-area') as HTMLDivElement;
+      Object.defineProperties(area, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { value: 200 } });
+      area.scrollTo = vi.fn();
+      area.scrollTop = 800;
+      fireEvent.scroll(area);
+      act(() => (socket.handlers.get(41) as Handlers).onMessage(message(7, 41, 22, 'Near bottom')));
+      expect(area.scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'auto' });
+      area.scrollTop = 100;
+      fireEvent.scroll(area);
+      act(() => (socket.handlers.get(41) as Handlers).onMessage(message(8, 41, 22, 'New while reading older')));
+      fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
+      expect(area.scrollTo).toHaveBeenLastCalledWith({ top: 1000, behavior: 'auto' });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('renders the split layout with an empty right panel when nothing is selected', async () => {
     await openMessages();
     expect(await screen.findByText('Select a friend or group')).toBeTruthy();

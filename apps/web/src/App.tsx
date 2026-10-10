@@ -36,6 +36,7 @@ function AppShell() {
   const { unreadCount } = useNotifications();
   return (
     <div className="app-frame">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <aside className="sidebar">
         <Link className="brand-lockup" to="/app/home" aria-label="GeoChat home">
           <span className="brand-mark">G</span>
@@ -44,22 +45,22 @@ function AppShell() {
         <p className="nav-caption">DISCOVER</p>
         <nav className="side-nav" aria-label="Main navigation">
           <NavLink to="/app/home" className="nav-link">
-            <span className="nav-icon">⌂</span> Home
+            <span className="nav-icon" aria-hidden="true">⌂</span> Home
           </NavLink>
           <NavLink to="/app/search" className="nav-link">
-            <span className="nav-icon">⌕</span> Search people
+            <span className="nav-icon" aria-hidden="true">⌕</span> Search
           </NavLink>
           <NavLink to="/app/nearby" className="nav-link">
-            <span className="nav-icon">◎</span> Nearby
+            <span className="nav-icon" aria-hidden="true">◎</span> Nearby
           </NavLink>
           <NavLink to="/app/friends" className="nav-link">
-            <span className="nav-icon">♧</span> Friends
+            <span className="nav-icon" aria-hidden="true">♧</span> Friends
           </NavLink>
           <NavLink to="/app/chat" className="nav-link">
-            <span className="nav-icon">▤</span> Messages
+            <span className="nav-icon" aria-hidden="true">▤</span> Messages
           </NavLink>
           <NavLink to="/app/notifications" className="nav-link notifications-nav-link">
-            <span className="nav-icon">♧</span> Notifications
+            <span className="nav-icon" aria-hidden="true">♧</span> Notifications
             {unreadCount > 0 ? <span className="notification-count" aria-label={`${unreadCount} unread notifications`}>
               {unreadCount > 99 ? '99+' : unreadCount}
             </span> : null}
@@ -68,10 +69,10 @@ function AppShell() {
         <p className="nav-caption account-nav-caption">ACCOUNT</p>
         <nav className="side-nav account-side-nav" aria-label="Account navigation">
           <NavLink to="/app/profile" className="nav-link account-nav-link">
-            <span className="nav-icon">◉</span> Profile
+            <span className="nav-icon" aria-hidden="true">◉</span> Profile
           </NavLink>
           <NavLink to="/app/settings" className="nav-link account-nav-link">
-            <span className="nav-icon">⚙</span> Settings
+            <span className="nav-icon" aria-hidden="true">⚙</span> Settings
           </NavLink>
         </nav>
         <div className="sidebar-bottom">
@@ -91,7 +92,7 @@ function AppShell() {
             <NavLink to="/app/settings" aria-label="Settings" title="Settings">⚙</NavLink>
           </nav>
         </header>
-        <main className="content-area"><Outlet /></main>
+        <main className="content-area" id="main-content" tabIndex={-1}><Outlet /></main>
       </div>
     </div>
   );

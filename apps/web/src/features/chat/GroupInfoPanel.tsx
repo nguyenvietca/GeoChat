@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { useOverlayFocus } from '../../hooks/useOverlayFocus';
 import { ApiError } from '../../api/client';
 import { getFriends, sendFriendRequest } from '../../api/friends';
 import { openContextualConversation, openDirectConversation } from '../../api/chats';
@@ -31,9 +32,18 @@ export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, o
   const [notice, setNotice] = useState('');
   const [groupName, setGroupName] = useState(group.name);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const confirmationTrigger = useRef<HTMLElement | null>(null);
   const [memberMenuId, setMemberMenuId] = useState<number | null>(null);
   const [memberMenuLoading, setMemberMenuLoading] = useState(false);
   const [requestedFriendIds, setRequestedFriendIds] = useState<Set<number>>(() => new Set());
+
+  useOverlayFocus(dialogRef, confirmation !== null, () => { setConfirmation(null); setError(''); }, true, leaving || removingId !== null, confirmationTrigger);
+  useOverlayFocus(menuRef, memberMenuId, () => setMemberMenuId(null), false);
+  useEffect(() => {
+    if (memberMenuId !== null && !memberMenuLoading) menuRef.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+  }, [memberMenuId, memberMenuLoading]);
 
   useEffect(() => {
     let active = true;
@@ -236,7 +246,7 @@ export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, o
                     <span aria-hidden="true">•••</span>
                   </button>
                   {memberMenuId === member.user.userId ? (
-                    <div className="group-member-menu-list" role="menu" aria-label={`${member.user.displayName} actions`}>
+                    <div ref={menuRef} tabIndex={-1} className="group-member-menu-list" role="menu" aria-label={`${member.user.displayName} actions`}>
                       {memberMenuLoading ? <span role="status">Loading…</span> : (
                         <>
                           {friends?.some((friend) => friend.userId === member.user.userId) ? (
@@ -250,7 +260,7 @@ export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, o
                           <button type="button" role="menuitem" onClick={() => void handleMessageMember(member)}>Message</button>
                           {isOwner && member.role !== 'OWNER' ? (
                             <button className="menu-danger-action" type="button" role="menuitem"
-                              onClick={() => { setMemberMenuId(null); setConfirmation({ action: 'remove', member }); }}>
+                              onClick={(event) => { confirmationTrigger.current = event.currentTarget.closest('.group-member-menu')?.querySelector<HTMLElement>('.group-member-menu-trigger') ?? null; setMemberMenuId(null); setConfirmation({ action: 'remove', member }); }}>
                               Remove from group
                             </button>
                           ) : null}
@@ -288,18 +298,18 @@ export function GroupInfoPanel({ group, currentUserId, token, onClose, onLeft, o
             </fieldset>
           ) : null}
           <p className="group-owner-note">Owners cannot leave until ownership transfer is supported.</p>
-          <button className="group-leave-button" type="button" onClick={() => setConfirmation({ action: 'delete' })} disabled={leaving}>
+          <button className="group-leave-button" type="button" onClick={(event) => { confirmationTrigger.current = event.currentTarget; setConfirmation({ action: 'delete' }); }} disabled={leaving}>
             Delete group
           </button>
         </>
       ) : (
-        <button className="group-leave-button" type="button" onClick={() => setConfirmation({ action: 'leave' })} disabled={leaving}>
+        <button className="group-leave-button" type="button" onClick={(event) => { confirmationTrigger.current = event.currentTarget; setConfirmation({ action: 'leave' }); }} disabled={leaving}>
           Leave group
         </button>
       )}
       {confirmation ? (
         <div className="group-confirm-backdrop">
-          <section className="group-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="group-confirm-title">
+          <section ref={dialogRef} tabIndex={-1} aria-busy={leaving || removingId !== null} className="group-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="group-confirm-title">
             <h2 id="group-confirm-title">{confirmation.action === 'leave' ? 'Leave this group?' : confirmation.action === 'delete' ? 'Delete this group?' : 'Remove this member?'}</h2>
             <p>{confirmation.action === 'leave'
               ? 'You will lose access to this conversation and its messages.'

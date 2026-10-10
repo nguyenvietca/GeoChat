@@ -8,6 +8,7 @@ export function ProfilePage() {
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldError, setFieldError] = useState(false);
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
@@ -20,6 +21,7 @@ export function ProfilePage() {
     if (normalizedName.length < 2 || normalizedName.length > 100) {
       setSuccess('');
       setError('Display name must be between 2 and 100 characters.');
+      setFieldError(true);
       return;
     }
     if (!token) {
@@ -28,6 +30,7 @@ export function ProfilePage() {
       return;
     }
 
+    setFieldError(false);
     setSaving(true);
     setError('');
     setSuccess('');
@@ -37,6 +40,7 @@ export function ProfilePage() {
       setDisplayName(updatedUser.displayName);
       setSuccess('Profile updated.');
     } catch (updateError) {
+      setFieldError(updateError instanceof ApiError && updateError.status === 400);
       setError(updateError instanceof ApiError ? updateError.message : 'Unable to update your profile right now.');
     } finally {
       setSaving(false);
@@ -60,7 +64,7 @@ export function ProfilePage() {
         <div className="section-heading">
           <div><h2 id="edit-profile-heading">Public profile</h2><p>Update the name other people see.</p></div>
         </div>
-        {error ? <p className="inline-error" role="alert">{error}</p> : null}
+        {error ? <p className="inline-error" role="alert" id="profile-name-error">{error}</p> : null}
         {success ? <p className="success-message" role="status">{success}</p> : null}
         <form className="profile-form" noValidate onSubmit={(event) => void handleSubmit(event)}>
           <label className="field-label" htmlFor="profile-display-name">Display name</label>
@@ -73,12 +77,16 @@ export function ProfilePage() {
             maxLength={100}
             required
             value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
+            onChange={(event) => { setDisplayName(event.target.value); setFieldError(false); setError(''); setSuccess(''); }}
+            aria-invalid={fieldError} aria-describedby={error ? 'profile-name-help profile-name-error' : 'profile-name-help'}
             disabled={saving}
           />
-          <button className="primary-button" type="submit" disabled={saving}>
-            {saving ? 'Saving...' : 'Save changes'}
-          </button>
+          <p className="profile-field-help" id="profile-name-help">Use 2-100 characters. This is the name people see in conversations.</p>
+          <div className="profile-actions">
+            <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button>
+            <button className="quiet-light-button" type="button" disabled={saving || displayName === user.displayName}
+              onClick={() => { setDisplayName(user.displayName); setError(''); setSuccess(''); setFieldError(false); }}>Cancel</button>
+          </div>
         </form>
       </section>
     </section>
