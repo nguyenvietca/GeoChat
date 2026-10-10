@@ -26,6 +26,7 @@ import com.geochat.chat.dto.ChatDtos.ConversationPresenceResponse;
 import com.geochat.chat.dto.ChatDtos.ConversationSummaryResponse;
 import com.geochat.chat.dto.ChatDtos.MessageListResponse;
 import com.geochat.chat.dto.ChatDtos.MessageResponse;
+import com.geochat.chat.dto.ChatDtos.TypingEventResponse;
 import com.geochat.chat.dto.ChatDtos.OpenDirectChatResponse;
 import com.geochat.chat.dto.ChatDtos.UserSummaryResponse;
 import com.geochat.chat.dto.ChatDtos.UserPresenceResponse;
@@ -302,6 +303,21 @@ public class ChatService {
 	}
 
 	@Transactional(readOnly = true)
+	public TypingEventResponse createTypingEvent(String username, Long conversationId, String state) {
+		if (!"START".equals(state) && !"STOP".equals(state)) {
+			throw new IllegalArgumentException("typing state must be START or STOP");
+		}
+		User sender = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+		conversationRepository.findById(conversationId)
+				.orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+		if (!conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, sender.getId())) {
+			throw new AccessDeniedException("You are not a participant in this conversation");
+		}
+		return new TypingEventResponse(conversationId, sender.getId(), sender.getDisplayName(), "TYPING", state, 0);
+	}
+
+	@Transactional(readOnly = true)
 	public MessageListResponse listMessages(String username, Long conversationId, Integer limit) {
 		return listMessages(username, conversationId, limit, 0);
 	}
@@ -338,17 +354,7 @@ public class ChatService {
 			return false;
 		}
 
-		User currentUser = userRepository.findByUsernameIgnoreCase(username).orElse(null);
-		if (currentUser == null) {
-			return false;
-		}
-
-		Conversation conversation = conversationRepository.findById(conversationId).orElse(null);
-		if (conversation == null) {
-			return false;
-		}
-
-		return conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, currentUser.getId());
+        return conversationParticipantRepository.existsForUsername(conversationId, username);
 	}
 
 	private MessageResponse createPersistedMessage(String username, Long conversationId, String content) {

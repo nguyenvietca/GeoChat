@@ -844,7 +844,7 @@ h2 {
   text-align: center;
 }
 
-.empty-state {
+.messages-layout .empty-state {
   /* border-style: solid; */
   margin: 8px 12px 8px 12px;
 }
@@ -1557,6 +1557,22 @@ h2 {
   padding: 6px 14px 0;
   color: var(--danger);
   font-size: 12px;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 0 0 24px;
+  min-width: 0;
+  padding: 0 22px;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 12px;
+  line-height: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-load-error {
@@ -3270,3 +3286,5 @@ select {
 :root[data-theme='dark'] .auth-aside {
   background: var(--nav-bg);
 }
+.typing-people { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.typing-action { flex-shrink: 0; }

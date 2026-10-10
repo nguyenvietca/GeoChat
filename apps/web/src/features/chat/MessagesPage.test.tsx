@@ -5,9 +5,10 @@ import { getCurrentUser } from '../../api/auth';
 import { acceptFriendRequest, getFriends, getIncomingFriendRequests, getOutgoingFriendRequests, sendFriendRequest } from '../../api/friends';
 import { getConversationDetail, getConversationPresence, getConversations, getMessages, openContextualConversation, openDirectConversation, sendMessage, markConversationRead } from '../../api/chats';
 import { addGroupMembers, createGroup, deleteGroup, getGroup, getGroupMembers, leaveGroup, removeGroupMember, renameGroup } from '../../api/groups';
-import { ChatMessage, ConversationDetail, GroupInfo, GroupManagementEvent, User } from '../../types';
+import { ChatMessage, ChatTypingEvent, ConversationDetail, GroupInfo, GroupManagementEvent, User } from '../../types';
+import { publishTypingState, subscribeToConversation } from '../../services/chatWebSocket';
 
-type Handlers = { onMessage: (message: ChatMessage) => void };
+type Handlers = { onMessage: (message: ChatMessage) => void; onTyping?: (event: ChatTypingEvent) => void };
 type PresenceHandler = (presence: { userId: number; online: boolean }) => void;
 
 const socket = vi.hoisted(() => ({
@@ -57,6 +58,7 @@ vi.mock('../../services/chatWebSocket', () => ({
     socket.unsubscribe.set(id, unsubscribe);
     return unsubscribe;
   }),
+  publishTypingState: vi.fn(() => true),
   subscribeToConversationActivity: vi.fn((_token: string, handlers: unknown) => { socket.activityHandlers = handlers; return vi.fn(); }),
   subscribeToGroupEvents: vi.fn((_token: string, handlers: unknown) => {
     socket.groupEventHandlers = handlers;
@@ -219,6 +221,188 @@ describe('web messages split view and group chat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load older messages' }));
     await screen.findByText('Oldest');
     expect(area.scrollTop).toBe(150);
+  });
+
+  it('throttles local typing events and sends STOP after idle', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [directConversation] });
+    await openMessages('/app/chat/41');
+    const input = await screen.findByLabelText('Message');
+    await waitFor(() => expect(input.hasAttribute('disabled')).toBe(false));
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(input, { target: { value: '   ' } });
+      expect(publishTypingState).not.toHaveBeenCalled();
+      fireEvent.change(input, { target: { value: 'Typing' } });
+      fireEvent.change(input, { target: { value: 'Typing more' } });
+      expect(publishTypingState).toHaveBeenNthCalledWith(1, 41, 'session-token', 'START');
+      expect(publishTypingState).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+      fireEvent.change(input, { target: { value: 'Typing more words' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+      expect(publishTypingState).toHaveBeenNthCalledWith(2, 41, 'session-token', 'START');
+      await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+      expect(publishTypingState).toHaveBeenLastCalledWith(41, 'session-token', 'STOP');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('summarizes other group typists, hides own activity, and expires stale events', async () => {
+    vi.mocked(getConversationDetail).mockResolvedValueOnce({
+      conversationId: 50, type: 'GROUP', participants: [mira, rowan, { userId: 23, username: 'sam', displayName: 'Sam Reed' }], createdAt: '', updatedAt: '',
+    });
+    await openMessages('/app/chat/50');
+    await screen.findByRole('button', { name: 'Group info' });
+    const handlers = socket.handlers.get(50) as Handlers;
+    vi.useFakeTimers();
+    try {
+      act(() => handlers.onTyping?.({ conversationId: 50, senderId: 9, senderDisplayName: 'Mira Vale', type: 'TYPING', state: 'START' }));
+      expect(screen.queryByText('Mira Vale is typing…')).toBeNull();
+      act(() => handlers.onTyping?.({ conversationId: 50, senderId: 22, senderDisplayName: 'Rowan Park', type: 'TYPING', state: 'START' }));
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('Rowan Park is typing…');
+      act(() => handlers.onTyping?.({ conversationId: 50, senderId: 23, senderDisplayName: 'Sam Reed', type: 'TYPING', state: 'START' }));
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('Rowan Park and Sam Reed are typing…');
+      act(() => handlers.onTyping?.({ conversationId: 50, senderId: 24, senderDisplayName: 'Alex Kim', type: 'TYPING', state: 'START' }));
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('Several people are typing…');
+      act(() => handlers.onTyping?.({ conversationId: 50, senderId: 24, senderDisplayName: 'Alex Kim', type: 'TYPING', state: 'STOP' }));
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('Rowan Park and Sam Reed are typing…');
+      act(() => { vi.advanceTimersByTime(7000); });
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps DIRECT typing alive on refresh, expires missing STOP, and preserves the reading position', async () => {
+    await openMessages('/app/chat/41');
+    await waitFor(() => expect(screen.getByLabelText('Message').hasAttribute('disabled')).toBe(false));
+    const handlers = socket.handlers.get(41) as Handlers;
+    const area = document.querySelector('.chat-message-area') as HTMLDivElement;
+    area.scrollTop = 120;
+    vi.useFakeTimers();
+    try {
+      const event: ChatTypingEvent = { conversationId: 41, senderId: 22, senderDisplayName: 'Rowan Park', type: 'TYPING', state: 'START' };
+      act(() => handlers.onTyping?.(event));
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('Rowan Park is typing\u2026');
+      expect(area.scrollTop).toBe(120);
+      act(() => { vi.advanceTimersByTime(5000); handlers.onTyping?.(event); });
+      act(() => vi.advanceTimersByTime(2500));
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('Rowan Park is typing\u2026');
+      act(() => vi.advanceTimersByTime(4500));
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('');
+      expect(getConversations).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('sends STOP after successful send, empty draft and blur, without leaving refresh timers', async () => {
+    await openMessages('/app/chat/41');
+    const input = await screen.findByLabelText('Message');
+    await waitFor(() => expect(input.hasAttribute('disabled')).toBe(false));
+    vi.mocked(sendMessage).mockResolvedValueOnce(message(90, 41, 9, 'Send now'));
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(input, { target: { value: 'Send now' } });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send' })));
+      expect((input as HTMLTextAreaElement).value).toBe('');
+      expect(publishTypingState).toHaveBeenLastCalledWith(41, 'session-token', 'STOP');
+      fireEvent.change(input, { target: { value: 'Next draft' } });
+      fireEvent.change(input, { target: { value: '   ' } });
+      expect(publishTypingState).toHaveBeenLastCalledWith(41, 'session-token', 'STOP');
+      fireEvent.change(input, { target: { value: 'Keep this draft' } });
+      fireEvent.blur(input);
+      expect((input as HTMLTextAreaElement).value).toBe('Keep this draft');
+      expect(publishTypingState).toHaveBeenLastCalledWith(41, 'session-token', 'STOP');
+      const calls = vi.mocked(publishTypingState).mock.calls.length;
+      act(() => vi.advanceTimersByTime(20000));
+      expect(publishTypingState).toHaveBeenCalledTimes(calls);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('clears typing on reconnect and ignores late frames from a conversation that was switched away', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [directConversation, groupConversation] });
+    await openMessages('/app/chat/41');
+    await waitFor(() => expect(screen.getByLabelText('Message').hasAttribute('disabled')).toBe(false));
+    const previous = socket.handlers.get(41) as Handlers & { onStateChange: (state: string) => void };
+    act(() => previous.onTyping?.({ conversationId: 41, senderId: 22, senderDisplayName: 'Rowan Park', type: 'TYPING', state: 'START' }));
+    act(() => previous.onStateChange('reconnecting'));
+    expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('');
+    act(() => previous.onStateChange('connected'));
+    fireEvent.click(screen.getByRole('link', { name: /Trip crew/ }));
+    await screen.findByRole('button', { name: 'Group info' });
+    const current = socket.handlers.get(50) as Handlers;
+    vi.useFakeTimers();
+    try {
+      const event: ChatTypingEvent = { conversationId: 41, senderId: 22, senderDisplayName: 'Stale person', type: 'TYPING', state: 'START' };
+      act(() => { previous.onTyping?.(event); current.onTyping?.(event); });
+      expect(screen.queryByText('Stale person is typing\u2026')).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(getConversations).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('stops publishing and clears remote typing in a hidden tab, retaining the draft', async () => {
+    await openMessages('/app/chat/41');
+    const input = await screen.findByLabelText('Message');
+    await waitFor(() => expect(input.hasAttribute('disabled')).toBe(false));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(input, { target: { value: 'Keep draft while away' } });
+      visibility.mockReturnValue('hidden');
+      fireEvent(document, new Event('visibilitychange'));
+      expect(publishTypingState).toHaveBeenLastCalledWith(41, 'session-token', 'STOP');
+      const calls = vi.mocked(publishTypingState).mock.calls.length;
+      fireEvent.change(input, { target: { value: 'Hidden input' } });
+      act(() => (socket.handlers.get(41) as Handlers).onTyping?.({ conversationId: 41, senderId: 22, senderDisplayName: 'Rowan', type: 'TYPING', state: 'START' }));
+      act(() => vi.advanceTimersByTime(10000));
+      expect(publishTypingState).toHaveBeenCalledTimes(calls);
+      expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('');
+      expect((input as HTMLTextAreaElement).value).toBe('Hidden input');
+    } finally { visibility.mockRestore(); vi.useRealTimers(); }
+  });
+
+  it('preserves draft, selection and subscriptions during a theme change while typing', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [directConversation] });
+    await openMessages('/app/chat/41');
+    const input = await screen.findByLabelText('Message');
+    await waitFor(() => expect(input.hasAttribute('disabled')).toBe(false));
+    fireEvent.change(input, { target: { value: 'Draft in both themes' } });
+    const subscriptions = vi.mocked(subscribeToConversation).mock.calls.length;
+    const preference = window.geochatTheme.getSnapshot().preference;
+    try {
+      act(() => window.geochatTheme.setPreference('dark'));
+      expect(document.documentElement.dataset.theme).toBe('dark');
+      expect(screen.getByLabelText('Message')).toBe(input);
+      expect((input as HTMLTextAreaElement).value).toBe('Draft in both themes');
+      expect(window.location.pathname).toBe('/app/chat/41');
+      expect(subscribeToConversation).toHaveBeenCalledTimes(subscriptions);
+      expect(getConversations).toHaveBeenCalledTimes(1);
+    } finally { act(() => window.geochatTheme.setPreference(preference)); }
+  });
+
+  it('removes remote typing when the DIRECT participant goes offline', async () => {
+    await openMessages('/app/chat/41');
+    await waitFor(() => expect(socket.presenceHandlers.has(22)).toBe(true));
+    act(() => (socket.handlers.get(41) as Handlers).onTyping?.({ conversationId: 41, senderId: 22, senderDisplayName: 'Rowan Park', type: 'TYPING', state: 'START' }));
+    act(() => socket.presenceHandlers.get(22)?.({ userId: 22, online: false }));
+    expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('');
+    expect(screen.getByText('Offline')).toBeTruthy();
+  });
+
+  it('ignores reordered START after a newer STOP and resets event sequence on reconnect', async () => {
+    await openMessages('/app/chat/41');
+    await waitFor(() => expect(screen.getByLabelText('Message').hasAttribute('disabled')).toBe(false));
+    const handlers = socket.handlers.get(41) as Handlers & { onStateChange: (state: string) => void };
+    const event: ChatTypingEvent = { conversationId: 41, senderId: 22, senderDisplayName: 'Rowan', type: 'TYPING', state: 'START', eventId: 100 };
+    act(() => {
+      handlers.onTyping?.(event);
+      handlers.onTyping?.({ ...event, state: 'STOP', eventId: 102 });
+      handlers.onTyping?.({ ...event, eventId: 101 });
+    });
+    expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('');
+    act(() => { handlers.onStateChange('reconnecting'); handlers.onStateChange('connected'); });
+    act(() => handlers.onTyping?.({ ...event, eventId: 1 }));
+    expect(screen.getByRole('status', { name: 'Typing activity' }).textContent).toBe('Rowan is typing\u2026');
   });
 
   it('reconciles selected history on reconnect without reloading on selection', async () => {
@@ -552,13 +736,15 @@ describe('web messages split view and group chat', () => {
     await openMessages();
 
     fireEvent.click(await screen.findByRole('link', { name: /Earlier note/ }));
-    await screen.findByLabelText('Message');
-    await waitFor(() => expect(socket.handlers.has(41)).toBe(true));
+    const composer = await screen.findByLabelText('Message');
+    await waitFor(() => expect(socket.handlers.has(41) && !composer.hasAttribute('disabled')).toBe(true));
+    fireEvent.change(composer, { target: { value: 'Before switching' } });
     fireEvent.click(await screen.findByRole('link', { name: /Trip crew/ }));
 
     await waitFor(() => expect(socket.handlers.has(50)).toBe(true));
     expect(socket.unsubscribe.get(41)).toHaveBeenCalled();
     expect(socket.unsubscribe.get(50)).not.toHaveBeenCalled();
+    expect(publishTypingState).toHaveBeenLastCalledWith(41, 'session-token', 'STOP');
   });
 
   it('validates the group name and creates a group, then opens it', async () => {
@@ -684,7 +870,7 @@ describe('web messages split view and group chat', () => {
 
     await waitFor(() => expect(renameGroup).toHaveBeenCalledWith(50, 'New trip crew', 'session-token'));
     expect((await screen.findAllByText('New trip crew')).length).toBeGreaterThan(0);
-    expect(await screen.findByRole('status')).toBeTruthy();
+    expect(await screen.findByText('Group name updated.')).toBeTruthy();
     expect(screen.getByRole('link', { name: /New trip crew/ })).toBeTruthy();
   });
 

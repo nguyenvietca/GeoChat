@@ -63,6 +63,7 @@ vi.mock('../../api/chats', () => ({
   sendMessage: vi.fn(),
 }));
 vi.mock('../../services/chatWebSocket', () => ({
+  publishTypingState: vi.fn(() => true),
   subscribeToConversation: vi.fn((_id: number, _token: string, handlers: unknown) => {
     socketHarness.handlers = handlers;
     return socketHarness.disconnect;

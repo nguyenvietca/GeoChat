@@ -50,7 +50,8 @@ public class WebSocketSessionRegistry {
         }
     }
 
-    public void registerUsername(String sessionId, String username, Long userId) {
+    // Serialize count transitions with their publication so observers cannot see stale ONLINE after OFFLINE.
+    public synchronized void registerUsername(String sessionId, String username, Long userId) {
         usernames.put(sessionId, username);
         if (sessionUserIds.putIfAbsent(sessionId, userId) == null) {
             int sessionCount = activeSessionCounts.merge(userId, 1, Integer::sum);
@@ -68,7 +69,7 @@ public class WebSocketSessionRegistry {
         return activeSessionCounts.containsKey(userId);
     }
 
-    public void disconnect(String sessionId) {
+    public synchronized void disconnect(String sessionId) {
         unregisterUsername(sessionId);
         ScheduledFuture<?> task = expirationTasks.remove(sessionId);
         if (task != null) task.cancel(false);

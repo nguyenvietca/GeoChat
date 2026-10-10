@@ -4,8 +4,8 @@ import { getConversationDetail, getConversationPresence, getMessages, sendMessag
 import { ApiError } from '../../api/client';
 import { getGroup } from '../../api/groups';
 import { useAuth } from '../../app/providers/AuthContext';
-import { ChatConnectionState, subscribeToConversation, subscribeToPresence } from '../../services/chatWebSocket';
-import { ChatMessage, ConversationReadState, ConversationDetail, GroupInfo } from '../../types';
+import { ChatConnectionState, publishTypingState, subscribeToConversation, subscribeToPresence } from '../../services/chatWebSocket';
+import { ChatMessage, ChatTypingEvent, ConversationReadState, ConversationDetail, GroupInfo } from '../../types';
 import { useConversationRead } from './useConversationRead';
 import { compareMessageOrder, formatMessageTime } from './messagePresentation';
 import { LimitedChatFriendship } from './LimitedChatFriendship';
@@ -13,6 +13,9 @@ import { GroupInfoPanel } from './GroupInfoPanel';
 
 const PAGE_SIZE = 20;
 const MAX_MESSAGE_LENGTH = 5000;
+const TYPING_IDLE_MS = 2200;
+const TYPING_REFRESH_MS = 3000;
+const TYPING_EXPIRY_MS = 7000;
 
 type ChatPanelProps = {
   conversationId: number;
@@ -46,6 +49,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const [connection, setConnection] = useState<ChatConnectionState>('connecting');
   const [participantOnline, setParticipantOnline] = useState<boolean | null>(null);
   const [presenceLoading, setPresenceLoading] = useState(false);
+  const [typingNames, setTypingNames] = useState<Record<number, string>>({});
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const shouldScrollToBottomRef = useRef(true);
@@ -53,6 +57,13 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const pendingOlderScrollRef = useRef<{ height: number; top: number } | null>(null);
   const sendingRef = useRef(false);
   const composingRef = useRef(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const typingActiveRef = useRef(false);
+  const typingIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typingEventIdsRef = useRef(new Map<number, number>());
+  const typingExpiryTimersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
@@ -140,6 +151,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
         if (active) {
           setParticipantOnline(presence.online);
           setPresenceLoading(false);
+          if (!presence.online) removeTypingUser(presence.userId);
         }
       },
       onStateChange: (state) => {
@@ -162,8 +174,13 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
     let connected = false;
     const unsubscribe = subscribeToConversation(conversationId, token, {
       onStateChange: (state) => {
+        if (!active) return;
         setConnection(state);
+        if (state === 'reconnecting') { clearRemoteTyping(); typingEventIdsRef.current.clear(); }
         if (state === 'connected') {
+          if (typingActiveRef.current && draftRef.current.trim()) {
+            publishTypingState(conversationId, token, 'START');
+          }
           if (connected && conversationRef.current?.type === 'GROUP') void getGroup(conversationId, token).then((info) => {
             if (active) { setGroup(info); onGroupChanged(info); }
           }).catch(() => {});
@@ -175,10 +192,30 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
           connected = true;
         }
       },
-      onMessage: addMessage,
+      onMessage: (message) => { if (active) addMessage(message); },
+      onTyping: (event) => { if (active) receiveTyping(event); },
     });
-    return () => { active = false; unsubscribe(); };
+    return () => {
+      active = false;
+      stopTyping();
+      clearTypingExpiryTimers();
+      typingEventIdsRef.current.clear();
+      unsubscribe();
+    };
   }, [conversationId, token]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') stopTyping();
+      clearRemoteTyping();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [conversationId, token]);
+
+  useEffect(() => {
+    if (loading || limitedMessagesRemaining === 0) stopTyping();
+  }, [loading, limitedMessagesRemaining]);
 
   useLayoutEffect(() => {
     const area = messageAreaRef.current;
@@ -251,7 +288,11 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
         setTotal((current) => current + 1);
         setLimitedMessagesRemaining((current) => current === null ? null : Math.max(0, current - 1));
       }
-      setDraft((current) => current === draft ? '' : current);
+      if (draftRef.current === draft) {
+        stopTyping();
+        draftRef.current = '';
+        setDraft('');
+      }
     } catch (sendFailure) {
       if (sendFailure instanceof ApiError && sendFailure.status === 400 && token) {
         // Another tab/account may have consumed the remaining quota.
@@ -276,6 +317,87 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       void submitMessage();
     }
   };
+
+  function updateTypingFromDraft(value: string) {
+    draftRef.current = value;
+    if (!value.trim() || loading || !conversation || limitedMessagesRemaining === 0 || document.visibilityState === 'hidden') {
+      stopTyping();
+      return;
+    }
+    if (!typingActiveRef.current) {
+      typingActiveRef.current = true;
+      if (token) publishTypingState(conversationId, token, 'START');
+      typingRefreshTimerRef.current = setInterval(() => {
+        if (token && draftRef.current.trim()) publishTypingState(conversationId, token, 'START');
+      }, TYPING_REFRESH_MS);
+    }
+    if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
+    typingIdleTimerRef.current = setTimeout(stopTyping, TYPING_IDLE_MS);
+  }
+
+  function stopTyping() {
+    if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
+    if (typingRefreshTimerRef.current) clearInterval(typingRefreshTimerRef.current);
+    typingIdleTimerRef.current = null;
+    typingRefreshTimerRef.current = null;
+    if (typingActiveRef.current && token) publishTypingState(conversationId, token, 'STOP');
+    typingActiveRef.current = false;
+  }
+
+  function receiveTyping(event: ChatTypingEvent) {
+    if (event.conversationId !== conversationId || event.senderId === user?.id) return;
+    if (event.eventId !== undefined) {
+      if (event.eventId <= (typingEventIdsRef.current.get(event.senderId) ?? 0)) return;
+      typingEventIdsRef.current.set(event.senderId, event.eventId);
+    }
+    if (document.visibilityState === 'hidden') return;
+    const previousTimer = typingExpiryTimersRef.current.get(event.senderId);
+    if (previousTimer) clearTimeout(previousTimer);
+    typingExpiryTimersRef.current.delete(event.senderId);
+    if (event.state === 'STOP') {
+      removeTypingUser(event.senderId);
+      return;
+    }
+    const expiry = setTimeout(() => removeTypingUser(event.senderId), TYPING_EXPIRY_MS);
+    typingExpiryTimersRef.current.set(event.senderId, expiry);
+    setTypingNames((current) => current[event.senderId] === event.senderDisplayName
+      ? current : { ...current, [event.senderId]: event.senderDisplayName });
+  }
+
+  function removeTypingUser(senderId: number) {
+    const timer = typingExpiryTimersRef.current.get(senderId);
+    if (timer) clearTimeout(timer);
+    typingExpiryTimersRef.current.delete(senderId);
+    setTypingNames((current) => {
+      if (!(senderId in current)) return current;
+      const next = { ...current };
+      delete next[senderId];
+      return next;
+    });
+  }
+
+  function clearTypingExpiryTimers() {
+    for (const timer of typingExpiryTimersRef.current.values()) clearTimeout(timer);
+    typingExpiryTimersRef.current.clear();
+  }
+
+  function clearRemoteTyping() {
+    clearTypingExpiryTimers();
+    setTypingNames((current) => Object.keys(current).length ? {} : current);
+  }
+
+  const typingDisplayNames = Object.values(typingNames);
+  const typingLabel = typingDisplayNames.length === 1
+    ? `${typingDisplayNames[0]} is typing…`
+    : typingDisplayNames.length === 2
+      ? `${typingDisplayNames[0]} and ${typingDisplayNames[1]} are typing…`
+      : typingDisplayNames.length > 2 ? 'Several people are typing…' : '';
+
+  const typingPeople = typingDisplayNames.length === 1 ? typingDisplayNames[0]
+    : typingDisplayNames.length === 2
+      ? typingDisplayNames.join(' and ').length > 32 ? '2 people' : typingDisplayNames.join(' and ')
+      : typingDisplayNames.length > 2 ? 'Several people' : '';
+  const typingAction = typingDisplayNames.length === 1 ? 'is typing\u2026' : 'are typing\u2026';
 
   const isGroup = conversation?.type === 'GROUP';
   const participant = conversation?.participants.find((item) => item.userId !== user?.id);
@@ -305,7 +427,8 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
         {isGroup ? (
           <span className={connection === 'connected' ? 'connection-state connected' : 'connection-state'}><i />{statusLabel}</span>
         ) : (
-          <span className={participantOnline === true ? 'presence-state online' : 'presence-state'} aria-live="polite">
+          <span className={participantOnline === true ? 'presence-state online' : 'presence-state'} aria-live="polite"
+            title="Authenticated realtime connectivity, not activity in this conversation.">
             <i />{statusLabel}
           </span>
         )}
@@ -363,9 +486,16 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
               } finally { setCheckingRecent(false); }
             }}>{checkingRecent ? 'Checking recent messages...' : 'Check recent messages'}</button>
           </div> : null}
+          <div className="typing-indicator" role="status" aria-label="Typing activity" title={typingLabel || undefined} aria-live="polite" aria-atomic="true">
+            {typingPeople ? <><span className="typing-people">{typingPeople}</span>{' '}<span className="typing-action">{typingAction}</span></> : null}
+          </div>
           <form className="chat-composer" onSubmit={(event) => void submitMessage(event)}>
             <label className="visually-hidden" htmlFor="chat-message">Message</label>
-            <textarea id="chat-message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}
+            <textarea id="chat-message" value={draft} onChange={(event) => {
+              setDraft(event.target.value);
+              updateTypingFromDraft(event.target.value);
+            }} onKeyDown={handleComposerKeyDown}
+              onBlur={stopTyping}
               onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }}
               placeholder={limitedMessagesRemaining === 0 ? 'Message limit reached' : 'Write a message…'} maxLength={MAX_MESSAGE_LENGTH} rows={1}
               disabled={loading || !conversation || limitedMessagesRemaining === 0} />

@@ -14,7 +14,9 @@ import java.util.regex.Pattern;
 @Component
 public class GroupConversationOutboundInterceptor implements ChannelInterceptor {
 
-    private static final Pattern CHAT_DESTINATION = Pattern.compile("/topic/chat/(\\d+)");
+    private static final Pattern CHAT_DESTINATION = Pattern.compile("/topic/chat/(\\d+)(?:/typing)?");
+
+    private static final Pattern PRESENCE_DESTINATION = Pattern.compile("/topic/presence/(\\d+)");
 
     private final ChatService chatService;
     private final WebSocketSessionRegistry webSocketSessionRegistry;
@@ -31,17 +33,16 @@ public class GroupConversationOutboundInterceptor implements ChannelInterceptor 
         if (accessor == null || accessor.getSessionId() == null) {
             return message;
         }
-        Matcher matcher = CHAT_DESTINATION.matcher(accessor.getDestination() == null ? "" : accessor.getDestination());
-        if (!matcher.matches()) {
-            return message;
-        }
-
+        String destination = accessor.getDestination() == null ? "" : accessor.getDestination();
+        Matcher chat = CHAT_DESTINATION.matcher(destination);
+        Matcher presence = PRESENCE_DESTINATION.matcher(destination);
+        if (!chat.matches() && !presence.matches()) return message;
         String username = webSocketSessionRegistry.getUsername(accessor.getSessionId());
-        if (username == null) {
-            return null;
+        if (username == null) return null;
+        if (presence.matches()) {
+            return chatService.canViewPresence(username, Long.valueOf(presence.group(1))) ? message : null;
         }
-        Long conversationId = Long.valueOf(matcher.group(1));
-        return chatService.isParticipant(username, conversationId) ? message : null;
+        return chatService.isParticipant(username, Long.valueOf(chat.group(1))) ? message : null;
     }
 
 }

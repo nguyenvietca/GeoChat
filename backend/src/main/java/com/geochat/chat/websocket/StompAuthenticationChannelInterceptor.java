@@ -99,8 +99,10 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
             }
 
             Long conversationId = StompCommand.SUBSCRIBE.equals(accessor.getCommand())
-                    ? extractConversationId(destination, "/topic/chat/", "")
-                    : extractConversationId(destination, "/app/chat/", "/send");
+                    ? extractConversationId(destination, "/topic/chat/",
+                        destination != null && destination.endsWith("/typing") ? "/typing" : "")
+                    : extractConversationId(destination, "/app/chat/",
+                        destination != null && destination.endsWith("/typing") ? "/typing" : "/send");
             if (conversationId == null) {
                 throw new AccessDeniedException("Invalid realtime destination");
             }

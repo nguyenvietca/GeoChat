@@ -1,8 +1,9 @@
-import { ConversationReadState, AppNotification, ChatMessage, GroupManagementEvent, GroupManagementEventType, NotificationReferenceType, NotificationType, UserPresence } from '../types';
+import { ConversationReadState, AppNotification, ChatMessage, ChatTypingEvent, GroupManagementEvent, GroupManagementEventType, NotificationReferenceType, NotificationType, UserPresence } from '../types';
 import {
   buildWebSocketUrl,
   disconnectAllStompConnections,
   StompConnectionState,
+  publishToStompDestination,
   subscribeToStompDestination,
 } from './stompConnection';
 
@@ -10,6 +11,7 @@ export type ChatConnectionState = StompConnectionState;
 
 export type ChatWebSocketHandlers = {
   onMessage: (message: ChatMessage) => void;
+  onTyping?: (event: ChatTypingEvent) => void;
   onStateChange: (state: ChatConnectionState) => void;
 };
 
@@ -22,15 +24,50 @@ export function subscribeToConversation(
   token: string,
   handlers: ChatWebSocketHandlers,
 ) {
-  return subscribeToStompDestination(token, `/topic/chat/${conversationId}`, {
+  const unsubscribeMessages = subscribeToStompDestination(token, `/topic/chat/${conversationId}`, {
     onStateChange: handlers.onStateChange,
     onFrame: (body) => {
       const message = parseChatMessage(body);
-      if (message?.conversationId === conversationId) {
-        handlers.onMessage(message);
-      }
+      if (message?.conversationId === conversationId) handlers.onMessage(message);
     },
   });
+  const unsubscribeTyping = subscribeToStompDestination(token, `/topic/chat/${conversationId}/typing`, {
+    onStateChange: () => {},
+    onFrame: (body) => {
+      const typingEvent = parseChatTypingEvent(body);
+      if (typingEvent?.conversationId === conversationId) handlers.onTyping?.(typingEvent);
+    },
+  });
+  return () => { unsubscribeTyping(); unsubscribeMessages(); };
+}
+
+let typingActivityId = 0;
+
+export function publishTypingState(conversationId: number, token: string, state: 'START' | 'STOP') {
+  return publishToStompDestination(token, `/app/chat/${conversationId}/typing`, JSON.stringify({ state, activityId: ++typingActivityId }));
+}
+
+export function parseChatTypingEvent(body: string): ChatTypingEvent | null {
+  try {
+    const value: unknown = JSON.parse(body);
+    if (!isRecord(value)
+      || value.type !== 'TYPING'
+      || !Number.isSafeInteger(value.conversationId) || Number(value.conversationId) <= 0
+      || !Number.isSafeInteger(value.senderId) || Number(value.senderId) <= 0
+      || typeof value.senderDisplayName !== 'string' || !value.senderDisplayName.trim()
+      || (value.state !== 'START' && value.state !== 'STOP')
+      || (value.eventId !== undefined && (!Number.isSafeInteger(value.eventId) || Number(value.eventId) <= 0))) return null;
+    return {
+      conversationId: Number(value.conversationId),
+      senderId: Number(value.senderId),
+      senderDisplayName: value.senderDisplayName,
+      type: 'TYPING',
+      state: value.state,
+      ...(value.eventId === undefined ? {} : { eventId: Number(value.eventId) }),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function disconnectAllChatWebSockets() {

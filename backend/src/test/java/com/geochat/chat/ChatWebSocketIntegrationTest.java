@@ -120,6 +120,119 @@ class ChatWebSocketIntegrationTest {
 	}
 
 	@Test
+	void directTypingUsesAuthenticatedIdentityAndIsNotPersistedOrSharedWithOutsiders() throws Exception {
+		User alice = createUser("typing-alice-ws", "Alice");
+		User bob = createUser("typing-bob-ws", "Bob");
+		User outsider = createUser("typing-outsider-ws", "Outsider");
+		markFriends(alice, bob);
+		Long conversationId = openConversation(alice, bob);
+		StompSession aliceSession = connectSession(tokenFor(alice));
+		StompSession bobSession = connectSession(tokenFor(bob));
+		StompSession outsiderSession = connectSession(tokenFor(outsider));
+		BlockingQueue<Map<String, Object>> aliceEvents = new LinkedBlockingQueue<>();
+		BlockingQueue<Map<String, Object>> bobEvents = new LinkedBlockingQueue<>();
+		aliceSession.subscribe("/topic/chat/" + conversationId + "/typing", frameHandler(aliceEvents));
+		bobSession.subscribe("/topic/chat/" + conversationId + "/typing", frameHandler(bobEvents));
+		org.awaitility.Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() ->
+				simpUserRegistry.getUser(bob.getUsername()) != null
+						&& simpUserRegistry.getUser(bob.getUsername()).getSessions().stream()
+						.flatMap(session -> session.getSubscriptions().stream()).count() == 1);
+
+		aliceSession.send("/app/chat/" + conversationId + "/typing", Map.of(
+				"state", "START", "senderId", bob.getId(), "senderDisplayName", "Forged"));
+		Map<String, Object> received = bobEvents.poll(10, TimeUnit.SECONDS);
+		assertThat(received).isNotNull()
+				.containsEntry("type", "TYPING")
+				.containsEntry("state", "START")
+				.containsEntry("conversationId", conversationId.intValue())
+				.containsEntry("senderId", alice.getId().intValue())
+				.containsEntry("senderDisplayName", "Alice");
+		assertThat(aliceEvents.poll(5, TimeUnit.SECONDS)).isNotNull();
+		assertThat(chatService.listMessages(alice.getUsername(), conversationId, 20).total()).isZero();
+
+		outsiderSession.send("/app/chat/" + conversationId + "/typing", Map.of("state", "START"));
+		assertThat(bobEvents.poll(1, TimeUnit.SECONDS)).isNull();
+		aliceSession.send("/app/chat/" + conversationId + "/typing", Map.of("state", "STOP"));
+		assertThat(bobEvents.poll(5, TimeUnit.SECONDS)).containsEntry("state", "STOP");
+        aliceSession.send("/app/chat/" + conversationId + "/typing", Map.of("state", "START", "activityId", 100));
+        aliceSession.send("/app/chat/" + conversationId + "/typing", Map.of("state", "STOP", "activityId", 101));
+        assertThat(bobEvents.poll(5, TimeUnit.SECONDS)).containsEntry("state", "START");
+        assertThat(bobEvents.poll(5, TimeUnit.SECONDS)).containsEntry("state", "STOP");
+        aliceSession.send("/app/chat/" + conversationId + "/typing", Map.of("state", "START", "activityId", 100));
+        assertThat(bobEvents.poll(1, TimeUnit.SECONDS)).isNull();
+        if (aliceSession.isConnected()) aliceSession.disconnect();
+        if (bobSession.isConnected()) bobSession.disconnect();
+        if (outsiderSession.isConnected()) outsiderSession.disconnect();
+	}
+
+	@Test
+	void groupTypingStopsAfterMemberRemovalAndGroupDeletion() throws Exception {
+		User owner = createUser("typing-group-owner", "Owner");
+		User member = createUser("typing-group-member", "Member");
+		markFriends(owner, member);
+		Long groupId = groupService.createGroup(owner.getUsername(),
+				new CreateGroupRequest("Typing group", java.util.List.of(member.getId()))).groupId();
+		StompSession ownerSession = connectSession(tokenFor(owner));
+		StompSession memberSession = connectSession(tokenFor(member));
+		BlockingQueue<Map<String, Object>> ownerEvents = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> memberEvents = new LinkedBlockingQueue<>();
+		ownerSession.subscribe("/topic/chat/" + groupId + "/typing", frameHandler(ownerEvents));
+        memberSession.subscribe("/topic/chat/" + groupId + "/typing", frameHandler(memberEvents));
+		org.awaitility.Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() ->
+				simpUserRegistry.getUser(owner.getUsername()) != null
+						&& simpUserRegistry.getUser(owner.getUsername()).getSessions().stream()
+						.flatMap(session -> session.getSubscriptions().stream()).count() == 1
+                && simpUserRegistry.getUser(member.getUsername()) != null
+                && simpUserRegistry.getUser(member.getUsername()).getSessions().stream()
+                    .flatMap(session -> session.getSubscriptions().stream()).count() == 1);
+
+		memberSession.send("/app/chat/" + groupId + "/typing", Map.of("state", "START"));
+		assertThat(ownerEvents.poll(10, TimeUnit.SECONDS)).containsEntry("senderDisplayName", "Member");
+        assertThat(memberEvents.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(chatService.listMessages(owner.getUsername(), groupId, 20).total()).isZero();
+		groupService.removeMember(owner.getUsername(), groupId, member.getId());
+        ownerSession.send("/app/chat/" + groupId + "/typing", Map.of("state", "START"));
+        assertThat(ownerEvents.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(memberEvents.poll(1, TimeUnit.SECONDS)).isNull();
+		memberSession.send("/app/chat/" + groupId + "/typing", Map.of("state", "START"));
+		assertThat(ownerEvents.poll(1, TimeUnit.SECONDS)).isNull();
+		groupService.deleteGroup(owner.getUsername(), groupId);
+		ownerSession.send("/app/chat/" + groupId + "/typing", Map.of("state", "START"));
+		assertThat(ownerEvents.poll(1, TimeUnit.SECONDS)).isNull();
+        if (ownerSession.isConnected()) ownerSession.disconnect();
+        if (memberSession.isConnected()) memberSession.disconnect();
+	}
+
+    @Test
+    void threeGroupAccountsReceiveDistinctTypingSendersWithoutCreatingMessages() throws Exception {
+        User owner = createUser("typing-three-owner", "Owner");
+        User member = createUser("typing-three-member", "Member");
+        User observer = createUser("typing-three-observer", "Observer");
+        markFriends(owner, member); markFriends(owner, observer);
+        Long groupId = groupService.createGroup(owner.getUsername(),
+                new CreateGroupRequest("Three typing users", java.util.List.of(member.getId(), observer.getId()))).groupId();
+        var ownerSession = connectSession(tokenFor(owner));
+        var memberSession = connectSession(tokenFor(member));
+        var observerSession = connectSession(tokenFor(observer));
+        BlockingQueue<Map<String, Object>> events = new LinkedBlockingQueue<>();
+        observerSession.subscribe("/topic/chat/" + groupId + "/typing", frameHandler(events));
+        org.awaitility.Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() ->
+                simpUserRegistry.getUser(observer.getUsername()) != null
+                && simpUserRegistry.getUser(observer.getUsername()).getSessions().stream()
+                    .flatMap(session -> session.getSubscriptions().stream()).count() == 1);
+        ownerSession.send("/app/chat/" + groupId + "/typing", Map.of("state", "START"));
+        var first = events.poll(5, TimeUnit.SECONDS);
+        assertThat(first).isNotNull().containsEntry("senderId", owner.getId().intValue());
+        memberSession.send("/app/chat/" + groupId + "/typing", Map.of("state", "START"));
+        var second = events.poll(5, TimeUnit.SECONDS);
+        assertThat(second).isNotNull().containsEntry("senderId", member.getId().intValue());
+        assertThat(chatService.listMessages(observer.getUsername(), groupId, 20).total()).isZero();
+        ownerSession.send("/app/chat/" + groupId + "/typing", Map.of("state", "STOP"));
+        assertThat(events.poll(5, TimeUnit.SECONDS)).containsEntry("state", "STOP");
+        ownerSession.disconnect(); memberSession.disconnect(); observerSession.disconnect();
+    }
+
+	@Test
 	void directConversationPresenceChangesToOfflineAfterTheLastSessionDisconnects() throws Exception {
 		User alice = createUser("presence-alice-ws", "Alice");
 		User bob = createUser("presence-bob-ws", "Bob");
@@ -133,6 +246,8 @@ class ChatWebSocketIntegrationTest {
 
 		Map<String, Object> onlineEvent = presenceEvents.poll(10, TimeUnit.SECONDS);
 		assertThat(onlineEvent).containsEntry("userId", alice.getId().intValue()).containsEntry("online", true);
+		StompSession aliceSecondSession = connectSession(tokenFor(alice));
+		assertThat(presenceEvents.poll(1, TimeUnit.SECONDS)).isNull();
 		HttpRequest presenceRequest = HttpRequest.newBuilder()
 				.uri(URI.create("http://localhost:" + port + "/api/v1/chats/" + conversationId + "/presence"))
 				.header("Authorization", "Bearer " + tokenFor(bob)).GET().build();
@@ -145,6 +260,12 @@ class ChatWebSocketIntegrationTest {
 				.contains("true");
 
 		aliceSession.disconnect();
+		assertThat(presenceEvents.poll(1, TimeUnit.SECONDS)).isNull();
+		HttpResponse<String> stillOnlineSnapshot = HttpClient.newHttpClient()
+				.send(presenceRequest, HttpResponse.BodyHandlers.ofString());
+		assertThat(objectMapper.readTree(stillOnlineSnapshot.body()).path("data").path("items").findValuesAsText("online"))
+				.contains("true");
+		aliceSecondSession.disconnect();
 		Map<String, Object> offlineEvent = presenceEvents.poll(10, TimeUnit.SECONDS);
 		assertThat(offlineEvent).containsEntry("userId", alice.getId().intValue()).containsEntry("online", false);
 

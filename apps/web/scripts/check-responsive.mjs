@@ -5,8 +5,9 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const stage = process.argv[2] ?? 'verified';
-if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard'].includes(stage)) throw new Error('Unknown verification stage.');
-const output = path.resolve('build/prompt031', stage);
+if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark'].includes(stage)) throw new Error('Unknown verification stage.');
+const typingStage = stage.startsWith('typing-');
+const output = path.resolve(typingStage ? 'build/prompt033' : 'build/prompt031', stage);
 await mkdir(output, { recursive: true });
 // Keep browser caches outside Vite's watched app tree to avoid unrelated HTML reloads.
 const profileRoot = path.resolve('../../build/prompt031-browser-profiles');
@@ -75,6 +76,34 @@ const fixtureScript = `
   window.WebSocket = class { static CONNECTING=0; static OPEN=1; static CLOSING=2; static CLOSED=3; constructor(){this.readyState=3;setTimeout(()=>this.onclose?.({}),0);} close(){this.readyState=3;} send(){} };
 `;
 
+
+const typingSocketScript = `
+  window.__typingFrames = [];
+  window.WebSocket = class {
+    static CONNECTING=0; static OPEN=1; static CLOSING=2; static CLOSED=3;
+    constructor(){
+      this.readyState=0; this.subscriptions=new Map();
+      window.__typingSocket=this;
+      setTimeout(()=>{this.readyState=1;this.onopen?.({});},0);
+    }
+    frame(data){ this.onmessage?.({data}); }
+    send(data){
+      const text=String(data), lines=text.split('\\n');
+      const headers=Object.fromEntries(lines.filter(line=>line.includes(':')).map(line=>[line.slice(0,line.indexOf(':')),line.slice(line.indexOf(':')+1)]));
+      if(lines[0]==='CONNECT') setTimeout(()=>this.frame('CONNECTED\\nversion:1.2\\nheart-beat:0,0\\n\\n\\0'),0);
+      if(lines[0]==='SUBSCRIBE') this.subscriptions.set(headers.destination,headers.id);
+      if(lines[0]==='UNSUBSCRIBE') for(const [destination,id] of this.subscriptions) if(id===headers.id) this.subscriptions.delete(destination);
+      if(lines[0]==='SEND' && headers.destination?.endsWith('/typing')) window.__typingFrames.push(JSON.parse(text.split('\\n\\n')[1].replace(/\\0/g,'')));
+      if(lines[0]==='DISCONNECT') this.close();
+    }
+    close(){this.readyState=3; this.onclose?.({code:1000,reason:'fixture'});}
+    emit(conversationId,senderId,senderDisplayName,state){
+      const id=this.subscriptions.get('/topic/chat/'+conversationId+'/typing');
+      if(id) this.frame('MESSAGE\\nsubscription:'+id+'\\nmessage-id:typing-fixture\\n\\n'+JSON.stringify({conversationId,senderId,senderDisplayName,type:'TYPING',state})+'\\0');
+    }
+  };
+`;
+
 try {
   let port;
   for (let attempt = 0; attempt < 50; attempt++) {
@@ -95,11 +124,11 @@ try {
   await send('Page.bringToFront');
   await send('Network.enable');
   await send('Network.setBlockedURLs', { urls: ['*fonts.googleapis.com*', '*fonts.gstatic.com*'] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: fixtureScript });
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
   const results = [];
-  for (const width of (stage === 'keyboard' ? [375] : [375, 768, 1024, 1440])) {
+  for (const width of (stage === 'keyboard' ? [375] : typingStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
     await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    for (const route of (stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
+    for (const route of (stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
       await send('Emulation.setDeviceMetricsOverride', { width, height: stage === 'keyboard' ? 450 : 900, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `http://127.0.0.1:5179/${route.startsWith('public/') ? route.slice(7) : 'app/' + route}` });
       for (let attempt = 0; attempt < 50; attempt++) {
@@ -111,6 +140,24 @@ try {
       if (route === 'nearby') await evaluate(`document.querySelector('.nearby-intro button')?.click()`);
       if (route === 'search') await evaluate(`const input=document.querySelector('#user-search'); const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; setter.call(input,'rowan');input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.search-form').requestSubmit();`);
       await delay(250);
+      const typingCheck = typingStage ? await evaluate(`(() => {
+        const conversationId=Number(location.pathname.split('/').pop());
+        const area=document.querySelector('.chat-message-area');
+        area.scrollTop=0;
+        const composer=document.querySelector('.chat-composer').getBoundingClientRect();
+        window.__typingGeometry={top:composer.top,height:composer.height,scroll:area.scrollTop};
+        const socket=window.__typingSocket;
+        socket.emit(conversationId,9,'My own account','START');
+        socket.emit(conversationId,22,'Rowan with a very long display name for typing layout verification','START');
+        if(conversationId===50) socket.emit(conversationId,23,'Sam with another long display name','START');
+        const input=document.querySelector('#chat-message');
+        input.focus();
+        const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;
+        setter.call(input,'typing one');input.dispatchEvent(new Event('input',{bubbles:true}));
+        setter.call(input,'typing two');input.dispatchEvent(new Event('input',{bubbles:true}));
+        return true;
+      })()`) : null;
+      if (typingCheck) await delay(100);
       const result = await evaluate(`(() => {
         const rect = element => element?.getBoundingClientRect();
         const composer=rect(document.querySelector('.chat-composer'));
@@ -119,19 +166,28 @@ try {
         const outside=controls.filter(el=>{const r=rect(el);return r.left < -1 || r.right > innerWidth+1;}).map(el=>el.textContent || el.id);
         const links=[...document.querySelectorAll('.side-nav:first-of-type a')];
         const overlapping=controls.flatMap((a,index)=>controls.slice(index+1).filter(b=>{const x=rect(a),y=rect(b);return !a.contains(b) && !b.contains(a) && Math.min(x.right,y.right)-Math.max(x.left,y.left)>2 && Math.min(x.bottom,y.bottom)-Math.max(x.top,y.top)>2;}).map(b=>[a.textContent.trim()||a.id,b.textContent.trim()||b.id]));
-        return {navigationUsable:links.every(el=>{const r=rect(el);return r.height>=44 && r.top>=0 && r.bottom<=innerHeight;}),overlapping,height:innerHeight,width:innerWidth,route:location.pathname,scrollWidth:document.documentElement.scrollWidth,overflow:document.documentElement.scrollWidth > innerWidth,controlsOutside:outside,composerVisible:!composer || (composer.top>=0 && composer.bottom<=innerHeight && (innerWidth>680 || composer.bottom<=nav.top)),navLinks:[...document.querySelectorAll('.side-nav:first-of-type a')].map(el=>({label:el.textContent.trim(),height:rect(el).height})),headerHeight:rect(document.querySelector('.chat-header'))?.height,titleWidth:rect(document.querySelector('.chat-person-details'))?.width};
+        const indicator=document.querySelector('.typing-indicator');
+        const geometry=window.__typingGeometry;
+        const typingOk=!geometry || (!!indicator?.textContent && !indicator.textContent.includes('My own account') && Math.abs(composer.top-geometry.top)<1 && areaScroll()===geometry.scroll && window.__typingFrames.filter(frame=>frame.state==='START').length===1);
+        function areaScroll(){return document.querySelector('.chat-message-area').scrollTop;}
+        return {typingOk,theme:document.documentElement.dataset.theme,typingLabel:indicator?.textContent,navigationUsable:links.every(el=>{const r=rect(el);return r.height>=44 && r.top>=0 && r.bottom<=innerHeight;}),overlapping,height:innerHeight,width:innerWidth,route:location.pathname,scrollWidth:document.documentElement.scrollWidth,overflow:document.documentElement.scrollWidth > innerWidth,controlsOutside:outside,composerVisible:!composer || (composer.top>=0 && composer.bottom<=innerHeight && (innerWidth>680 || composer.bottom<=nav.top)),navLinks:[...document.querySelectorAll('.side-nav:first-of-type a')].map(el=>({label:el.textContent.trim(),height:rect(el).height})),headerHeight:rect(document.querySelector('.chat-header'))?.height,titleWidth:rect(document.querySelector('.chat-person-details'))?.width};
       })()`);
       results.push(result);
       await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
       console.log(`${width} ${route}: overflow=${result.overflow}, composerVisible=${result.composerVisible}`);
-      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms') {
+      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms' || typingStage) {
         const screenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
         await writeFile(path.join(output, `${width}-${route.replace(/[^a-z0-9-]/gi, '-')}.png`), Buffer.from(screenshot.data, 'base64'));
+      }
+      if (typingStage) {
+        await evaluate(`const id=Number(location.pathname.split('/').pop()); window.__typingSocket.emit(id,22,'Rowan','STOP'); window.__typingSocket.emit(id,23,'Sam','STOP');`);
+        await delay(100);
+        result.typingStopped = await evaluate(`document.querySelector('.typing-indicator').textContent === ''`);
       }
     }
   }
   await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
-  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length);
+  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length || item.typingOk === false || item.typingStopped === false);
   console.log(JSON.stringify({ stage, pages:results.length, failures, output }, null, 2));
   process.exitCode = failures.length ? 1 : 0;
 } finally {

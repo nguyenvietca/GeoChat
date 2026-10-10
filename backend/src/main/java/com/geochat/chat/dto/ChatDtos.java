@@ -35,6 +35,11 @@ public class ChatDtos {
     public record ConversationActivityResponse(MessageResponse message, String senderDisplayName,
                                                long unreadCount, long readStateVersion, Instant readStateSince) {}
 
+    public record TypingRequest(String state, Long activityId) {}
+
+    public record TypingEventResponse(Long conversationId, Long senderId, String senderDisplayName, String type,
+                                      String state, long eventId) {}
+
     public record ConversationDetailResponse(
             Long conversationId,
             String type,

@@ -41,6 +41,7 @@ vi.mock('./api/chats', () => ({
 }));
 vi.mock('./services/chatWebSocket', () => ({
   subscribeToConversation: vi.fn(() => vi.fn()),
+  publishTypingState: vi.fn(() => true),
   subscribeToPresence: vi.fn(() => vi.fn()),
   subscribeToConversationActivity: vi.fn(() => vi.fn()),
   subscribeToGroupEvents: vi.fn(() => vi.fn()),

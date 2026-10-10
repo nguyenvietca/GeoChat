@@ -12,6 +12,7 @@ type ActiveSubscriber = StompDestinationHandlers & {
   id: symbol;
   destination: string;
   subscription: StompSubscription | null;
+  generation: number;
 };
 
 type SharedConnection = {
@@ -48,6 +49,7 @@ export function subscribeToStompDestination(
     id: Symbol(destination),
     destination,
     subscription: null,
+    generation: 0,
   };
   connection.subscribers.set(subscriber.id, subscriber);
 
@@ -68,6 +70,18 @@ export function subscribeToStompDestination(
       stopConnection(token, connection);
     }
   };
+}
+
+export function publishToStompDestination(token: string, destination: string, body: string) {
+  const connection = activeConnections.get(token);
+  if (!connection?.active || !connection.connected || connection.state !== 'connected') return false;
+  try {
+    connection.client.publish({ destination, body });
+    return true;
+  } catch {
+    // Typing is best-effort: a socket closing between the check and publish must not break the composer.
+    return false;
+  }
 }
 
 export function disconnectAllStompConnections() {
@@ -115,8 +129,10 @@ function createConnection(token: string): SharedConnection {
 
 function subscribe(connection: SharedConnection, subscriber: ActiveSubscriber) {
   if (!connection.active) return;
+  const generation = ++subscriber.generation;
   subscriber.subscription = connection.client.subscribe(subscriber.destination, (frame: IMessage) => {
-    if (connection.active && connection.subscribers.has(subscriber.id)) {
+    if (connection.active && connection.connected && connection.state === 'connected'
+      && connection.subscribers.has(subscriber.id) && subscriber.generation === generation) {
       subscriber.onFrame(frame.body);
     }
   });

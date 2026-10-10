@@ -15,6 +15,13 @@ public interface ConversationParticipantRepository extends JpaRepository<Convers
 
     List<ConversationParticipant> findByIdConversationIdIn(List<Long> conversationIds);
 
+    @Query("""
+            select count(participant) > 0 from ConversationParticipant participant, User user, Conversation conversation
+            where participant.id.userId = user.id and participant.id.conversationId = conversation.id
+              and conversation.id = :conversationId and lower(user.username) = lower(:username)
+            """)
+    boolean existsForUsername(@Param("conversationId") Long conversationId, @Param("username") String username);
+
     @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
     @Query("update ConversationParticipant p set p.readStateVersion = p.readStateVersion + 1 where p.id.conversationId = :conversationId")
     void advanceReadStateVersions(@Param("conversationId") Long conversationId);

@@ -111,6 +111,15 @@ export type ChatMessage = {
   createdAt: string;
 };
 
+export type ChatTypingEvent = {
+  eventId?: number;
+  conversationId: number;
+  senderId: number;
+  senderDisplayName: string;
+  type: 'TYPING';
+  state: 'START' | 'STOP';
+};
+
 export type MessageListResponse = {
   items: ChatMessage[];
   total: number;

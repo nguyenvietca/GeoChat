@@ -3,10 +3,12 @@ import {
   buildChatWebSocketUrl,
   disconnectAllChatWebSockets,
   parseChatMessage,
+  parseChatTypingEvent,
   parseConversationReadState,
   parseGroupManagementEvent,
   parseUserPresence,
   parseNotification,
+  publishTypingState,
   subscribeToNotifications,
   subscribeToGroupEvents,
   subscribeToPresence,
@@ -18,19 +20,22 @@ import { AppNotification, ChatMessage, GroupManagementEvent } from '../types';
 const stompHarness = vi.hoisted(() => ({
   configuration: null as unknown,
   frameCallback: null as unknown,
+  frameCallbacks: new Map<string, unknown>(),
   subscription: { unsubscribe: vi.fn() },
   client: {
     activate: vi.fn(),
     deactivate: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn(),
+    publish: vi.fn(),
   },
 }));
 
 vi.mock('@stomp/stompjs', () => ({
   Client: function MockClient(configuration: unknown) {
     stompHarness.configuration = configuration;
-    stompHarness.client.subscribe.mockImplementation((_destination: unknown, callback: unknown) => {
+    stompHarness.client.subscribe.mockImplementation((destination: unknown, callback: unknown) => {
       stompHarness.frameCallback = callback;
+      stompHarness.frameCallbacks.set(String(destination), callback);
       return stompHarness.subscription;
     });
     return stompHarness.client;
@@ -92,6 +97,7 @@ describe('web chat WebSocket service', () => {
     vi.clearAllMocks();
     stompHarness.configuration = null;
     stompHarness.frameCallback = null;
+    stompHarness.frameCallbacks.clear();
     stompHarness.client.deactivate.mockResolvedValue(undefined);
   });
 
@@ -156,7 +162,8 @@ describe('web chat WebSocket service', () => {
     configuration.onConnect();
 
     expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/topic/chat/42', expect.any(Function));
-    const receiveFrame = stompHarness.frameCallback as (frame: { body: string }) => void;
+    expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/topic/chat/42/typing', expect.any(Function));
+    const receiveFrame = stompHarness.frameCallbacks.get('/topic/chat/42') as (frame: { body: string }) => void;
     receiveFrame({ body: JSON.stringify(message({ conversationId: 77 })) });
     receiveFrame({ body: '{not json}' });
     receiveFrame({ body: JSON.stringify(message()) });
@@ -164,7 +171,25 @@ describe('web chat WebSocket service', () => {
     expect(onMessage).toHaveBeenCalledWith(message());
   });
 
-  it('validates stable IDs and reconnects by restoring a single topic subscription', () => {
+  it('routes validated typing events on a dedicated conversation subscription', () => {
+    const onMessage = vi.fn();
+    const onTyping = vi.fn();
+    const cleanup = subscribeToConversation(42, 'jwt', { onMessage, onTyping, onStateChange: vi.fn() });
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    const receiveFrame = stompHarness.frameCallbacks.get('/topic/chat/42/typing') as (frame: { body: string }) => void;
+    const event = { type: 'TYPING', conversationId: 42, senderId: 9, senderDisplayName: 'Mira', state: 'START' };
+    receiveFrame({ body: JSON.stringify({ ...event, conversationId: 77 }) });
+    receiveFrame({ body: JSON.stringify({ ...event, state: 'MAYBE' }) });
+    receiveFrame({ body: JSON.stringify(event) });
+    expect(onTyping).toHaveBeenCalledOnce();
+    expect(onTyping).toHaveBeenCalledWith(event);
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(parseChatTypingEvent(JSON.stringify(event))).toEqual(event);
+    expect(parseChatTypingEvent(JSON.stringify({ ...event, senderId: 0 }))).toBeNull();
+    cleanup();
+  });
+
+  it('validates stable IDs and restores each conversation subscription once on reconnect', () => {
     expect(parseChatMessage(JSON.stringify(message({ messageId: 0 })))).toBeNull();
     expect(parseChatMessage(JSON.stringify(message({ createdAt: 'invalid' })))).toBeNull();
     expect(parseChatMessage(JSON.stringify(message()))).toEqual(message());
@@ -178,12 +203,12 @@ describe('web chat WebSocket service', () => {
 
     expect(onStateChange).toHaveBeenCalledWith('connected');
     expect(onStateChange).toHaveBeenCalledWith('reconnecting');
-    expect(stompHarness.client.subscribe).toHaveBeenCalledTimes(2);
-    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledOnce();
+    expect(stompHarness.client.subscribe).toHaveBeenCalledTimes(4);
+    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(2);
 
     cleanup();
     expect(stompHarness.client.deactivate).toHaveBeenCalledOnce();
-    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(2);
+    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(4);
   });
 
   it('shares one authenticated STOMP connection between chat and notifications', () => {
@@ -199,12 +224,51 @@ describe('web chat WebSocket service', () => {
     expect(stompHarness.client.activate).toHaveBeenCalledOnce();
     (stompHarness.configuration as StompConfiguration).onConnect();
     expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/topic/chat/42', expect.any(Function));
+    expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/topic/chat/42/typing', expect.any(Function));
     expect(stompHarness.client.subscribe).toHaveBeenCalledWith('/user/queue/notifications', expect.any(Function));
 
     chatCleanup();
     expect(stompHarness.client.deactivate).not.toHaveBeenCalled();
     notificationCleanup();
     expect(stompHarness.client.deactivate).toHaveBeenCalledOnce();
+  });
+
+  it('publishes typing only while the shared authenticated connection is connected', () => {
+    subscribeToConversation(42, 'jwt', { onMessage: vi.fn(), onStateChange: vi.fn() });
+    expect(publishTypingState(42, 'jwt', 'START')).toBe(false);
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    expect(publishTypingState(42, 'jwt', 'START')).toBe(true);
+    expect(stompHarness.client.publish).toHaveBeenCalledWith({
+      destination: '/app/chat/42/typing', body: expect.any(String),
+    });
+    expect(JSON.parse(stompHarness.client.publish.mock.calls[0][0].body)).toEqual({ state: 'START', activityId: expect.any(Number) });
+  });
+
+  it('does not publish during reconnect or throw if the socket closes during publishing', () => {
+    subscribeToConversation(42, 'jwt', { onMessage: vi.fn(), onStateChange: vi.fn() });
+    const configuration = stompHarness.configuration as StompConfiguration;
+    configuration.onConnect();
+    stompHarness.client.publish.mockImplementationOnce(() => { throw new Error('Socket closed'); });
+    expect(publishTypingState(42, 'jwt', 'START')).toBe(false);
+    configuration.onWebSocketClose();
+    expect(publishTypingState(42, 'jwt', 'STOP')).toBe(false);
+    expect(stompHarness.client.publish).toHaveBeenCalledOnce();
+  });
+
+  it('ignores callbacks belonging to an old subscription generation after reconnect', () => {
+    const onTyping = vi.fn();
+    subscribeToConversation(42, 'jwt', { onMessage: vi.fn(), onTyping, onStateChange: vi.fn() });
+    const config = stompHarness.configuration as StompConfiguration;
+    config.onConnect();
+    const oldFrame = stompHarness.frameCallbacks.get('/topic/chat/42/typing') as (frame: { body: string }) => void;
+    config.onWebSocketClose(); config.onConnect();
+    const freshFrame = stompHarness.frameCallbacks.get('/topic/chat/42/typing') as (frame: { body: string }) => void;
+    const event = { type: 'TYPING', conversationId: 42, senderId: 9, senderDisplayName: 'Mira', state: 'START', eventId: 1 };
+    oldFrame({ body: JSON.stringify(event) });
+    expect(onTyping).not.toHaveBeenCalled();
+    freshFrame({ body: JSON.stringify(event) });
+    expect(onTyping).toHaveBeenCalledWith(event);
+    expect(parseChatTypingEvent(JSON.stringify({ ...event, eventId: -1 }))).toBeNull();
   });
 
   it('validates notification payloads and preserves the server notification ID', () => {
