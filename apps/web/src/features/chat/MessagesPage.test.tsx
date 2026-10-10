@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../../App';
 import { getCurrentUser } from '../../api/auth';
 import { acceptFriendRequest, getFriends, getIncomingFriendRequests, getOutgoingFriendRequests, sendFriendRequest } from '../../api/friends';
-import { getConversationDetail, getConversationPresence, getConversations, getMessages, openContextualConversation, openDirectConversation, sendMessage } from '../../api/chats';
+import { getConversationDetail, getConversationPresence, getConversations, getMessages, openContextualConversation, openDirectConversation, sendMessage, markConversationRead } from '../../api/chats';
 import { addGroupMembers, createGroup, deleteGroup, getGroup, getGroupMembers, leaveGroup, removeGroupMember, renameGroup } from '../../api/groups';
 import { ChatMessage, ConversationDetail, GroupInfo, GroupManagementEvent, User } from '../../types';
 
@@ -37,6 +37,7 @@ vi.mock('../../api/chats', () => ({
   openDirectConversation: vi.fn(),
   openContextualConversation: vi.fn(),
   sendMessage: vi.fn(),
+  markConversationRead: vi.fn(),
 }));
 vi.mock('../../api/groups', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/groups')>()),
@@ -363,6 +364,103 @@ describe('web messages split view and group chat', () => {
     expect(screen.getByLabelText('Message').hasAttribute('disabled')).toBe(true);
     expect(screen.getByText('Message limit reached.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Refresh friendship' })).toBeTruthy();
+  });
+
+  it('shows direct/group unread badges, caps 99+, and combines local Unread filtering with search', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [
+      { ...directConversation, unreadCount: 3, readStateVersion: 1 },
+      { ...groupConversation, groupName: 'Unread crew', unreadCount: 120, readStateVersion: 2 },
+      { ...directConversation, conversationId: 42, participant: { userId: 23, username: 'sam', displayName: 'Sam' }, unreadCount: 0 },
+    ] });
+    await openMessages('/app/chat/42');
+    await screen.findByLabelText('3 unread messages');
+    expect(screen.getByLabelText('120 unread messages').textContent).toBe('99+');
+    const sidebar = screen.getByRole('complementary', { name: 'Friends and conversations' });
+    expect(within(sidebar).getAllByRole('link')[0].textContent).toContain('Unread crew');
+    fireEvent.click(screen.getByRole('button', { name: 'Unread', exact: true }));
+    expect(screen.getByRole('button', { name: 'Unread', exact: true }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(sidebar).queryByRole('link', { name: /Sam/ })).toBeNull();
+    expect(window.location.pathname).toBe('/app/chat/42');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'crew' } });
+    expect(within(sidebar).getAllByRole('link')).toHaveLength(1);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } });
+    expect(screen.getByText('No unread conversations match your search.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All', exact: true }));
+    expect(within(sidebar).getAllByRole('link')).toHaveLength(3);
+    expect(getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses authoritative realtime versions to avoid duplicated, delayed or cross-tab unread changes', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [{ ...directConversation, unreadCount: 0, readStateVersion: 0 }] });
+    await openMessages();
+    await screen.findByRole('link', { name: /Earlier note/ });
+    const handlers = socket.activityHandlers as { onActivity: (message: ChatMessage, sender: string, state: { conversationId: number; unreadCount: number; readStateVersion: number }) => void; onReadState: (state: { conversationId: number; unreadCount: number; readStateVersion: number }) => void };
+    const event = message(3, 41, 22, 'Incoming unread');
+    act(() => {
+      handlers.onActivity(event, 'Rowan', { conversationId: 41, unreadCount: 1, readStateVersion: 1 });
+      handlers.onActivity(event, 'Rowan', { conversationId: 41, unreadCount: 1, readStateVersion: 1 });
+    });
+    expect(screen.getAllByLabelText('1 unread messages')).toHaveLength(1);
+    act(() => handlers.onReadState({ conversationId: 41, unreadCount: 0, readStateVersion: 2 }));
+    expect(screen.queryByLabelText('1 unread messages')).toBeNull();
+    act(() => handlers.onActivity(event, 'Rowan', { conversationId: 41, unreadCount: 1, readStateVersion: 1 }));
+    expect(screen.queryByLabelText('1 unread messages')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Unread', exact: true }));
+    expect(screen.getByText('No unread conversations.')).toBeTruthy();
+    expect(getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('acknowledges viewed messages, removes the unread row while preserving the selected chat and scroll', async () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    vi.mocked(getConversations).mockResolvedValue({ items: [{ ...directConversation, unreadCount: 1, readStateVersion: 1 }] });
+    vi.mocked(getMessages).mockResolvedValue({ items: [message(1, 41, 22, 'View me')], total: 1, page: 0, size: 20 });
+    vi.mocked(markConversationRead).mockResolvedValue({ conversationId: 41, unreadCount: 0, readStateVersion: 2 });
+    await openMessages('/app/chat/41');
+    await screen.findByText('View me');
+    fireEvent.click(screen.getByRole('button', { name: 'Unread', exact: true }));
+    const area = document.querySelector('.chat-message-area') as HTMLDivElement;
+    Object.defineProperty(area, 'clientHeight', { configurable: true, value: 200 });
+    area.getBoundingClientRect = () => ({ top: 0, bottom: 200, height: 200 }) as DOMRect;
+    const row = area.querySelector<HTMLElement>('[data-message-id]')!;
+    row.getBoundingClientRect = () => ({ top: 10, bottom: 50, height: 40 }) as DOMRect;
+    area.scrollTop = 75;
+    fireEvent.scroll(area);
+    await waitFor(() => { expect(markConversationRead).toHaveBeenCalledWith(41, 1, 'session-token'); expect(screen.queryByLabelText('1 unread messages')).toBeNull(); });
+    expect(markConversationRead).toHaveBeenCalledWith(41, 1, 'session-token');
+    expect(screen.getByLabelText('Message')).toBeTruthy();
+    expect(window.location.pathname).toBe('/app/chat/41');
+    expect(area.scrollTop).toBe(75);
+    expect(getConversations).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
+  });
+
+  it('reconciles unread state on reconnect without moving selection or showing global loading', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [{ ...directConversation, unreadCount: 2, readStateVersion: 1 }] });
+    await openMessages('/app/chat/41');
+    await screen.findByLabelText('2 unread messages');
+    const handlers = socket.groupEventHandlers as { onStateChange: (state: string) => void };
+    act(() => handlers.onStateChange('connected'));
+    vi.mocked(getConversations).mockResolvedValue({ items: [{ ...directConversation, unreadCount: 0, readStateVersion: 2 }] });
+    act(() => { handlers.onStateChange('reconnecting'); handlers.onStateChange('connected'); });
+    await waitFor(() => expect(screen.queryByLabelText('2 unread messages')).toBeNull());
+    expect(window.location.pathname).toBe('/app/chat/41');
+    expect(screen.getByLabelText('Message')).toBeTruthy();
+    expect(screen.queryByText('Loading conversations?')).toBeNull();
+  });
+
+  it('preserves a newer cross-tab read event that arrives before the initial list request finishes', async () => {
+    let resolveList!: (response: Awaited<ReturnType<typeof getConversations>>) => void;
+    vi.mocked(getConversations).mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve; }));
+    await openMessages();
+    await waitFor(() => expect(socket.activityHandlers).not.toBeNull());
+    const handlers = socket.activityHandlers as { onReadState: (state: { conversationId: number; unreadCount: number; readStateVersion: number }) => void };
+    act(() => handlers.onReadState({ conversationId: 41, unreadCount: 0, readStateVersion: 2 }));
+    await act(async () => resolveList({ items: [{ ...directConversation, unreadCount: 4, readStateVersion: 1 }] }));
+    await screen.findByRole('link', { name: /Earlier note/ });
+    expect(screen.queryByLabelText('4 unread messages')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Unread', exact: true }));
+    expect(screen.getByText('No unread conversations.')).toBeTruthy();
   });
 
   it('renders the split layout with an empty right panel when nothing is selected', async () => {

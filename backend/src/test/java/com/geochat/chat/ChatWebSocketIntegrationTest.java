@@ -420,6 +420,44 @@ class ChatWebSocketIntegrationTest {
         ownerSession.disconnect(); memberSession.disconnect(); outsiderSession.disconnect();
     }
 
+    @Test
+    void unreadActivityIsAuthoritativeAndReadStateOnlySynchronizesTheReadersTabs() throws Exception {
+        User alice = createUser("read-ws-alice", "Alice");
+        User bob = createUser("read-ws-bob", "Bob");
+        markFriends(alice, bob);
+        Long id = openConversation(alice, bob);
+        var aliceSession = connectSession(tokenFor(alice));
+        var bobSession = connectSession(tokenFor(bob));
+        var secondTab = connectSession(tokenFor(bob));
+        BlockingQueue<Map<String, Object>> activity = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> read = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> secondRead = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> aliceRead = new LinkedBlockingQueue<>();
+        bobSession.subscribe("/user/queue/conversation-activity", frameHandler(activity));
+        bobSession.subscribe("/user/queue/conversation-read", frameHandler(read));
+        secondTab.subscribe("/user/queue/conversation-read", frameHandler(secondRead));
+        aliceSession.subscribe("/user/queue/conversation-read", frameHandler(aliceRead));
+        org.awaitility.Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() ->
+                simpUserRegistry.getUser(bob.getUsername()).getSessions().stream()
+                        .flatMap(session -> session.getSubscriptions().stream()).count() == 3
+                && simpUserRegistry.getUser(alice.getUsername()).getSessions().stream()
+                        .flatMap(session -> session.getSubscriptions().stream()).count() == 1);
+        var sent = chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("Unread to Bob"));
+        var snapshot = activity.poll(5, TimeUnit.SECONDS);
+        assertThat(snapshot).isNotNull();
+        assertThat(((Number) snapshot.get("unreadCount")).longValue()).isEqualTo(1);
+        assertThat(((Number) snapshot.get("readStateVersion")).longValue()).isPositive();
+        var state = chatService.markConversationRead(bob.getUsername(), id, sent.messageId());
+        assertThat(state.unreadCount()).isZero();
+        var bobRead = read.poll(5, TimeUnit.SECONDS);
+        var tabRead = secondRead.poll(5, TimeUnit.SECONDS);
+        assertThat(bobRead).isNotNull(); assertThat(tabRead).isNotNull();
+        assertThat(((Number) bobRead.get("unreadCount")).longValue()).isZero();
+        assertThat(tabRead).isEqualTo(bobRead);
+        assertThat(aliceRead.poll(1, TimeUnit.SECONDS)).isNull();
+        aliceSession.disconnect(); bobSession.disconnect(); secondTab.disconnect();
+    }
+
 	private Long openConversation(User alice, User bob) {
 		return chatService.openDirectConversation(alice.getUsername(), new OpenDirectChatRequest(bob.getId()))
 				.conversationId();

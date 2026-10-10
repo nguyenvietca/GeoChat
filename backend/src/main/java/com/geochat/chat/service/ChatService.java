@@ -1,5 +1,10 @@
 package com.geochat.chat.service;
 
+import com.geochat.chat.repository.UnreadStateRow;
+import com.geochat.chat.dto.ChatDtos.ReadStateResponse;
+import com.geochat.chat.event.ConversationReadEvent;
+import com.geochat.chat.event.ConversationActivityEvent;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -169,6 +174,10 @@ public class ChatService {
 				.findByUserIdOrderByConversationIdDesc(currentUser.getId());
 
         List<Long> visibleIds = participants.stream().map(ConversationParticipant::getConversationId).toList();
+        Map<Long, UnreadStateRow> unreadStates = visibleIds.isEmpty() ? Map.of()
+                : conversationParticipantRepository.findUnreadStates(currentUser.getId(), visibleIds).stream()
+                    .collect(Collectors.toMap(UnreadStateRow::getConversationId,
+                            java.util.function.Function.identity()));
         Map<Long, Conversation> visibleConversations = conversationRepository.findSummariesByIds(visibleIds).stream()
                 .collect(Collectors.toMap(Conversation::getId, java.util.function.Function.identity()));
         Map<Long, List<ConversationParticipant>> members = visibleIds.isEmpty() ? Map.of()
@@ -206,7 +215,8 @@ public class ChatService {
                     conversation.getType(), toUserSummary(otherUser), conversation.getUpdatedAt(),
                     latest == null ? null : latest.getContent(), latest == null ? null : latest.getId(),
                     latest == null ? null : latest.getCreatedAt(), sender == null ? null : sender.getDisplayName(),
-                    conversation.getGroupName());
+                    conversation.getGroupName(), unreadStates.get(conversation.getId()).getUnreadCount(),
+                    unreadStates.get(conversation.getId()).getReadStateVersion(), unreadStates.get(conversation.getId()).getReadStateSince());
 			if ("DIRECT".equals(conversation.getType())) {
 				Integer existingIndex = directIndexByUser.get(otherUser.getId());
 				if (existingIndex != null) {
@@ -345,7 +355,7 @@ public class ChatService {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-		Conversation conversation = conversationRepository.findById(conversationId)
+		Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
 				.orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
 
 		if (!conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, currentUser.getId())) {
@@ -354,8 +364,6 @@ public class ChatService {
 
         // Serialize quota checks and inserts in the same transaction for REST and STOMP sends.
         if (conversation.isContextualLimited()) {
-            conversation = conversationRepository.findByIdForUpdate(conversationId)
-                    .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
             if (hasFriendParticipant(currentUser.getId(), conversationId)) {
                 conversation.setContextualLimited(false);
             }
@@ -396,10 +404,40 @@ public class ChatService {
 
         MessageResponse response = new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
                 saved.getContent(), saved.getCreatedAt());
-        applicationEventPublisher.publishEvent(new com.geochat.chat.event.ConversationActivityEvent(response,
+        // Version every activity so delayed unread snapshots can be ignored by clients.
+        conversationParticipantRepository.advanceReadStateVersions(conversationId);
+        applicationEventPublisher.publishEvent(new ConversationActivityEvent(response,
                 currentUser.getDisplayName()));
         return response;
 	}
+
+    @Transactional
+    public ReadStateResponse markConversationRead(String username, Long conversationId, Long messageId) {
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+        ConversationParticipant participant = conversationParticipantRepository
+                .findByConversationIdAndUserId(conversationId, user.getId())
+                .orElseThrow(() -> new AccessDeniedException("You are not a participant in this conversation"));
+        Message message = messageRepository.findById(messageId)
+                .filter(item -> item.getConversationId().equals(conversationId))
+                .orElseThrow(() -> new IllegalArgumentException("Read cursor must reference a message in this conversation"));
+        Instant previousTime = participant.getLastReadMessageAt();
+        boolean advanced = previousTime == null || message.getCreatedAt().isAfter(previousTime)
+                || (message.getCreatedAt().equals(previousTime) && message.getId() > participant.getLastReadMessageId());
+        if (advanced) {
+            participant.setLastReadMessageId(message.getId());
+            participant.setLastReadMessageAt(message.getCreatedAt());
+            participant.setReadStateVersion(participant.getReadStateVersion() + 1);
+            conversationParticipantRepository.saveAndFlush(participant);
+        }
+        var state = conversationParticipantRepository.findUnreadStates(user.getId(), List.of(conversationId)).getFirst();
+        var response = new ReadStateResponse(conversationId,
+                state.getUnreadCount(), state.getReadStateVersion(), state.getReadStateSince());
+        if (advanced) applicationEventPublisher.publishEvent(new ConversationReadEvent(username, response));
+        return response;
+    }
 
 	private String normalizeContent(String content) {
 		if (content == null) {

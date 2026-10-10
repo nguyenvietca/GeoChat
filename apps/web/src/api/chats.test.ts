@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiRequest } from './client';
 import {
   getConversationDetail,
+  markConversationRead,
   getConversationPresence,
   getConversations,
   getMessages,
@@ -16,6 +17,11 @@ const mockApiRequest = vi.mocked(apiRequest);
 
 describe('chat API', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('acknowledges an explicit viewed message cursor without sending a user ID', () => {
+    markConversationRead(42, 71, 'jwt');
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/chats/42/read', { method: 'POST', body: { messageId: 71 }, token: 'jwt' });
+  });
 
   it('loads conversation list and protected detail', () => {
     getConversations('jwt');

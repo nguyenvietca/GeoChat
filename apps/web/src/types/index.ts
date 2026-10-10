@@ -73,6 +73,9 @@ export type Conversation = {
   participant: ConversationUser;
   updatedAt: string;
   lastMessage: string | null;
+  unreadCount?: number;
+  readStateVersion?: number;
+  readStateSince?: string;
   lastMessageId?: number | null;
   lastMessageAt?: string | null;
   lastMessageSender?: string | null;
@@ -186,3 +189,5 @@ export type NearbyUsersResponse = {
   items: NearbyUser[];
   radiusMeters: number;
 };
+
+export type ConversationReadState = { conversationId: number; unreadCount: number; readStateVersion: number; readStateSince?: string };

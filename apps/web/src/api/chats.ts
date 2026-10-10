@@ -1,6 +1,7 @@
 import { apiRequest } from './client';
 import {
   ChatMessage,
+  ConversationReadState,
   ConversationDetail,
   ConversationListResponse,
   ConversationPresenceResponse,
@@ -52,5 +53,11 @@ export function getConversationPresence(conversationId: number, token: string) {
 export function openDiscoveryConversation(userId: number, token: string) {
   return apiRequest<OpenDirectConversationResponse>('/api/v1/chats/discovery', {
     method: 'POST', body: { userId }, token,
+  });
+}
+
+export function markConversationRead(conversationId: number, messageId: number, token: string) {
+  return apiRequest<ConversationReadState>(`/api/v1/chats/${conversationId}/read`, {
+    method: 'POST', body: { messageId }, token,
   });
 }

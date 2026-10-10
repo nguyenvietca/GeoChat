@@ -20,6 +20,22 @@ public class ConversationParticipant {
     @Column(nullable = false, length = 16)
     private String role = "MEMBER";
 
+    @Column(name = "last_read_message_id")
+    private Long lastReadMessageId;
+
+    @Column(name = "last_read_message_at")
+    private Instant lastReadMessageAt;
+
+    @Column(name = "read_state_version", nullable = false)
+    private long readStateVersion;
+
+    public Long getLastReadMessageId() { return lastReadMessageId; }
+    public void setLastReadMessageId(Long value) { lastReadMessageId = value; }
+    public Instant getLastReadMessageAt() { return lastReadMessageAt; }
+    public void setLastReadMessageAt(Instant value) { lastReadMessageAt = value; }
+    public long getReadStateVersion() { return readStateVersion; }
+    public void setReadStateVersion(long value) { readStateVersion = value; }
+
     public ConversationParticipant() {
     }
 

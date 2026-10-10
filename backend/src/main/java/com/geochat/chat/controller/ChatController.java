@@ -1,5 +1,8 @@
 package com.geochat.chat.controller;
 
+import com.geochat.chat.dto.ChatDtos.ReadStateResponse;
+import com.geochat.chat.dto.MarkConversationReadRequest;
+
 import com.geochat.chat.dto.ChatDtos.ConversationDetailResponse;
 import com.geochat.chat.dto.ChatDtos.ConversationListResponse;
 import com.geochat.chat.dto.ChatDtos.ConversationPresenceResponse;
@@ -83,6 +86,13 @@ public class ChatController {
         MessageResponse message = chatService.sendMessage(principal.getUsername(), conversationId, request);
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, message);
         return ApiResponse.ok(message);
+    }
+
+    @PostMapping("/chats/{conversationId}/read")
+    public ApiResponse<ReadStateResponse> markConversationRead(
+            @AuthenticationPrincipal UserDetails principal, @PathVariable Long conversationId,
+            @Valid @RequestBody MarkConversationReadRequest request) {
+        return ApiResponse.ok(chatService.markConversationRead(principal.getUsername(), conversationId, request.messageId()));
     }
 
     @GetMapping("/chats/{conversationId}/messages")

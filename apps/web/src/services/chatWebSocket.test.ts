@@ -3,6 +3,7 @@ import {
   buildChatWebSocketUrl,
   disconnectAllChatWebSockets,
   parseChatMessage,
+  parseConversationReadState,
   parseGroupManagementEvent,
   parseUserPresence,
   parseNotification,
@@ -112,6 +113,27 @@ describe('web chat WebSocket service', () => {
     expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledOnce();
     receive({ body: JSON.stringify({ message: message(), senderDisplayName: 'Mira' }) });
     expect(onActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it('receives authoritative activity/read snapshots on the shared account connection and cleans up both queues', () => {
+    const onActivity = vi.fn(), onReadState = vi.fn();
+    const cleanup = subscribeToConversationActivity('jwt', { onActivity, onReadState, onStateChange: vi.fn() });
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    expect(stompHarness.client.activate).toHaveBeenCalledOnce();
+    const activityCallback = stompHarness.client.subscribe.mock.calls.find(([destination]) => destination === '/user/queue/conversation-activity')![1] as (frame: { body: string }) => void;
+    const readCallback = stompHarness.client.subscribe.mock.calls.find(([destination]) => destination === '/user/queue/conversation-read')![1] as (frame: { body: string }) => void;
+    const state = { conversationId: 42, unreadCount: 3, readStateVersion: 5 };
+    activityCallback({ body: JSON.stringify({ message: message(), senderDisplayName: 'Mira', unreadCount: 3, readStateVersion: 5 }) });
+    expect(onActivity).toHaveBeenCalledWith(message(), 'Mira', state);
+    readCallback({ body: JSON.stringify(state) });
+    expect(onReadState).toHaveBeenCalledWith(state);
+    readCallback({ body: JSON.stringify({ ...state, unreadCount: -1 }) });
+    expect(onReadState).toHaveBeenCalledOnce();
+    expect(parseConversationReadState('{invalid')).toBeNull();
+    cleanup();
+    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(2);
+    readCallback({ body: JSON.stringify(state) });
+    expect(onReadState).toHaveBeenCalledOnce();
   });
 
   it('builds the existing backend WebSocket URL and authenticates STOMP CONNECT with JWT', () => {

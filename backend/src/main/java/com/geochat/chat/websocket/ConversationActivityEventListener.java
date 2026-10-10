@@ -1,5 +1,10 @@
 package com.geochat.chat.websocket;
 
+import com.geochat.chat.repository.UnreadStateRow;
+import com.geochat.chat.dto.ChatDtos.ConversationActivityResponse;
+import com.geochat.chat.event.ConversationReadEvent;
+import com.geochat.user.entity.User;
+
 import com.geochat.chat.event.ConversationActivityEvent;
 import com.geochat.chat.repository.ConversationParticipantRepository;
 import com.geochat.user.repository.UserRepository;
@@ -22,10 +27,20 @@ public class ConversationActivityEventListener {
 
     @TransactionalEventListener
     public void publish(ConversationActivityEvent event) {
-        var ids = participants.findByConversationIdOrderByIdAsc(event.message().conversationId()).stream()
-                .map(member -> member.getUserId()).toList();
-        for (var user : users.findAllById(ids)) {
-            messaging.convertAndSendToUser(user.getUsername(), "/queue/conversation-activity", event);
+        var states = participants.findUnreadStatesForConversation(event.message().conversationId());
+        var ids = states.stream().map(UnreadStateRow::getUserId).toList();
+        var usersById = users.findAllById(ids).stream().collect(java.util.stream.Collectors.toMap(
+                User::getId, java.util.function.Function.identity()));
+        for (var state : states) {
+            var user = usersById.get(state.getUserId());
+            if (user != null) messaging.convertAndSendToUser(user.getUsername(), "/queue/conversation-activity",
+                    new ConversationActivityResponse(event.message(), event.senderDisplayName(),
+                            state.getUnreadCount(), state.getReadStateVersion(), state.getReadStateSince()));
         }
+    }
+
+    @TransactionalEventListener
+    public void publishRead(ConversationReadEvent event) {
+        messaging.convertAndSendToUser(event.username(), "/queue/conversation-read", event.state());
     }
 }

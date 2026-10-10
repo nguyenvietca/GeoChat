@@ -1,4 +1,4 @@
-import { AppNotification, ChatMessage, GroupManagementEvent, GroupManagementEventType, NotificationReferenceType, NotificationType, UserPresence } from '../types';
+import { ConversationReadState, AppNotification, ChatMessage, GroupManagementEvent, GroupManagementEventType, NotificationReferenceType, NotificationType, UserPresence } from '../types';
 import {
   buildWebSocketUrl,
   disconnectAllStompConnections,
@@ -201,20 +201,43 @@ export function parseUserPresence(body: string): UserPresence | null {
     return null;
   }
 }
-// One account subscription covers activity in selected and unselected conversations.
+// One account activity subscription covers selected and unselected conversations.
 export function subscribeToConversationActivity(token: string, handlers: {
-  onActivity: (message: ChatMessage, senderDisplayName: string) => void;
+  onActivity: (message: ChatMessage, senderDisplayName: string, state?: ConversationReadState) => void;
+  onReadState?: (state: ConversationReadState) => void;
   onStateChange: (state: ChatConnectionState) => void;
 }) {
-  return subscribeToStompDestination(token, '/user/queue/conversation-activity', {
+  const unsubscribeActivity = subscribeToStompDestination(token, '/user/queue/conversation-activity', {
     onStateChange: handlers.onStateChange,
     onFrame: (body) => {
       try {
         const value: unknown = JSON.parse(body);
         if (!isRecord(value) || typeof value.senderDisplayName !== 'string') return;
         const message = parseChatMessage(JSON.stringify(value.message));
-        if (message) handlers.onActivity(message, value.senderDisplayName);
+        if (!message) return;
+        const state = parseConversationReadState(JSON.stringify({ ...value, conversationId: message.conversationId }));
+        if (state) handlers.onActivity(message, value.senderDisplayName, state);
+        else handlers.onActivity(message, value.senderDisplayName);
       } catch { /* Ignore malformed frames. */ }
     },
   });
+  const unsubscribeRead = handlers.onReadState ? subscribeToStompDestination(token, '/user/queue/conversation-read', {
+    onStateChange: () => {},
+    onFrame: (body) => {
+      const state = parseConversationReadState(body);
+      if (state) handlers.onReadState?.(state);
+    },
+  }) : undefined;
+  return () => { unsubscribeActivity(); unsubscribeRead?.(); };
+}
+
+export function parseConversationReadState(body: string): ConversationReadState | null {
+  try {
+    const value: unknown = JSON.parse(body);
+    if (!isRecord(value) || !Number.isSafeInteger(value.conversationId) || Number(value.conversationId) <= 0
+      || !Number.isSafeInteger(value.unreadCount) || Number(value.unreadCount) < 0
+      || !Number.isSafeInteger(value.readStateVersion) || Number(value.readStateVersion) < 0) return null;
+    return { conversationId: Number(value.conversationId), unreadCount: Number(value.unreadCount), readStateVersion: Number(value.readStateVersion),
+      ...(typeof value.readStateSince === 'string' && !Number.isNaN(Date.parse(value.readStateSince)) ? { readStateSince: value.readStateSince } : {}) };
+  } catch { return null; }
 }

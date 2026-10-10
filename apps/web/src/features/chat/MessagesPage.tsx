@@ -6,10 +6,10 @@ import { getFriends } from '../../api/friends';
 import { getGroup } from '../../api/groups';
 import { useAuth } from '../../app/providers/AuthContext';
 import { subscribeToConversationActivity, subscribeToGroupEvents } from '../../services/chatWebSocket';
-import { ChatMessage, Conversation, ConversationUser, FriendSummary, GroupInfo } from '../../types';
+import { ChatMessage, ConversationReadState, Conversation, ConversationUser, FriendSummary, GroupInfo } from '../../types';
 import { ChatPanel } from './ChatPanel';
 import { CreateGroupForm } from './CreateGroupForm';
-import { activityTime, formatConversationTime, updateConversation } from './messagePresentation';
+import { applyUnreadState, compareConversationActivity, compareMessageOrder, compareReadState, formatConversationTime, mergeConversationSnapshot, updateConversation } from './messagePresentation';
 
 export function MessagesPage() {
   const { conversationId: routeId } = useParams();
@@ -29,6 +29,8 @@ export function MessagesPage() {
   const [openingUserId, setOpeningUserId] = useState<number | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const readStatesRef = useRef(new Map<number, ConversationReadState>());
   const conversationsRef = useRef(conversations);
   conversationsRef.current = conversations;
   const loadVersion = useRef(0);
@@ -43,6 +45,7 @@ export function MessagesPage() {
       return;
     }
     const version = ++loadVersion.current;
+    const knownAtStart = new Set(conversationsRef.current.map((item) => item.conversationId));
     setError('');
     try {
       const [conversationResponse, friendResponse] = await Promise.all([getConversations(token), getFriends(token)]);
@@ -61,11 +64,14 @@ export function MessagesPage() {
       if (version !== loadVersion.current || accountTokenRef.current !== token) return;
       setConversations((current) => {
         const liveById = new Map(current.map((item) => [item.conversationId, item]));
-        return conversationResponse.items.filter((item) => !removedIds.current.has(item.conversationId)).map((item) => {
-        const live = liveById.get(item.conversationId);
-        return live?.lastMessageAt && (activityTime(live) > activityTime(item) || (activityTime(live) === activityTime(item) && (live.lastMessageId ?? 0) > (item.lastMessageId ?? 0)))
-          ? { ...item, lastMessage: live.lastMessage, lastMessageAt: live.lastMessageAt, lastMessageId: live.lastMessageId, lastMessageSender: live.lastMessageSender } : item;
-        });
+        const visible = conversationResponse.items.filter((item) => !removedIds.current.has(item.conversationId));
+        const ids = new Set(visible.map((item) => item.conversationId));
+        return [...visible.map((item) => {
+          const merged = mergeConversationSnapshot(item, liveById.get(item.conversationId));
+          const state = readStatesRef.current.get(item.conversationId);
+          return state ? applyUnreadState(merged, state) : merged;
+        }),
+        ...current.filter((item) => !ids.has(item.conversationId) && !knownAtStart.has(item.conversationId) && !removedIds.current.has(item.conversationId))];
       });
       setFriends(friendResponse.items);
       setGroups((current) => {
@@ -89,17 +95,20 @@ export function MessagesPage() {
 
   const refreshConversations = useCallback(async () => {
     if (!token) return;
+    const knownAtStart = new Set(conversationsRef.current.map((item) => item.conversationId));
     try {
       const response = await getConversations(token);
       if (accountTokenRef.current !== token) return;
       setConversations((current) => {
         const byId = new Map(current.map((item) => [item.conversationId, item]));
-        return response.items.filter((item) => !removedIds.current.has(item.conversationId)).map((item) => {
-          const live = byId.get(item.conversationId);
-          return live?.lastMessageAt && activityTime(live) > activityTime(item)
-            ? { ...item, lastMessage: live.lastMessage, lastMessageAt: live.lastMessageAt,
-              lastMessageId: live.lastMessageId, lastMessageSender: live.lastMessageSender } : item;
-        });
+        const visible = response.items.filter((item) => !removedIds.current.has(item.conversationId));
+        const ids = new Set(visible.map((item) => item.conversationId));
+        return [...visible.map((item) => {
+          const merged = mergeConversationSnapshot(item, byId.get(item.conversationId));
+          const state = readStatesRef.current.get(item.conversationId);
+          return state ? applyUnreadState(merged, state) : merged;
+        }),
+        ...current.filter((item) => !ids.has(item.conversationId) && !knownAtStart.has(item.conversationId) && !removedIds.current.has(item.conversationId))];
       });
     } catch {
       // The list is refreshed again on the next full load.
@@ -117,6 +126,7 @@ export function MessagesPage() {
   useEffect(() => {
     setLoading(true);
     removedIds.current.clear();
+    readStatesRef.current.clear();
     void load();
     return () => { loadVersion.current += 1; };
   }, [load]);
@@ -135,6 +145,7 @@ export function MessagesPage() {
         if (event.type === 'GROUP_DELETED') {
           const groupId = event.group.groupId;
           removedIds.current.add(groupId);
+          readStatesRef.current.delete(groupId);
           setGroups((current) => {
             const { [groupId]: _removed, ...rest } = current;
             return rest;
@@ -150,6 +161,7 @@ export function MessagesPage() {
         const joinedCurrentGroup = event.type === 'MEMBER_ADDED' && event.member?.user.userId === user?.id;
         if (leftCurrentGroup) {
           removedIds.current.add(event.group.groupId);
+          readStatesRef.current.delete(event.group.groupId);
           setConversations((current) => current.filter((item) => item.conversationId !== event.group.groupId));
           if (selectedIdRef.current === event.group.groupId) navigateRef.current('/app/chat');
         } else if (joinedCurrentGroup) {
@@ -180,16 +192,16 @@ export function MessagesPage() {
   const directConversations = conversations.filter((item) => item.type === 'DIRECT');
   const entries = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
-    return conversations.filter((item) => (item.type === 'GROUP'
+    return conversations.filter((item) => (filter === 'all' || (item.unreadCount ?? 0) > 0) && (item.type === 'GROUP'
       ? groups[item.conversationId]?.name ?? item.groupName ?? 'Group'
       : item.participant.displayName).toLocaleLowerCase().includes(search))
-      .sort((a, b) => activityTime(b) - activityTime(a) || a.conversationId - b.conversationId);
-  }, [conversations, groups, query]);
+      .sort((a, b) => compareConversationActivity(b, a));
+  }, [conversations, groups, query, filter]);
   const newFriends = useMemo(() => {
     const known = new Set(conversations.filter((item) => item.type === 'DIRECT').map((item) => item.participant.userId));
-    return friends.filter((friend) => !known.has(friend.userId)
+    return filter === 'unread' ? [] : friends.filter((friend) => !known.has(friend.userId)
       && friend.displayName.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-  }, [conversations, friends, query]);
+  }, [conversations, friends, query, filter]);
   const hasSelection = selectedId !== null;
   const isEmpty = !loading && !error && entries.length === 0 && newFriends.length === 0;
 
@@ -205,19 +217,46 @@ export function MessagesPage() {
     });
   }, []);
 
+  const applyReadState = useCallback((state: ConversationReadState) => {
+    if (removedIds.current.has(state.conversationId)) return;
+    const previous = readStatesRef.current.get(state.conversationId);
+    if (previous && compareReadState(previous, state) > 0) return;
+    readStatesRef.current.set(state.conversationId, state);
+    setConversations((current) => {
+      let changed = false;
+      const next = current.map((item) => {
+        const updated = applyUnreadState(item, state);
+        changed ||= updated !== item;
+        return updated;
+      });
+      return changed ? next : current;
+    });
+  }, []);
+
+  useEffect(() => {
+    const onFocus = () => { if (document.visibilityState === 'visible') void refreshConversations(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshConversations]);
+
   useEffect(() => {
     if (!token) return;
     let active = true;
     const pending = new Map<number, { message: ChatMessage; sender: string }>();
     const unsubscribe = subscribeToConversationActivity(token, {
-      onStateChange: () => {}, // Group-event subscription performs one reconnect reconciliation.
-      onActivity: (message, sender) => {
+      onStateChange: () => { }, // Group-event subscription performs one reconnect reconciliation.
+      onReadState: applyReadState,
+      onActivity: (message, sender, state) => {
         if (!active || removedIds.current.has(message.conversationId)) return;
+        if (state) applyReadState(state);
         if (conversationsRef.current.some((item) => item.conversationId === message.conversationId)) {
           applyMessage(message, sender);
         } else {
-          const alreadyLoading = pending.has(message.conversationId);
-          pending.set(message.conversationId, { message, sender });
+          const previous = pending.get(message.conversationId);
+          const alreadyLoading = previous !== undefined;
+          if (!previous || compareMessageOrder(message, previous.message) >= 0) {
+            pending.set(message.conversationId, { message, sender });
+          }
           if (alreadyLoading) return;
           void getConversationDetail(message.conversationId, token).then((detail) => {
             if (!active || removedIds.current.has(message.conversationId)) return;
@@ -230,17 +269,20 @@ export function MessagesPage() {
             if (!participant) return;
             setConversations((current) => current.some((item) => item.conversationId === message.conversationId)
               ? current.map((item) => updateConversation(item, message, sender))
-              : [...current, updateConversation({ conversationId: detail.conversationId, type: detail.type,
-                participant, updatedAt: detail.updatedAt, lastMessage: null }, message, sender)]);
+              : [...current, updateConversation({
+                conversationId: detail.conversationId, type: detail.type,
+                participant, updatedAt: detail.updatedAt, lastMessage: null,
+                ...readStatesRef.current.get(message.conversationId)
+              }, message, sender)]);
             if (detail.type === 'GROUP') void getGroup(detail.conversationId, token).then((group) => {
               if (active) applyGroup(group);
-            }).catch(() => {});
-          }).catch(() => {}).finally(() => pending.delete(message.conversationId));
+            }).catch(() => { });
+          }).catch(() => { }).finally(() => pending.delete(message.conversationId));
         }
       },
     });
     return () => { active = false; unsubscribe(); };
-  }, [token, user?.id, applyGroup, applyMessage]);
+  }, [token, user?.id, applyGroup, applyMessage, applyReadState]);
 
   const closeConversation = () => navigate('/app/chat');
   const handleLeftGroup = () => { navigate('/app/chat'); void load(); };
@@ -265,6 +307,10 @@ export function MessagesPage() {
             <input id="conversation-search" type="search" placeholder="Search conversations..." value={query} onChange={(event) => setQuery(event.target.value)} />
             {query ? <button type="button" className="quiet-light-button" onClick={() => setQuery('')}>Clear search</button> : null}
           </div>
+          <div className="conversation-filters" role="group" aria-label="Filter conversations">
+            <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>All</button>
+            <button type="button" aria-pressed={filter === 'unread'} onClick={() => setFilter('unread')}>Unread</button>
+          </div>
           {creatingGroup && token ? (
             <CreateGroupForm friends={friends} currentUserId={user?.id ?? null} token={token}
               onCancel={() => setCreatingGroup(false)}
@@ -272,7 +318,7 @@ export function MessagesPage() {
           ) : null}
           {error ? <div className="inline-error" role="alert">{error}<button type="button" onClick={() => { setLoading(true); void load(); }}>Try again</button></div> : null}
           {loading ? <div className="result-state" role="status"><span className="spinner" />Loading conversations…</div> : null}
-          {isEmpty ? <div className="result-state empty-state">{query.trim() ? 'No conversations match your search.' : <>No conversations yet. Add friends to start chatting. <Link to="/app/friends">Find friends</Link></>}</div> : null}
+          {isEmpty ? <div className="result-state empty-state">{filter === 'unread' ? query.trim() ? 'No unread conversations match your search.' : 'No unread conversations.' : query.trim() ? 'No conversations match your search.' : <>No conversations yet. Add friends to start chatting. <Link to="/app/friends">Find friends</Link></>}</div> : null}
           <div className="conversation-section">
             {entries.map((item) => {
               const title = item.type === 'GROUP' ? groups[item.conversationId]?.name ?? item.groupName ?? 'Group' : item.participant.displayName;
@@ -280,19 +326,23 @@ export function MessagesPage() {
               const preview = item.lastMessage == null ? 'No messages yet'
                 : item.type === 'GROUP' && item.lastMessageSender ? `${item.lastMessageSender}: ${item.lastMessage}` : item.lastMessage;
               return <Link key={item.conversationId} to={`/app/chat/${item.conversationId}`}
-                className={selectedId === item.conversationId ? 'conversation-row selected' : 'conversation-row'}
+                className={`conversation-row${selectedId === item.conversationId ? ' selected' : ''}${(item.unreadCount ?? 0) > 0 ? ' has-unread' : ''}`}
                 aria-current={selectedId === item.conversationId ? 'page' : undefined}>
                 <span className="person-avatar">{title.charAt(0).toUpperCase()}</span>
                 <span className="person-details"><strong>{title}</strong><span className="conversation-preview">{preview}</span></span>
+                {(item.unreadCount ?? 0) > 0 ? <span className="unread-badge" aria-label={`${item.unreadCount} unread messages`}>{item.unreadCount! > 99 ? '99+' : item.unreadCount}</span> : null}
                 <time className="conversation-date" dateTime={timestamp}>{formatConversationTime(timestamp)}</time>
               </Link>;
             })}
             {newFriends.map((friend) => <button key={friend.userId} type="button" className="conversation-row"
               onClick={() => void openFriend(friend)} disabled={openingUserId !== null}>
               <span className="person-avatar">{friend.displayName.charAt(0).toUpperCase()}</span>
-              <span className="person-details"><strong>{friend.displayName}</strong><span className="conversation-preview">
-                {openingUserId === friend.userId ? 'Opening...' : 'Start a conversation'}
-              </span></span>
+              <span className="person-details">
+                <strong>{friend.displayName}</strong>
+                <span className="conversation-preview">
+                  {openingUserId === friend.userId ? 'Opening...' : 'Start a conversation'}
+                </span>
+              </span>
             </button>)}
           </div>
         </aside>
@@ -300,7 +350,7 @@ export function MessagesPage() {
           {selectedId !== null ? (
             <ChatPanel key={selectedId} conversationId={selectedId} groupInfo={groups[selectedId] ?? null} titleHint={titleHint}
               onBack={closeConversation} onLeftGroup={handleLeftGroup}
-              onGroupChanged={applyGroup} onMessage={applyMessage}
+              onGroupChanged={applyGroup} onMessage={applyMessage} onReadState={applyReadState}
               onOpenConversation={(id) => { navigate(`/app/chat/${id}`); void refreshConversations(); }} />
           ) : (
             <div className="chat-panel-empty"><strong>Select a friend or group</strong><span>to start chatting.</span></div>

@@ -424,7 +424,7 @@ class ChatIntegrationTest {
         statistics.clear();
         try {
             org.assertj.core.api.Assertions.assertThat(chatService.listConversations(owner.getUsername()).items()).hasSize(8);
-            org.assertj.core.api.Assertions.assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(6);
+            org.assertj.core.api.Assertions.assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(7);
         } finally {
             statistics.setStatisticsEnabled(false);
         }
@@ -490,6 +490,136 @@ class ChatIntegrationTest {
         chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Now friends"));
         org.assertj.core.api.Assertions.assertThat(messageRepository.countByConversationId(id)).isEqualTo(11);
         org.assertj.core.api.Assertions.assertThat(conversationRepository.findById(id).orElseThrow().isContextualLimited()).isFalse();
+    }
+
+    @Test
+    void directUnreadStateIsIndependentPersistentAndExcludesOwnMessages() throws Exception {
+        User alice = createUser("read-alice", "Alice");
+        User bob = createUser("read-bob", "Bob");
+        markFriends(alice, bob);
+        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+        org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isZero();
+        var first = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("First"));
+        var own = chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("Reply"));
+        var second = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Second"));
+        org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isEqualTo(1);
+        mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(alice)))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + first.messageId() + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.unreadCount").value(1));
+        var state = chatService.markConversationRead(alice.getUsername(), id, second.messageId());
+        org.assertj.core.api.Assertions.assertThat(state.unreadCount()).isZero();
+        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, second.messageId())).isEqualTo(state);
+        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, first.messageId())).isEqualTo(state);
+        org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isEqualTo(1);
+        chatService.markConversationRead(bob.getUsername(), id, own.messageId());
+        org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isZero();
+        chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("New after read"));
+        mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].unreadCount").value(1))
+                .andExpect(jsonPath("$.data.items[0].participant.displayName").value("Bob"))
+                .andExpect(jsonPath("$.data.items[0].lastMessage").value("New after read"));
+    }
+
+    @Test
+    void readCursorsUseTimestampAndIdTiesRatherThanIdAloneAndRespectPaginationBoundary() {
+        User alice = createUser("read-order-alice", "Alice");
+        User bob = createUser("read-order-bob", "Bob");
+        markFriends(alice, bob);
+        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+        var messages = new java.util.ArrayList<com.geochat.chat.entity.Message>();
+        for (int index = 0; index < 25; index++) {
+            var message = new com.geochat.chat.entity.Message();
+            message.setConversationId(id); message.setSenderId(bob.getId()); message.setContent("History " + index);
+            message.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z").plusSeconds(index / 2));
+            messages.add(messageRepository.save(message));
+        }
+        var olderPage = chatService.listMessages(alice.getUsername(), id, 20, 1);
+        org.assertj.core.api.Assertions.assertThat(olderPage.items()).hasSize(5);
+        var boundary = olderPage.items().getLast();
+        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, boundary.messageId()).unreadCount()).isEqualTo(20);
+        var tied = messages.get(5);
+        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, tied.getId()).unreadCount()).isEqualTo(19);
+        // A higher ID inserted with an older timestamp cannot move the cursor backward.
+        var lateOldMessage = new com.geochat.chat.entity.Message();
+        lateOldMessage.setConversationId(id); lateOldMessage.setSenderId(bob.getId()); lateOldMessage.setContent("Older timestamp, higher ID");
+        lateOldMessage.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
+        lateOldMessage = messageRepository.save(lateOldMessage);
+        var before = chatService.markConversationRead(alice.getUsername(), id, tied.getId());
+        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, lateOldMessage.getId())).isEqualTo(before);
+    }
+
+    @Test
+    void markReadRejectsUnauthorizedUnrelatedMissingAndInvalidCursors() throws Exception {
+        User alice = createUser("read-denied-alice", "Alice");
+        User bob = createUser("read-denied-bob", "Bob");
+        User carol = createUser("read-denied-carol", "Carol");
+        markFriends(alice, bob);
+        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+        var message = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Private"));
+        mockMvc.perform(post("/api/v1/chats/{id}/read", id).contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(carol)))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
+                .andExpect(status().isForbidden());
+        Long other = groupService.createGroup(alice.getUsername(), new CreateGroupRequest("Other", java.util.List.of())).groupId();
+        mockMvc.perform(post("/api/v1/chats/{id}/read", other).header("Authorization", bearer(tokenFor(alice)))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
+                .andExpect(status().isBadRequest());
+        for (String body : java.util.List.of("{}", "{\"messageId\":-1}", "{\"messageId\":9223372036854775807}")) {
+            mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(alice)))
+                    .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        }
+        org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(chatService.listConversations(carol.getUsername()).items()).isEmpty();
+    }
+
+    @Test
+    void groupReadStateSurvivesRefreshAndRevokesRemovedAndDeletedMembership() {
+        User owner = createUser("read-group-owner", "Owner");
+        User member = createUser("read-group-member", "Member");
+        markFriends(owner, member);
+        Long id = groupService.createGroup(owner.getUsername(), new CreateGroupRequest("Unread group", java.util.List.of(member.getId()))).groupId();
+        var message = chatService.sendMessage(member.getUsername(), id, new SendMessageRequest("Group message"));
+        org.assertj.core.api.Assertions.assertThat(unreadFor(owner, id)).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(unreadFor(member, id)).isZero();
+        chatService.markConversationRead(owner.getUsername(), id, message.messageId());
+        org.assertj.core.api.Assertions.assertThat(unreadFor(owner, id)).isZero();
+        var reply = chatService.sendMessage(owner.getUsername(), id, new SendMessageRequest("Reply"));
+        org.assertj.core.api.Assertions.assertThat(unreadFor(member, id)).isEqualTo(1);
+        groupService.removeMember(owner.getUsername(), id, member.getId());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> chatService.markConversationRead(member.getUsername(), id, reply.messageId()))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        org.assertj.core.api.Assertions.assertThat(chatService.listConversations(member.getUsername()).items()).isEmpty();
+        groupService.deleteGroup(owner.getUsername(), id);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> chatService.markConversationRead(owner.getUsername(), id, reply.messageId()))
+                .isInstanceOf(jakarta.persistence.EntityNotFoundException.class);
+    }
+
+    @Test
+    void concurrentReadRequestsNeverRegressTheCursor() throws Exception {
+        User alice = createUser("read-race-alice", "Alice");
+        User bob = createUser("read-race-bob", "Bob");
+        markFriends(alice, bob);
+        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+        var first = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("First"));
+        var latest = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Latest"));
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try {
+            var newer = executor.submit(() -> { start.await(); return chatService.markConversationRead(alice.getUsername(), id, latest.messageId()); });
+            var older = executor.submit(() -> { start.await(); return chatService.markConversationRead(alice.getUsername(), id, first.messageId()); });
+            start.countDown();
+            newer.get(10, java.util.concurrent.TimeUnit.SECONDS); older.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isZero();
+            var participant = participantRepository.findByConversationIdAndUserId(id, alice.getId()).orElseThrow();
+            org.assertj.core.api.Assertions.assertThat(participant.getLastReadMessageId()).isEqualTo(latest.messageId());
+        } finally { executor.shutdownNow(); }
+    }
+
+    private long unreadFor(User user, Long conversationId) {
+        return chatService.listConversations(user.getUsername()).items().stream()
+                .filter(item -> item.conversationId().equals(conversationId)).findFirst().orElseThrow().unreadCount();
     }
 
     private void markFriends(User first, User second) {

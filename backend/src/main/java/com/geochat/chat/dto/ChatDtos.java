@@ -24,8 +24,16 @@ public class ChatDtos {
             Long lastMessageId,
             Instant lastMessageAt,
             String lastMessageSender,
-            String groupName
+            String groupName,
+            long unreadCount,
+            long readStateVersion,
+            Instant readStateSince
     ) {}
+
+    public record ReadStateResponse(Long conversationId, long unreadCount, long readStateVersion, Instant readStateSince) {}
+
+    public record ConversationActivityResponse(MessageResponse message, String senderDisplayName,
+                                               long unreadCount, long readStateVersion, Instant readStateSince) {}
 
     public record ConversationDetailResponse(
             Long conversationId,

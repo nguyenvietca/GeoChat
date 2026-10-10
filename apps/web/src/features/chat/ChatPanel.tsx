@@ -5,8 +5,9 @@ import { ApiError } from '../../api/client';
 import { getGroup } from '../../api/groups';
 import { useAuth } from '../../app/providers/AuthContext';
 import { ChatConnectionState, subscribeToConversation, subscribeToPresence } from '../../services/chatWebSocket';
-import { ChatMessage, ConversationDetail, GroupInfo } from '../../types';
-import { formatMessageTime } from './messagePresentation';
+import { ChatMessage, ConversationReadState, ConversationDetail, GroupInfo } from '../../types';
+import { useConversationRead } from './useConversationRead';
+import { compareMessageOrder, formatMessageTime } from './messagePresentation';
 import { LimitedChatFriendship } from './LimitedChatFriendship';
 import { GroupInfoPanel } from './GroupInfoPanel';
 
@@ -17,6 +18,7 @@ type ChatPanelProps = {
   conversationId: number;
   groupInfo: GroupInfo | null;
   titleHint?: string;
+  onReadState?: (state: ConversationReadState) => void;
   onMessage?: (message: ChatMessage, sender?: string) => void;
   onBack: () => void;
   onLeftGroup: () => void;
@@ -25,7 +27,7 @@ type ChatPanelProps = {
 };
 
 // Rendered with key={conversationId} so switching conversations resets all state and subscriptions.
-export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeftGroup, onGroupChanged, onOpenConversation, onMessage }: ChatPanelProps) {
+export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeftGroup, onGroupChanged, onOpenConversation, onMessage, onReadState }: ChatPanelProps) {
   const { token, user } = useAuth();
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [group, setGroup] = useState<GroupInfo | null>(null);
@@ -56,6 +58,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const conversationRef = useRef(conversation);
   conversationRef.current = conversation;
   const knownMessageIds = useRef(new Set<number>());
+  useConversationRead(conversationId, token, messages, loading, messageAreaRef, onReadState);
 
   useEffect(() => {
     if (!Number.isSafeInteger(conversationId) || conversationId <= 0) {
@@ -329,7 +332,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
                 ? conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member'
                 : null;
               return (
-                <div className={outgoing ? 'chat-message-row outgoing' : 'chat-message-row incoming'} key={message.messageId}>
+                <div className={outgoing ? 'chat-message-row outgoing' : 'chat-message-row incoming'} key={message.messageId} data-message-id={message.messageId}>
                   <article className={outgoing ? 'chat-bubble outgoing-bubble' : 'chat-bubble incoming-bubble'}>
                     {sender ? <strong className="chat-sender">{sender}</strong> : null}
                     <p>{message.content}</p>
@@ -383,8 +386,5 @@ export function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) 
   const messagesById = new Map<number, ChatMessage>();
   for (const message of existing) messagesById.set(message.messageId, message);
   for (const message of incoming) messagesById.set(message.messageId, message);
-  return [...messagesById.values()].sort((first, second) => {
-    const delta = Date.parse(first.createdAt) - Date.parse(second.createdAt);
-    return delta || first.messageId - second.messageId;
-  });
+  return [...messagesById.values()].sort(compareMessageOrder);
 }

@@ -15,6 +15,34 @@ public interface ConversationParticipantRepository extends JpaRepository<Convers
 
     List<ConversationParticipant> findByIdConversationIdIn(List<Long> conversationIds);
 
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
+    @Query("update ConversationParticipant p set p.readStateVersion = p.readStateVersion + 1 where p.id.conversationId = :conversationId")
+    void advanceReadStateVersions(@Param("conversationId") Long conversationId);
+
+    @Query("""
+            select p.id.conversationId as conversationId, p.id.userId as userId,
+                   count(m.id) as unreadCount, p.readStateVersion as readStateVersion, p.createdAt as readStateSince
+            from ConversationParticipant p left join Message m
+              on m.conversationId = p.id.conversationId and m.senderId <> p.id.userId
+              and (p.lastReadMessageAt is null or m.createdAt > p.lastReadMessageAt
+                   or (m.createdAt = p.lastReadMessageAt and m.id > p.lastReadMessageId))
+            where p.id.userId = :userId and p.id.conversationId in :ids
+            group by p.id.conversationId, p.id.userId, p.readStateVersion, p.createdAt
+            """)
+    List<UnreadStateRow> findUnreadStates(@Param("userId") Long userId, @Param("ids") List<Long> ids);
+
+    @Query("""
+            select p.id.conversationId as conversationId, p.id.userId as userId,
+                   count(m.id) as unreadCount, p.readStateVersion as readStateVersion, p.createdAt as readStateSince
+            from ConversationParticipant p left join Message m
+              on m.conversationId = p.id.conversationId and m.senderId <> p.id.userId
+              and (p.lastReadMessageAt is null or m.createdAt > p.lastReadMessageAt
+                   or (m.createdAt = p.lastReadMessageAt and m.id > p.lastReadMessageId))
+            where p.id.conversationId = :conversationId
+            group by p.id.conversationId, p.id.userId, p.readStateVersion, p.createdAt
+            """)
+    List<UnreadStateRow> findUnreadStatesForConversation(@Param("conversationId") Long conversationId);
+
     @Query("select cp from ConversationParticipant cp where cp.id.userId = :userId order by cp.id.conversationId desc")
     List<ConversationParticipant> findByUserIdOrderByConversationIdDesc(@Param("userId") Long userId);
 
