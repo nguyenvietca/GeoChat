@@ -19,6 +19,7 @@ import jakarta.validation.Valid;
 @RestController
 @RequestMapping("/api/v1/users")
 public class UserController {
+    @GetMapping("/{userId}/profile") public ApiResponse<com.geochat.chat.dto.ChatDtos.UserSummaryResponse> profile(@org.springframework.web.bind.annotation.PathVariable Long userId){return ApiResponse.ok(userService.publicProfile(userId));}
 
 	private final UserService userService;
 

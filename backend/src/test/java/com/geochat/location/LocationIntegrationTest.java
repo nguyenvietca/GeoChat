@@ -158,6 +158,7 @@ class LocationIntegrationTest {
     void findsNearbyUsersWithinRadiusAndExcludesCurrentUser() throws Exception {
         User currentUser = createUser("nearby-owner");
         User nearbyUser = createUser("nearby-user-1");
+        nearbyUser.setNearbyDiscoverable(true); userRepository.save(nearbyUser);
         User farUser = createUser("nearby-user-2");
         String token = tokenFor(currentUser);
 
@@ -176,7 +177,7 @@ class LocationIntegrationTest {
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].userId").value(nearbyUser.getId()))
                 .andExpect(jsonPath("$.data.items[0].displayName").value(nearbyUser.getDisplayName()))
-                .andExpect(jsonPath("$.data.items[0].distanceMeters").value(greaterThan(0.0)))
+                .andExpect(jsonPath("$.data.items[0].distanceMeters").value(org.hamcrest.Matchers.greaterThanOrEqualTo(0.0)))
                 .andExpect(jsonPath("$.data.items[0].distanceMeters").value(lessThan(5000.0)))
                 .andExpect(jsonPath("$.data.items[0].latitude").doesNotExist())
                 .andExpect(jsonPath("$.data.items[0].longitude").doesNotExist())
@@ -239,6 +240,44 @@ class LocationIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Autowired private com.geochat.location.service.LocationService locations;
+    @Test void optInFreshnessAndStableCoarseAreasProtectLocation() {
+        var viewer=createUser("privacy-viewer");var target=createUser("privacy-target");
+        var point=buildLocation(target.getId(),0.01,0.01);
+        locationRepository.saveAll(List.of(buildLocation(viewer.getId(),0.01,0.01),point));
+        org.assertj.core.api.Assertions.assertThat(locations.discoverability(target.getUsername()).discoverable()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items()).isEmpty();
+        locations.setDiscoverability(target.getUsername(),true);
+        var first=locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items().getFirst();
+        org.assertj.core.api.Assertions.assertThat(first.mapArea().centerLatitude()).isEqualTo(0.025);
+        point.setLatitude(0.049);point.setLongitude(0.041);locationRepository.save(point);
+        org.assertj.core.api.Assertions.assertThat(locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items().getFirst()).isEqualTo(first);
+        point.setUpdatedAt(Instant.now().minusSeconds(90000));locationRepository.save(point);
+        org.assertj.core.api.Assertions.assertThat(locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items()).isEmpty();
+        point.setUpdatedAt(Instant.now());locationRepository.save(point);target.setStatus(UserStatus.INACTIVE);userRepository.save(target);
+        org.assertj.core.api.Assertions.assertThat(locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items()).isEmpty();
+        locations.setDiscoverability(target.getUsername(),false);
+        org.assertj.core.api.Assertions.assertThat(locations.discoverability(target.getUsername()).discoverable()).isFalse();
+    }
+    @Test void privacySettingRequiresJwtAndPublicProfileHasOnlyPermittedFields() throws Exception {
+        var user=createUser("visibility-account");
+        var request=org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/v1/locations/discoverability").contentType(MediaType.APPLICATION_JSON).content("{\"discoverable\":true}");
+        mockMvc.perform(request).andExpect(status().isUnauthorized());
+        mockMvc.perform(request.header("Authorization",bearer(tokenFor(user)))).andExpect(status().isOk()).andExpect(jsonPath("$.data.discoverable").value(true));
+        mockMvc.perform(get("/api/v1/users/"+user.getId()+"/profile").header("Authorization",bearer(tokenFor(user)))).andExpect(status().isOk()).andExpect(jsonPath("$.data.displayName").value(user.getDisplayName())).andExpect(jsonPath("$.data.passwordHash").doesNotExist()).andExpect(jsonPath("$.data.latitude").doesNotExist());
+    }
+    @Test void paginationIsBoundedAndAbuseGuardRejectsExcessRequests() {
+        var viewer=createUser("paged-viewer");locationRepository.save(buildLocation(viewer.getId(),0.01,0.01));
+        for(int i=0;i<5;i++){var user=createUser("paged-"+i);locations.setDiscoverability(user.getUsername(),true);locationRepository.save(buildLocation(user.getId(),0.01,0.01));}
+        var first=locations.getNearbyUsers(viewer.getUsername(),5000.0,2,0);var second=locations.getNearbyUsers(viewer.getUsername(),5000.0,2,1);
+        org.assertj.core.api.Assertions.assertThat(first.items()).hasSize(2);org.assertj.core.api.Assertions.assertThat(first.hasMore()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(second.items()).hasSize(2);org.assertj.core.api.Assertions.assertThat(first.items()).doesNotContainAnyElementsOf(second.items());
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->locations.getNearbyUsers(viewer.getUsername(),Double.NaN,2)).isInstanceOf(IllegalArgumentException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->locations.getNearbyUsers(viewer.getUsername(),5000.0,2,5)).isInstanceOf(IllegalArgumentException.class);
+        var guard=new com.geochat.location.service.NearbyRequestGuard();for(int i=0;i<20;i++)guard.check("user",20);
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->guard.check("user",20)).isInstanceOf(com.geochat.location.service.NearbyRequestGuard.RateLimitException.class);
     }
 
     private User createUser(String username) {

@@ -35,6 +35,8 @@ public class UserService {
 		this.passwordEncoder = passwordEncoder;
 	}
 
+    @Transactional(readOnly=true)
+    public com.geochat.chat.dto.ChatDtos.UserSummaryResponse publicProfile(Long id){var user=userRepository.findById(id).filter(item->item.getStatus()==UserStatus.ACTIVE).orElseThrow(()->new jakarta.persistence.EntityNotFoundException("Profile unavailable"));return new com.geochat.chat.dto.ChatDtos.UserSummaryResponse(user.getId(),user.getUsername(),user.getDisplayName());}
 	@Transactional
 	public UserResponse register(RegisterRequest request) {
 		String username = request.username().trim();

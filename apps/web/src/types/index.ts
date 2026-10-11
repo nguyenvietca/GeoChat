@@ -196,7 +196,9 @@ export type NotificationListResponse = {
 
 export type UnreadNotificationCount = { unreadCount: number };
 
+export type NearbyArea = { key: string; centerLatitude: number; centerLongitude: number; cellDegrees: number };
 export type NearbyUser = {
+  mapArea?: NearbyArea;
   userId: number;
   displayName: string;
   distanceMeters: number;
@@ -209,6 +211,8 @@ export type UserSearchResponse = {
 export type NearbyUsersResponse = {
   items: NearbyUser[];
   radiusMeters: number;
+  page?: number;
+  hasMore?: boolean;
 };
 
 export type ConversationReadState = { conversationId: number; unreadCount: number; readStateVersion: number; readStateSince?: string };

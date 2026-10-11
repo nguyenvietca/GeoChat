@@ -1,17 +1,18 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { ApiError } from './api/client';
 import { getCurrentUser, login, register } from './api/auth';
-import { getNearbyUsers, updateCurrentLocation } from './api/location';
+import { getNearbyUsers, updateCurrentLocation, getDiscoverability, setDiscoverability } from './api/location';
 import {
   getFriends,
   getIncomingFriendRequests,
   getOutgoingFriendRequests,
   sendFriendRequest,
+  acceptFriendRequest,
 } from './api/friends';
 import { getConversations, openDiscoveryConversation, getConversationDetail, getConversationPresence, getMessages, openContextualConversation, openDirectConversation } from './api/chats';
-import { searchUsers, updateMyProfile } from './api/users';
+import { searchUsers, updateMyProfile, getPublicProfile } from './api/users';
 import { User } from './types';
 
 vi.mock('./api/auth', () => ({
@@ -19,11 +20,15 @@ vi.mock('./api/auth', () => ({
   login: vi.fn(),
   register: vi.fn(),
 }));
+vi.mock('./features/nearby/NearbyMap',()=>({NearbyMap:({people,onSelect}:{people:{userId:number}[];onSelect:(id:number)=>void})=> <div aria-label="Nearby map">{people[0]?<button onClick={()=>onSelect(people[0].userId)}>Select area</button>:null}</div>}));
 vi.mock('./api/location', () => ({
+  getDiscoverability: vi.fn().mockResolvedValue({discoverable:false}),
+  setDiscoverability: vi.fn().mockResolvedValue({discoverable:true}),
   getNearbyUsers: vi.fn(),
   updateCurrentLocation: vi.fn(),
 }));
 vi.mock('./api/friends', () => ({
+  acceptFriendRequest: vi.fn(),
   getFriends: vi.fn(),
   getIncomingFriendRequests: vi.fn(),
   getOutgoingFriendRequests: vi.fn(),
@@ -54,7 +59,7 @@ vi.mock('./api/notifications', () => ({
   markNotificationRead: vi.fn(),
   markAllNotificationsRead: vi.fn(),
 }));
-vi.mock('./api/users', () => ({ searchUsers: vi.fn(), updateMyProfile: vi.fn() }));
+vi.mock('./api/users', () => ({ searchUsers: vi.fn(), updateMyProfile: vi.fn(), getPublicProfile: vi.fn() }));
 
 const mockGetCurrentUser = vi.mocked(getCurrentUser);
 const mockLogin = vi.mocked(login);
@@ -357,6 +362,57 @@ describe('nearby location flow', () => {
     mockGetMessages.mockResolvedValue({ items: [], total: 0, page: 0, size: 20 });
   });
 
+  it('keeps visibility separate from GPS and preserves selection across map/list switches', async () => {
+    const gps=vi.fn((success:PositionCallback)=>success({coords:{latitude:41.2,longitude:-72.8}} as GeolocationPosition));
+    Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:gps}});
+    mockUpdateLocation.mockResolvedValue(undefined);
+    mockGetNearbyUsers.mockResolvedValue({items:[{userId:3,displayName:'Kai',distanceMeters:0}],radiusMeters:5000});
+    await renderSignedIn();fireEvent.click(within(screen.getByRole('navigation',{name:'Main navigation'})).getByRole('link',{name:/nearby/i}));
+    const visibility=screen.getByRole('checkbox',{name:'Allow others to discover me nearby'});
+    await waitFor(()=>expect(visibility.hasAttribute('disabled')).toBe(false));
+    expect(gps).not.toHaveBeenCalled();fireEvent.click(visibility);
+    await waitFor(()=>expect(setDiscoverability).toHaveBeenCalledWith(true,'session-token'));
+    expect(gps).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Use my location'}));await screen.findByText('Less than 1 km');
+    fireEvent.click(screen.getByRole('button',{name:'Map view'}));fireEvent.click(screen.getByRole('button',{name:'Select area'}));
+    await screen.findByText(/Selected: Kai/);fireEvent.click(screen.getByRole('button',{name:'List view'}));
+    expect(screen.getByRole('button',{name:/Kai Less than 1 km/}).getAttribute('aria-pressed')).toBe('true');
+    expect(mockGetNearbyUsers).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('link',{name:'View profile'})[0].getAttribute('href')).toBe('/app/profile/3');
+  });
+  it('ignores stale radius results without requesting GPS again', async () => {
+    const gps=vi.fn((success:PositionCallback)=>success({coords:{latitude:41.2,longitude:-72.8}} as GeolocationPosition));
+    Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:gps}});
+    mockUpdateLocation.mockResolvedValue(undefined);
+    let finish:(value:{items:{userId:number;displayName:string;distanceMeters:number}[];radiusMeters:number})=>void=()=>{};
+    mockGetNearbyUsers.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;})).mockResolvedValueOnce({items:[{userId:4,displayName:'New result',distanceMeters:0}],radiusMeters:1000});
+    await renderSignedIn();fireEvent.click(within(screen.getByRole('navigation',{name:'Main navigation'})).getByRole('link',{name:/nearby/i}));
+    fireEvent.click(screen.getByRole('button',{name:'Use my location'}));await waitFor(()=>expect(mockGetNearbyUsers).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByLabelText('Within'),{target:{value:'1000'}});await screen.findByText('New result');
+    finish({items:[{userId:3,displayName:'Old result',distanceMeters:0}],radiusMeters:5000});
+    await waitFor(()=>expect(screen.queryByText('Old result')).toBeNull());expect(gps).toHaveBeenCalledTimes(1);
+  });
+  it('accepts a received request directly on a nearby card', async () => {
+    Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:(success:PositionCallback)=>success({coords:{latitude:41.2,longitude:-72.8}} as GeolocationPosition)}});
+    mockUpdateLocation.mockResolvedValue(undefined);mockGetNearbyUsers.mockResolvedValue({items:[{userId:3,displayName:'Kai',distanceMeters:0}],radiusMeters:5000});
+    mockGetIncoming.mockResolvedValue({items:[{requestId:81,user:{userId:3,username:'kai',displayName:'Kai'},createdAt:''}]});
+    vi.mocked(acceptFriendRequest).mockResolvedValue({requestId:81,senderId:3,receiverId:9,status:'ACCEPTED',createdAt:'',updatedAt:''});
+    await renderSignedIn();fireEvent.click(within(screen.getByRole('navigation',{name:'Main navigation'})).getByRole('link',{name:/nearby/i}));
+    fireEvent.click(screen.getByRole('button',{name:'Use my location'}));await screen.findByText('Request received');
+    fireEvent.click(screen.getByRole('button',{name:'Accept request'}));await screen.findByText('You and Kai are now friends.');
+    expect(acceptFriendRequest).toHaveBeenCalledWith(81,'session-token');expect(screen.getByRole('button',{name:'Chat'})).toBeTruthy();
+  });
+
+  it('navigates from a nearby card to the shared public profile route', async () => {
+    Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:(success:PositionCallback)=>success({coords:{latitude:41.2,longitude:-72.8}} as GeolocationPosition)}});
+    mockUpdateLocation.mockResolvedValue(undefined);mockGetNearbyUsers.mockResolvedValue({items:[{userId:3,displayName:'Kai',distanceMeters:0}],radiusMeters:5000});
+    vi.mocked(getPublicProfile).mockResolvedValue({userId:3,displayName:'Kai Public',username:'kai'});
+    await renderSignedIn();fireEvent.click(within(screen.getByRole('navigation',{name:'Main navigation'})).getByRole('link',{name:/nearby/i}));
+    fireEvent.click(screen.getByRole('button',{name:'Use my location'}));await screen.findByText('Kai');
+    fireEvent.click(screen.getByRole('link',{name:'View profile'}));await screen.findByRole('heading',{name:'Public profile'});
+    await screen.findByRole('heading',{name:'Kai Public'});expect(getPublicProfile).toHaveBeenCalledWith(3,'session-token');
+  });
+
   it('syncs a one-time browser location before requesting nearby users', async () => {
     Object.defineProperty(navigator, 'geolocation', {
       configurable: true,
@@ -370,7 +426,7 @@ describe('nearby location flow', () => {
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /nearby/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
 
-    expect(await screen.findByText('1.3 km away')).toBeTruthy();
+    expect(await screen.findByText('About 1 km')).toBeTruthy();
     expect(mockUpdateLocation).toHaveBeenCalledWith({ latitude: 41.2, longitude: -72.8 }, 'session-token');
     expect(mockGetNearbyUsers).toHaveBeenCalledWith(5000, 'session-token');
     expect(screen.queryByText(/41\.2|-72\.8/)).toBeNull();
@@ -417,7 +473,7 @@ describe('nearby location flow', () => {
     await renderSignedIn();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /nearby/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
-    expect(await screen.findByText('No nearby users found in this radius.')).toBeTruthy();
+    expect(await screen.findByText(/No nearby users found in this radius/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh nearby' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Nearby search unavailable.');
@@ -440,7 +496,7 @@ describe('nearby location flow', () => {
 
     expect(mockSendFriendRequest).toHaveBeenCalledWith(3, 'session-token');
     expect(await screen.findByText('Friend request sent to Kai.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Request sent · manage' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Manage request' })).toBeTruthy();
   });
 
   it('opens a direct conversation for a nearby friend', async () => {
@@ -475,6 +531,7 @@ describe('nearby location flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
     await screen.findByText('Kai');
     fireEvent.change(screen.getByLabelText('Within'), { target: { value: '1000' } });
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Message'}).hasAttribute('disabled')).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'Message' }));
     await screen.findByLabelText('Message');
     expect(mockOpenContextualConversation).toHaveBeenCalledWith(3, 5000, 'session-token');

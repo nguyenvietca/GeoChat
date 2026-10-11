@@ -656,7 +656,8 @@ class ChatIntegrationTest {
 
         private UserLocation buildLocation(Long userId, Double latitude, Double longitude) {
                 UserLocation location = new UserLocation();
-                location.setUserId(userId);
+                userRepository.findById(userId).ifPresent(user -> {user.setNearbyDiscoverable(true);userRepository.save(user);});
+                  location.setUserId(userId);
                 location.setLatitude(latitude);
                 location.setLongitude(longitude);
                 location.setUpdatedAt(Instant.now());

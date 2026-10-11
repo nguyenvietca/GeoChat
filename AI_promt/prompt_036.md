@@ -1,4 +1,4 @@
-# PROMPT_036 — GeoChat Message Search & Conversation History Navigation
+# PROMPT_036 — GeoChat Nearby Discovery & Map UX Improvements
 
 ## 1. Project Context
 
@@ -6,14 +6,15 @@ GeoChat is a location-based social messaging application.
 
 Technology stack:
 - Backend: Java 21, Spring Boot 4.1.0, Maven Wrapper.
-- Database: PostgreSQL/PostGIS, Flyway.
+- Database: PostgreSQL 16 + PostGIS.
 - Security: JWT.
 - Realtime: WebSocket/STOMP.
 - Web: React, TypeScript, Vite.
 - Architecture: Modular monolith.
-- Mobile: Existing codebase, currently on hold.
+- Mobile: Existing codebase, development postponed.
 
 Previous milestones:
+- PROMPT_027: Web Group Chat.
 - PROMPT_028: Group Management and Conversation Synchronization.
 - PROMPT_029: Web Messaging UX Enhancements.
 - PROMPT_030: Unread Messages and Read State.
@@ -21,888 +22,861 @@ Previous milestones:
 - PROMPT_032: Theme, Micro-interactions and UX Quality.
 - PROMPT_033: Typing Indicator and Online Presence.
 - PROMPT_034: Message Reply, Emoji Reactions and Message Actions.
-- PROMPT_035: Secure Image Sharing and Attachment Preview.
+- PROMPT_035: Image Sharing and Attachment Preview.
 
-IMPORTANT:
-PROMPT_034 and PROMPT_035 were proposed in previous prompts, but their actual completion must be verified from the repository.
+Important:
+Verify which milestones are actually implemented in the repository.
 
-Do not assume a feature is implemented merely because it appeared in a previous prompt.
+PROMPT_036 replaces the previously proposed Message Search milestone.
 
-The current milestone is PROMPT_036.
+Do not implement Message Search in this prompt.
 
-Primary goals:
-1. Search text messages within an existing conversation.
-2. Display paginated search results.
-3. Navigate to a selected message, including messages not currently loaded.
-4. Highlight the selected message temporarily.
-5. Preserve the existing chat experience and realtime behavior.
-6. Maintain secure, efficient Backend queries.
+## 2. Primary Objective
 
-This is not a global search feature.
+Improve GeoChat's Nearby experience.
+
+Users should be able to:
+1. Discover other users nearby.
+2. View nearby users in a list.
+3. View nearby users on a map.
+4. Filter users by distance.
+5. Inspect limited public profile information.
+6. Send friend requests when allowed.
+7. Open an existing conversation when allowed.
+8. Control whether they are discoverable.
+9. Understand and manage location permissions.
+
+The experience should feel like a real social discovery feature rather than a technical map demo.
+
+Prioritize:
+- Usability.
+- Responsive design.
+- Privacy.
+- Performance.
+- Existing API compatibility.
 
 ---
 
-# PART A — MANDATORY DEVELOPMENT RULES
+# PART A — MANDATORY RULES
 
-## 2. Web-first Development
+## 3. Web-first Development
 
-Prioritize:
-- Search usability.
-- Fast feedback.
-- Clear search results.
-- Reliable jump-to-message navigation.
+Focus on:
+- Nearby page UI/UX.
+- Map interaction.
+- User discovery cards.
+- Filtering.
 - Responsive layout.
-- Keyboard accessibility.
-- Existing theme compatibility.
-- Smooth interaction with chat history.
+- Accessibility.
+- Loading and error states.
 
-## 3. Backend Scope
-
-Implement only the APIs and queries required for message search and history navigation.
-
-Reuse:
-- Existing ChatService authorization.
-- Existing message entity and repository.
-- Existing message DTOs.
-- Existing pagination strategy.
-- Existing JWT security.
-- Existing database infrastructure.
-
-Do not redesign message storage.
+Backend changes are allowed only when required to support these features.
 
 ## 4. Mobile — Strictly Excluded
 
-- Do not modify Mobile code.
+- Do not modify Mobile source.
 - Do not implement Mobile UI.
 - Do not add Mobile features.
 - Do not run Mobile build.
 - Do not run Mobile typecheck.
 - Do not run Mobile tests.
 
-Preserve existing Mobile-facing APIs and JSON contracts.
+Preserve existing Mobile-facing APIs whenever reasonable.
 
-## 5. Architecture Rules
+## 5. Architecture Constraints
 
-- Preserve existing REST endpoints.
-- Preserve existing WebSocket destinations.
-- Preserve messageId and conversationId semantics.
-- Preserve message ordering.
-- Preserve unread/read-cursor behavior.
-- Preserve smart scrolling.
-- Preserve Reply and Reactions if implemented.
-- Preserve image messages if implemented.
-- Preserve Typing Indicator and Online Presence.
-- Avoid unnecessary dependencies.
+- Preserve the existing modular monolith.
+- Reuse the location module.
+- Reuse the friend module.
+- Reuse the user module.
+- Reuse existing chat APIs.
+- Reuse existing PostGIS capabilities.
+- Reuse existing map dependencies if available.
 - Avoid unrelated refactoring.
+- Avoid introducing new infrastructure unnecessarily.
+- Do not add paid map services without explicit approval.
 
-Do not introduce Elasticsearch, OpenSearch, Redis, or a separate search microservice.
+Do not create a separate Nearby microservice.
+
+## 6. Production-oriented Implementation
+
+Implement real functionality.
+
+Do not:
+- Hardcode fake nearby users.
+- Return mock distances.
+- Display fabricated online status.
+- Introduce demo-only data.
+- Store private location information in browser localStorage.
+- Expose raw database coordinates to other users.
+- Introduce continuous background location tracking.
+
+Keep changes understandable for a developer learning through vibe coding.
 
 ---
 
 # PART B — REPOSITORY AUDIT
 
-## 6. Inspect Before Coding
+## 7. Inspect Before Coding
 
 Inspect the actual repository.
 
 Backend:
-1. Message entity.
-2. MessageRepository.
-3. ChatService.
-4. ChatController.
-5. ChatDtos.
-6. Conversation authorization.
-7. Existing pagination queries.
-8. Existing database indexes.
-9. Existing Flyway migrations.
-10. Group deletion behavior.
-11. Reply and reaction models, if implemented.
-12. Attachment models, if implemented.
+1. Location entities.
+2. Location controllers.
+3. Location services.
+4. Location repositories.
+5. PostGIS queries.
+6. Existing Nearby endpoints.
+7. User profile DTOs.
+8. Friend relationships.
+9. Friend request APIs.
+10. Existing blocking/privacy rules, if any.
+11. Existing visibility settings.
+12. Existing security configuration.
+13. Flyway migrations.
 
 Web:
-1. MessagesPage.
-2. ChatPanel.
-3. Conversation sidebar.
-4. Existing conversation search.
-5. Message rendering.
-6. messagePresentation.ts.
-7. Smart scrolling.
-8. History pagination.
-9. Read-cursor tracking.
-10. WebSocket message reconciliation.
-11. Theme variables.
+1. Nearby page.
+2. Map components.
+3. Map library and tile provider.
+4. Location permission handling.
+5. Nearby API client.
+6. Friend request UI.
+7. Profile UI.
+8. Chat navigation.
+9. Existing design tokens.
+10. Theme support.
+11. Responsive layouts.
 12. Existing tests.
 
-Confirm:
-- How message history is ordered.
-- How older messages are loaded.
-- Whether there is a cursor-based pagination strategy.
-- How message rows are identified.
-- How scroll position is preserved.
-- How unread state is updated.
-- Whether a reusable search input exists.
+Before coding, report:
+- What Nearby functionality already exists.
+- What location data is currently stored.
+- How discovery visibility works.
+- Whether the existing API exposes precise coordinates.
+- Whether a map is already implemented.
+- Which Backend changes are actually required.
+- Proposed implementation phases.
 
-Known architecture from PROMPT_034 Preparation:
-- Message IDs are generated Long values.
-- Message rows use data-message-id.
-- Web deduplicates messages by messageId.
-- Web uses compareMessageOrder.
-- Messages are ordered by createdAt and id.
-- Existing REST history is paginated.
-- Message responses preserve messageId, conversationId, senderId, content and createdAt.
-
-Verify these facts against the current code.
-
-Before coding, summarize:
-- Current pagination behavior.
-- Proposed search endpoint.
-- Proposed history navigation strategy.
-- Expected modified files.
-- Compatibility considerations.
+Do not duplicate existing functionality.
 
 ---
 
-# PART C — MESSAGE SEARCH BACKEND
+# PART C — NEARBY DISCOVERY EXPERIENCE
 
-## 7. Search Scope
+## 8. Nearby Page Layout
 
-Implement text search within one conversation.
+Improve the existing Nearby page.
 
-Support:
-- DIRECT conversations.
-- GROUP conversations.
-- Existing text messages.
-- Captions of image messages, if stored as message content.
+Desktop layout:
+- Search/filter toolbar at the top.
+- Nearby user list in a sidebar.
+- Interactive map in the main content area.
 
-Do not search:
-- Other conversations.
-- User profiles.
-- Friend lists.
-- Group names.
-- Image binary.
-- Image OCR content.
-- Reaction emojis.
-- Attachment filenames.
-- Deleted conversations.
+Suggested desktop proportions:
+- Sidebar: approximately 35%.
+- Map: approximately 65%.
 
-The existing conversation-name search must remain unchanged.
+These proportions are flexible.
 
-## 8. Search API
-
-Add an authenticated REST endpoint following existing conventions.
-
-Suggested:
-
-GET /api/v1/chats/{conversationId}/messages/search
-
-Query parameters:
-- q: search keyword.
-- limit: requested page size.
-- cursor: optional pagination cursor.
-
-These names are suggestions; adapt to existing conventions if necessary.
-
-Requirements:
-- JWT authentication.
-- Conversation membership validation.
-- Query validation.
-- Stable result ordering.
-- Bounded page size.
-- Safe pagination.
-- No cross-conversation data leakage.
-
-Do not modify the existing message-list endpoint unnecessarily.
-
-## 9. Search Query Validation
-
-Validate:
-- Query is not blank after trimming.
-- Query length is bounded.
-- Page size is bounded.
-- Cursor is valid.
-- Conversation exists.
-- Current user is authorized.
-
-Suggested limits:
-- Minimum query length: 2 characters.
-- Maximum query length: 100 characters.
-- Default page size: 20.
-- Maximum page size: 50.
-
-These values may be adjusted to existing application conventions.
-
-Treat search text as literal user input.
-
-Do not expose raw SQL errors.
-
-## 10. Search Semantics
-
-For the initial version:
-
-- Use case-insensitive substring matching.
-- Search message content.
-- Support Vietnamese Unicode text.
-- Preserve meaningful punctuation.
-- Return matching messages from the selected conversation only.
-
-Example:
-
-Query:
-"meeting"
-
-Matching content:
-"Let's schedule a meeting tomorrow."
-
-Do not require exact whole-word matching.
-
-Do not introduce stemming, ranking, fuzzy matching, or semantic search.
-
-Important:
-When using SQL LIKE/ILIKE, escape wildcard characters in user input so '%' and '_' are treated as literal characters rather than uncontrolled wildcards.
-
-Use parameterized queries.
-
-Do not concatenate user input into SQL.
-
-## 11. Search Result DTO
-
-Return a compact paginated result.
-
-Suggested fields:
-
-MessageSearchResult:
-- messageId
-- conversationId
-- senderId
-- senderDisplayName
-- contentSnippet
-- createdAt
-
-Optional:
-- attachmentType, if needed for display.
-
-Pagination metadata:
-- nextCursor
-- hasMore
-
-Requirements:
-- Stable message IDs.
-- Consistent timestamps.
-- No unnecessary attachment binary.
-- No full conversation reload.
-- No unrelated private data.
-
-If existing DTOs can be reused safely, prefer reuse.
-
-Avoid N+1 sender-name queries.
-
-## 12. Search Ordering
-
-Default ordering:
-- Newest matching messages first.
-
-Use a deterministic composite order:
-- createdAt DESC
-- id DESC
-
-Do not rely on timestamp alone.
-
-Pagination must not skip or duplicate results when multiple messages share the same timestamp.
-
-Prefer keyset pagination when consistent with the existing repository.
-
-If a cursor is introduced, validate its conversation/query scope or ensure it cannot expose unrelated data.
-
-## 13. Search Performance
-
-Start with the simplest reliable PostgreSQL query.
-
-Evaluate existing indexes and expected data volume.
-
-Possible optimization:
-- PostgreSQL pg_trgm extension.
-- GIN trigram index on message content.
-
-However:
-- Do not add pg_trgm automatically.
-- Do not create a costly index without a clear need.
-- Do not introduce Elasticsearch or OpenSearch.
-- Do not rewrite the database schema for search.
-
-If a new index is justified:
-- Create a new Flyway migration.
-- Document why it is needed.
-- Consider PostgreSQL extension availability.
-- Verify migration compatibility with the project's database setup.
-
-For small local datasets, a bounded indexed-by-conversation query may be sufficient.
-
-Document expected limitations.
-
----
-
-# PART D — JUMP TO MESSAGE BACKEND
-
-## 14. Problem Definition
-
-The selected search result may refer to a message that is not currently loaded in the Web chat timeline.
-
-The application must navigate to that message without loading the entire conversation history.
-
-Example:
-- Conversation contains 5,000 messages.
-- Web currently displays the latest 30 messages.
-- Search finds message #500.
-- User selects the result.
-- Web loads an appropriate history window around message #500.
-- The target message becomes visible and highlighted.
-
-Do not fetch all 5,000 messages.
-
-## 15. Message Context API
-
-Introduce a focused endpoint if the existing history API cannot efficiently load around a target message.
-
-Suggested:
-
-GET /api/v1/chats/{conversationId}/messages/{messageId}/context
-
-Suggested parameters:
-- before: number of messages before the target.
-- after: number of messages after the target.
-
-Suggested defaults:
-- 15 before.
-- 15 after.
-
-Bound both parameters to prevent excessive queries.
-
-Requirements:
-- JWT authentication.
-- Current conversation membership.
-- Target message belongs to the requested conversation.
-- Stable ordering.
-- Efficient bounded queries.
-- No cross-conversation access.
-- Clear handling of missing messages.
-
-Do not use offset pagination over the entire conversation just to locate the target.
-
-## 16. Context Response
-
-Suggested structure:
-
-MessageContextResponse:
-- targetMessageId
-- messages
-- hasOlder
-- hasNewer
-- olderCursor
-- newerCursor
-
-Reuse existing MessageResponse wherever possible.
-
-If Reply, Reactions or Attachments are implemented, preserve their metadata in context responses.
-
-Do not return a simplified message shape that breaks normal chat rendering.
-
-## 17. Context Query Strategy
-
-Use the existing composite ordering:
-- createdAt
-- id
-
-Load:
-- Target message.
-- Bounded messages before the target.
-- Bounded messages after the target.
-
-Ensure correct ordering after combining results.
-
-Handle identical timestamps.
-
-Avoid N+1 queries for:
-- Sender information.
-- Reply previews.
-- Reaction summaries.
-- Attachment metadata.
-
-Do not create an unbounded query.
-
-## 18. Context Pagination
-
-After jumping to a historical message:
-
-- Loading older messages should still work.
-- Loading newer messages should also be possible if the timeline is showing a historical window.
-- The user should be able to return to the latest messages.
-
-Important:
-Inspect the current history-pagination architecture before implementing this.
-
-If the current UI only supports loading older messages, extend it carefully to support a historical context window without corrupting the existing latest-message timeline.
-
-Do not blindly append historical context messages to the latest timeline if it creates a large invisible gap.
-
-Define explicit timeline-window behavior.
-
----
-
-# PART E — WEB SEARCH EXPERIENCE
-
-## 19. Search Entry Point
-
-Add a search action to the existing chat header.
-
-Requirements:
-- Search the currently selected conversation.
-- Do not replace conversation-name search.
-- Use an accessible icon button.
-- Show an appropriate tooltip or accessible label.
-- Support Light/Dark themes.
-- Support responsive layouts.
-
-Do not add a global search feature.
-
-## 20. Search Panel
-
-Implement a compact search panel.
-
-Desktop:
-- Prefer a side panel or an existing compatible layout.
+Tablet:
+- Responsive split view where practical.
 
 Mobile browser:
-- Use an appropriate full-width or overlay presentation.
-
-Requirements:
-- Search input.
-- Clear button.
-- Close button.
-- Search results.
-- Loading state.
-- Empty state.
-- Error state.
-- Pagination or Load More.
-
-Avoid covering the message composer unnecessarily.
-
-Preserve the selected conversation.
-
-## 21. Search Input Behavior
-
-Requirements:
-- Debounce input.
-- Cancel or ignore stale requests.
-- Avoid searching on every keystroke.
-- Trim query appropriately.
-- Preserve meaningful Unicode characters.
-- Show validation feedback for short queries.
-- Clear previous results when switching conversations.
-
-Suggested debounce:
-Approximately 300ms.
-
-Do not trigger duplicate API requests.
-
-## 22. Search Results UI
-
-Each result should show:
-- Sender display name.
-- Message text snippet.
-- Timestamp.
-- Highlighted matching text.
-- Optional image indicator if applicable.
-
-Requirements:
-- Readable layout.
-- Clear selected state.
-- Accessible buttons.
-- Keyboard navigation.
-- Light/Dark compatibility.
-- Responsive display.
+- Map/List toggle or stacked layout.
+- Touch-friendly controls.
 - No horizontal overflow.
 
-Use stable messageId keys.
+Do not change the global navigation unnecessarily.
 
-Do not render full chat bubbles inside search results.
+## 9. View Modes
 
-## 23. Highlight Search Matches
+Support:
+- List View.
+- Map View.
 
-Highlight matching query text inside result snippets.
+On desktop, a combined list/map layout is preferred when space permits.
+
+On narrow screens, allow switching between views.
+
+Preserve selected user and filters when switching views.
+
+Do not reload data unnecessarily.
+
+## 10. Nearby User Cards
+
+Each card should show only permitted information.
+
+Suggested:
+- Avatar.
+- Display name.
+- Approximate distance.
+- Friend relationship status.
+- Available actions.
+
+Possible actions:
+- View profile.
+- Add friend.
+- Accept pending request, if applicable.
+- Open existing conversation, if permitted.
+
+Do not show:
+- Exact latitude.
+- Exact longitude.
+- Home address.
+- Exact movement history.
+- Internal user identifiers as visible UI text.
+
+Reuse existing profile and friendship components.
+
+## 11. Friend Relationship States
+
+Support existing relationship states.
+
+Examples:
+- Not friends.
+- Friend request sent.
+- Friend request received.
+- Already friends.
+
+Only implement states supported by the current Backend.
+
+Do not invent new friendship semantics.
+
+Actions must respect:
+- Current friendship state.
+- Existing privacy settings.
+- Existing authorization rules.
+
+After sending a request:
+- Update the relevant card.
+- Avoid unnecessary full-page reload.
+- Show concise feedback.
+
+## 12. Profile Navigation
+
+Allow selecting a nearby user to view permitted profile information.
+
+Reuse the existing profile component or route.
+
+Do not create a second independent profile system.
+
+Respect existing privacy rules.
+
+Do not expose private fields merely because a user appears in Nearby.
+
+## 13. Chat Navigation
+
+If the selected user is already a friend and existing product rules allow messaging:
+- Provide a Message action.
+- Open the existing DIRECT conversation if available.
+- Otherwise use the existing conversation creation/opening workflow.
+
+Do not create duplicate DIRECT conversations.
+
+Do not bypass friend or chat authorization.
+
+If messaging non-friends is not supported, do not introduce it in this prompt.
+
+---
+
+# PART D — DISTANCE FILTERS
+
+## 14. Radius Selection
+
+Provide a distance filter.
+
+Suggested options:
+- 1 km.
+- 3 km.
+- 5 km.
+- 10 km.
+
+Use existing Backend-supported values if they differ.
+
+Default:
+5 km, unless the repository already defines another product default.
+
+Do not hardcode distances in multiple components.
+
+Keep filter options centralized.
+
+## 15. Distance Calculation
+
+Use PostGIS for distance filtering where available.
 
 Requirements:
-- Case-insensitive matching.
-- Safe text rendering.
-- No dangerouslySetInnerHTML for user messages.
-- No HTML injection.
-- Appropriate contrast.
-- Preserve Unicode content.
+- Correct geographic distance units.
+- Consistent meters/kilometers conversion.
+- Bounded radius.
+- No client-side filtering of an unrestricted user dataset.
+- No unnecessary full-table scans.
+- Use appropriate spatial indexes where justified.
 
-Do not modify stored message content.
+Inspect the existing geographic column type.
 
-## 24. Search Result Pagination
+Use the correct PostGIS functions for geography/geometry.
 
-Support loading more results.
+Do not assume geometry distance units are meters.
 
-Requirements:
-- Preserve existing results.
-- Avoid duplicate message IDs.
-- Maintain stable ordering.
+## 16. Approximate Distance Display
+
+Show approximate distances.
+
+Examples:
+- Less than 1 km.
+- About 2 km.
+- About 5 km.
+
+Avoid excessive precision.
+
+Do not display:
+- 124.37 meters.
+- Exact coordinates.
+- Exact address.
+
+Use consistent distance formatting.
+
+Do not expose more precision than the privacy model permits.
+
+## 17. Filtering Behavior
+
+When the user changes radius:
+- Update Nearby results.
+- Update map markers.
+- Preserve current page layout.
 - Show loading feedback.
-- Stop when hasMore is false.
-- Avoid full search restart for each page.
+- Avoid stale responses.
+- Avoid duplicate requests.
 
-Reset pagination when:
-- Query changes.
-- Conversation changes.
-- Search panel closes, if appropriate.
+Use request cancellation or request identity tracking where appropriate.
 
-## 25. Jump to Search Result
-
-When a user selects a search result:
-
-1. Capture target messageId.
-2. Determine whether the message is already loaded.
-3. If loaded, scroll to it.
-4. If not loaded, request its context window.
-5. Render the appropriate timeline window.
-6. Scroll to the target after it is rendered.
-7. Highlight the target temporarily.
-
-Requirements:
-- Do not fetch the entire history.
-- Do not duplicate messages.
-- Do not corrupt existing message order.
-- Do not mark unrelated messages as read.
-- Do not cause global layout flicker.
-- Do not create an infinite scrolling loop.
-
-## 26. Target Highlight
-
-After navigating:
-
-- Apply a subtle temporary highlight.
-- Keep the target visible.
-- Remove the highlight after a short interval.
-- Respect reduced-motion preferences.
-- Preserve normal bubble styling.
-
-Suggested duration:
-2–3 seconds.
-
-Do not animate the entire conversation.
-
-## 27. Return to Latest Messages
-
-When viewing a historical context window, provide a clear way to return to the newest messages.
-
-Suggested action:
-"Jump to latest"
-
-Requirements:
-- Restore the latest timeline.
-- Preserve realtime message handling.
-- Preserve unread logic.
-- Avoid duplicate messages.
-- Avoid unnecessary full-page navigation.
-
-Do not automatically jump to the newest message while the user is reviewing search results.
-
-## 28. Search Panel Lifecycle
-
-When closing search:
-- Preserve the current conversation.
-- Avoid unnecessary API calls.
-- Restore focus appropriately.
-- Do not reset the message composer.
-- Do not reset an unsent draft.
-- Do not disconnect WebSocket.
-- Do not clear unread state incorrectly.
-
-When switching conversations:
-- Clear stale search results.
-- Cancel or ignore previous requests.
-- Prevent old search responses from appearing in the new conversation.
+Do not continuously refetch without reason.
 
 ---
 
-# PART F — REALTIME AND READ-STATE SAFETY
+# PART E — MAP EXPERIENCE
 
-## 29. Realtime Message Handling
+## 18. Map Integration
 
-While the user is viewing historical messages:
+Reuse the existing map library if present.
 
-- Continue receiving realtime messages.
-- Do not force-scroll to the bottom.
-- Do not lose new messages.
-- Preserve latest-message previews.
-- Preserve conversation sorting.
-- Preserve unread counters.
-- Provide a way to return to the latest messages.
+If no map library exists, choose a suitable open-source option consistent with the current stack.
 
-Avoid merging a distant historical context window with the latest timeline as if all intermediate messages were loaded.
+Prefer:
+- Leaflet with OpenStreetMap-compatible tiles, if appropriate.
 
-## 30. Read Cursor Safety
+Before adding dependencies:
+- Inspect existing dependencies.
+- Check compatibility.
+- Avoid unnecessary packages.
 
-This is critical.
+Respect the selected map tile provider's usage policy and attribution requirements.
 
-The existing application tracks read state using message boundaries and data-message-id.
+Do not assume public community tile servers are suitable for production traffic.
 
-Searching or jumping to an old message must not incorrectly mark newer unseen messages as read.
+Document the tile provider and production deployment considerations.
 
-Requirements:
-- Preserve monotonic read cursor semantics.
-- Do not mark messages as read merely because search results were returned.
-- Do not mark messages as read merely because a context API was called.
-- Do not advance the read cursor past unseen gaps.
-- Do not interpret a historical context window as a contiguous latest-message timeline.
-- Preserve hidden-tab and inactive-conversation safety.
+## 19. Map Markers
 
-Review existing mark-as-read logic before modifying timeline rendering.
-
-Add regression tests for this behavior.
-
-## 31. Smart Scrolling
-
-Preserve existing smart scrolling.
+Display nearby users using privacy-preserving map markers.
 
 Requirements:
-- No unexpected auto-scroll.
-- No scroll jumps when older messages load.
-- No scroll jumps when newer context messages load.
-- No forced bottom scroll during historical navigation.
-- Correct target positioning.
-- Correct behavior when images load asynchronously.
+- Markers are clickable.
+- Selected marker highlights the corresponding user card.
+- Selected card highlights the corresponding marker.
+- Map remains responsive.
+- Marker interactions work on touch screens.
 
-If PROMPT_035 image messages exist, account for image dimensions and delayed image loading.
+Do not plot exact user coordinates obtained from private Backend storage.
 
-## 32. Reply Navigation Compatibility
+Important:
+Do not assume that rounding latitude/longitude is sufficient to protect user location.
 
-If PROMPT_034 Reply functionality exists:
+Implement a deliberate privacy-preserving representation.
 
-Consider reusing the new message-context navigation mechanism when a user clicks a reply preview whose original message is not loaded.
+## 20. Privacy-preserving Map Positions
 
-However:
-- Do not rewrite Reply UI unnecessarily.
-- Do not expand scope into new Reply features.
-- Preserve existing behavior.
-- Add tests if shared navigation code is introduced.
+The Backend must not return exact coordinates of other users through Nearby discovery.
 
-Prefer a small reusable navigation helper over duplicated history-loading logic.
+Choose a privacy model that does not allow clients to reconstruct exact locations through repeated searches.
 
----
+Possible approaches:
+- Coarse geographic cells.
+- Stable approximate area markers.
+- Aggregated user counts by area.
+- Other existing privacy-preserving location representations.
 
-# PART G — SECURITY AND QUALITY
+Prefer aggregated area markers when individual approximate markers could reveal sensitive locations.
 
-## 33. Authorization
+Do not use per-request random jitter as the only protection.
 
-Every search and context request must enforce conversation access.
+Do not expose raw coordinates in:
+- REST responses.
+- WebSocket payloads.
+- Browser console logs.
+- Debug attributes.
+- Map marker metadata.
 
-Test:
-- Unauthorized DIRECT conversation.
-- Unauthorized GROUP conversation.
-- Removed group member.
-- Deleted group.
-- Message ID from another conversation.
-- Nonexistent message.
+Document the chosen privacy model and its limitations.
 
-Do not leak:
-- Message content.
-- Sender information.
-- Attachment metadata.
-- Reply previews.
+## 21. Map Center
 
-Do not rely on Web-only authorization.
+If the user grants location permission:
+- Center the map near their current location.
+- Display their own location distinctly.
+- Avoid exposing it to other users.
 
-## 34. Error Handling
+If permission is denied:
+- Show an explanatory state.
+- Provide a retry action.
+- Do not invent a current location.
 
-Handle:
-- Empty query.
-- Too-short query.
-- Network failure.
-- Unauthorized conversation.
-- Deleted conversation.
-- Deleted or missing target message.
-- Invalid cursor.
-- Stale search response.
-- Failed context loading.
+Do not automatically fall back to a fabricated GPS coordinate.
 
-Provide concise user-friendly feedback.
+If the application already supports a manually selected search area, reuse it.
 
-Do not display raw stack traces.
+## 22. Map Interaction
 
-## 35. Performance
+Support:
+- Zoom.
+- Pan.
+- Select marker.
+- Select nearby user.
+- Fit visible markers where appropriate.
 
 Avoid:
-- Full conversation history downloads.
-- Offset scanning across thousands of messages for jump-to-message.
-- N+1 queries.
-- Repeated search requests.
-- Repeated context requests.
-- Duplicate message rendering.
-- Excessive DOM nodes.
-- Unnecessary WebSocket resubscriptions.
-- Unnecessary React rerenders.
+- Constant map recentering.
+- Excessive animations.
+- Reinitializing the map on every filter change.
+- Unnecessary network requests on every minor pan.
 
-Use bounded queries and stable React keys.
+Do not automatically expand discovery radius beyond the user's selected limit.
 
-Do not introduce a virtualization library solely for this milestone unless the current implementation clearly requires it.
+## 23. Empty Map State
 
-## 36. Accessibility
+When no nearby users are found:
+- Show a clear empty state.
+- Explain that no discoverable users were found within the selected radius.
+- Allow changing the radius.
+- Keep the map functional.
 
-Requirements:
-- Search button has an accessible name.
-- Search input has a label.
-- Results are keyboard operable.
-- Focus states are visible.
-- Search status is announced appropriately.
-- Target highlighting is not color-only.
-- Reduced-motion preferences are respected.
-- Escape closes the search panel when appropriate.
-- Focus returns predictably.
-
-Do not create intrusive screen-reader announcements for every result update.
+Do not show fake markers.
 
 ---
 
-# PART H — TESTING
+# PART F — LOCATION PRIVACY
 
-## 37. Backend Tests
+## 24. Privacy Principles
+
+Location is sensitive user information.
+
+Nearby discovery must be:
+- Explicitly controlled by the user.
+- Limited to authorized use.
+- Understandable.
+- Reversible.
+- Conservative by default.
+
+Do not expose exact user coordinates.
+
+Do not assume permission to access device location means permission to publish it to other users.
+
+These are separate permissions.
+
+## 25. Discoverability Setting
+
+Inspect existing privacy settings.
+
+If discoverability already exists:
+- Reuse it.
+
+If missing:
+- Implement a minimal opt-in setting.
+
+Suggested:
+"Allow others to discover me nearby"
+
+Default:
+Off for newly introduced discoverability behavior.
+
+Requirements:
+- Persist the user's choice.
+- Allow disabling at any time.
+- Apply the setting on the Backend.
+- Exclude opted-out users from discovery.
+- Do not rely only on frontend filtering.
+
+Avoid automatically enabling discovery for existing users.
+
+## 26. Location Permission States
+
+Handle:
+- Permission not requested.
+- Permission granted.
+- Permission denied.
+- Permission unavailable.
+- Location request timed out.
+- Browser does not support geolocation.
+
+Provide clear user-facing messages.
+
+Do not repeatedly trigger browser permission prompts.
+
+Request location only when needed for an explicit user action or an already-authorized workflow.
+
+## 27. Location Freshness
+
+Inspect existing location timestamps.
+
+Avoid showing stale location data as current.
+
+If the application already tracks location freshness:
+- Reuse it.
+
+Otherwise:
+- Define a conservative freshness policy.
+- Exclude stale locations from active Nearby discovery.
+- Avoid unnecessary database migrations.
+
+Do not imply users are physically present at an old recorded location.
+
+## 28. Blocking and Privacy Rules
+
+If user blocking exists:
+- Blocked users must not discover each other through Nearby when required by the existing privacy policy.
+
+If blocking does not exist:
+- Do not implement an entire blocking system in this milestone.
+- Document the gap.
+
+Do not bypass existing privacy rules.
+
+## 29. Location Update Behavior
+
+Reuse existing location update APIs.
+
+Do not:
+- Add continuous background GPS tracking.
+- Add high-frequency location polling.
+- Track location when Nearby is not in use.
+- Store browser GPS coordinates in localStorage.
+
+Use a controlled location refresh workflow.
+
+If automatic refresh is already implemented:
+- Review its frequency.
+- Review cleanup.
+- Review consent.
+- Avoid duplicate timers.
+
+---
+
+# PART G — BACKEND REQUIREMENTS
+
+## 30. Nearby API
+
+Reuse the existing Nearby API if possible.
+
+If extensions are needed, preserve compatibility.
+
+Suggested request information:
+- Search center or authorized current location.
+- Radius.
+- Pagination parameters.
+
+Suggested response information:
+- Public user ID.
+- Display name.
+- Avatar reference.
+- Approximate distance band.
+- Friendship status.
+- Privacy-safe map area or marker reference.
+
+Do not expose exact coordinates of other users.
+
+Avoid introducing a second incompatible Nearby API without a clear reason.
+
+## 31. Authorization
+
+Enforce:
+- JWT authentication.
+- User privacy settings.
+- Discovery visibility.
+- Valid radius.
+- Valid search coordinates.
+- Valid pagination.
+- Existing blocking rules if present.
+
+Never trust client-provided user IDs for authorization.
+
+Do not allow an unauthenticated user to enumerate Nearby profiles.
+
+## 32. Enumeration and Abuse Protection
+
+Nearby discovery can be abused to track or enumerate users.
+
+Review:
+- Request rate limiting.
+- Maximum radius.
+- Maximum result count.
+- Pagination limits.
+- Repeated location queries.
+- Precise distance exposure.
+
+Implement reasonable safeguards within existing infrastructure.
+
+Do not introduce Redis solely for rate limiting.
+
+Document limitations of process-local protections.
+
+## 33. PostGIS Query Optimization
+
+Inspect existing spatial indexes.
+
+Prefer efficient radius queries.
+
+Consider:
+- ST_DWithin.
+- ST_Distance.
+- Existing geography indexes.
+- Appropriate filtering before sorting.
+
+Use the correct SRID and units.
+
+Avoid computing distance for every user unnecessarily.
+
+Do not introduce expensive schema changes without evidence.
+
+## 34. Database Migrations
+
+Create a new Flyway migration only if required.
+
+Possible reasons:
+- Missing discoverability setting.
+- Missing location freshness field.
+- Missing necessary index.
+
+Requirements:
+- Do not modify applied migrations.
+- Preserve existing data.
+- Preserve Mobile compatibility.
+- Use safe defaults.
+- Document migration purpose.
+
+Do not create unnecessary tables.
+
+---
+
+# PART H — UI/UX QUALITY
+
+## 35. Loading States
+
+Provide:
+- Initial loading.
+- Radius-change loading.
+- Location request loading.
+- Friend request processing.
+
+Use subtle feedback.
+
+Avoid full-page flicker.
+
+## 36. Empty States
+
+Handle:
+- No nearby users.
+- Location permission denied.
+- Discoverability disabled.
+- No location available.
+- Network unavailable.
+
+Each state should explain the situation and provide a relevant action.
+
+Do not use generic "Something went wrong" messages for every case.
+
+## 37. Error Handling
+
+Handle:
+- Geolocation timeout.
+- Invalid coordinates.
+- Network failure.
+- Unauthorized request.
+- Expired session.
+- Backend validation error.
+- Friend request conflict.
+
+Avoid raw error messages.
+
+Do not log private location data unnecessarily.
+
+## 38. Theme Compatibility
+
+Support:
+- Light.
+- Dark.
+- System theme.
+
+Ensure:
+- Map controls remain visible.
+- User cards remain readable.
+- Selected markers are distinguishable.
+- Filters have adequate contrast.
+- Empty states remain consistent.
+
+Reuse existing design tokens.
+
+## 39. Responsive Design
+
+Verify:
+- 375px.
+- 768px.
+- 1440px.
+
+Requirements:
+- No horizontal overflow.
+- No clipped controls.
+- No overlapping cards.
+- Map remains usable.
+- Filters remain accessible.
+- Touch targets are large enough.
+
+Do not implement Native Mobile UI.
+
+## 40. Accessibility
+
+Requirements:
+- Accessible filter labels.
+- Keyboard-operable controls.
+- Visible focus states.
+- Accessible friend request buttons.
+- Meaningful map alternative through List View.
+- No color-only relationship indicators.
+- Reduced-motion support.
+- Clear loading announcements where appropriate.
+
+The list must remain usable even when the map cannot be operated with assistive technology.
+
+---
+
+# PART I — TESTING
+
+## 41. Backend Tests
 
 Test:
+1. Authorized Nearby request.
+2. Unauthorized Nearby request.
+3. Radius validation.
+4. Invalid coordinates.
+5. Correct distance filtering.
+6. Results outside radius excluded.
+7. Current user excluded from results.
+8. Opted-out users excluded.
+9. Newly introduced discoverability defaults to off.
+10. Stale locations excluded.
+11. Removed/deleted users excluded.
+12. Blocking rules if present.
+13. Pagination correctness.
+14. Result count limits.
+15. Friend relationship state.
+16. No precise coordinates in responses.
+17. Privacy-safe marker representation.
+18. Repeated-query privacy behavior.
+19. Spatial query correctness.
+20. Existing Mobile API compatibility.
 
-Search:
-1. Valid DIRECT search.
-2. Valid GROUP search.
-3. Unauthorized search.
-4. Removed group member search.
-5. Case-insensitive matching.
-6. Vietnamese Unicode text.
-7. Literal '%' and '_' handling.
-8. Empty query rejection.
-9. Query length validation.
-10. Stable ordering with identical timestamps.
-11. Pagination without duplicates.
-12. Invalid cursor handling.
-13. Deleted conversation handling.
-
-Context:
-14. Existing target message.
-15. Target not found.
-16. Target belongs to another conversation.
-17. Unauthorized context access.
-18. Context ordering.
-19. Before/after limits.
-20. Boundary at oldest message.
-21. Boundary at newest message.
-22. Identical timestamp ordering.
-23. Reply metadata preservation, if implemented.
-24. Reaction metadata preservation, if implemented.
-25. Attachment metadata preservation, if implemented.
-
-## 38. Web Tests
+## 42. Web Tests
 
 Test:
-1. Open search panel.
-2. Close search panel.
-3. Enter query.
-4. Debounced search.
-5. Clear query.
-6. Search results.
-7. No results.
-8. Search failure.
-9. Load more.
-10. Duplicate result handling.
-11. Stale request cancellation.
-12. Conversation switching.
-13. Jump to loaded message.
-14. Jump to unloaded message.
-15. Context loading.
-16. Target highlighting.
-17. Return to latest.
-18. Realtime messages during historical viewing.
-19. Read-cursor safety.
-20. Smart scrolling.
-21. Keyboard interaction.
-22. Light/Dark themes.
-23. Responsive behavior.
-24. Reply navigation reuse, if implemented.
+1. Nearby page loads.
+2. List View.
+3. Map View.
+4. Radius selection.
+5. Filter changes.
+6. Loading state.
+7. Empty state.
+8. Location permission denied.
+9. Location timeout.
+10. Discoverability toggle.
+11. User card selection.
+12. Map marker selection.
+13. Friend request.
+14. Friend request state update.
+15. Profile navigation.
+16. Chat navigation.
+17. Stale request handling.
+18. Conversation functionality unaffected.
+19. Light/Dark themes.
+20. Responsive layout.
 
-## 39. Manual Verification
+## 43. Manual Verification
 
-Use two accounts and a conversation with enough history to require pagination.
+Use at least two test accounts with explicitly configured test locations.
 
-Scenario A — Basic Search:
-- A searches for a word in the current conversation.
-- Results show matching messages.
-- A selects a result.
-- The correct message is highlighted.
+Scenario A — Nearby Discovery:
+- Account A enables discoverability.
+- Account B searches nearby.
+- A appears only when eligible.
 
-Scenario B — Old Message:
-- A searches for a message far back in history.
-- A selects it.
-- The application loads a bounded context window.
-- The correct message becomes visible.
+Scenario B — Privacy:
+- A disables discoverability.
+- B refreshes Nearby.
+- A no longer appears.
 
-Scenario C — Realtime:
-- A views an old message.
-- B sends a new message.
-- A is not forced to the bottom.
-- The new message remains available.
+Scenario C — Radius:
+- Change radius from 1 km to 5 km.
+- Verify results follow actual distance filtering.
 
-Scenario D — Read Safety:
-- A has unread messages.
-- A searches and opens an older message.
-- Newer unseen messages must not be incorrectly marked as read.
+Scenario D — Map/List:
+- Select a user in the list.
+- Verify the corresponding map representation is selected.
+- Select a map marker or area.
+- Verify appropriate list behavior.
 
-Scenario E — Group Security:
-- Remove A from a group.
-- A attempts to search or load message context.
-- Access is denied.
+Scenario E — Friendship:
+- Send a friend request.
+- Verify the card updates.
+- Verify existing friendship rules remain intact.
 
-Scenario F — Responsive:
-- Test at 375px.
-- Test at 768px.
-- Test at 1440px.
-- Verify search panel, results and jump navigation.
+Scenario F — Permissions:
+- Deny browser location permission.
+- Verify the page displays a useful explanation.
+- Verify no fabricated location is used.
 
-## 40. Regression Checklist
+Scenario G — Responsive:
+- Test 375px.
+- Test 768px.
+- Test 1440px.
+- Verify list, map, filters and actions.
+
+## 44. Regression Checklist
 
 Verify:
 - Authentication.
 - Logout.
 - Friends.
-- Nearby.
+- Friend requests.
+- User profiles.
 - DIRECT chat.
 - GROUP chat.
 - Group management.
 - Group deletion.
-- Conversation-name search.
-- Conversation sorting.
-- Message pagination.
 - Message sending.
-- Smart scrolling.
 - Unread counts.
-- Mark-as-read.
 - Typing Indicator.
 - Online Presence.
-- Reply.
-- Emoji Reactions.
-- Message Actions.
-- Image sharing.
-- Image viewer.
+- Reply/Reactions if implemented.
+- Image sharing if implemented.
 - Notifications.
 - Theme switching.
-- Responsive layout.
-- WebSocket reconnect.
-
-Only verify features actually present in the repository.
+- Responsive navigation.
 
 Do not run Mobile tests.
 
-## 41. Validation Commands
+## 45. Validation
 
-Inspect actual package scripts.
+Inspect repository scripts.
 
 Run:
 - Web production build.
@@ -910,130 +884,116 @@ Run:
 - Web typecheck/lint if available.
 - Relevant Backend tests via Maven Wrapper.
 
-If Flyway migration is added, validate it against the project's PostgreSQL configuration.
+If a Flyway migration is introduced, validate it against PostgreSQL/PostGIS.
 
-Report actual results.
+Do not claim manual browser testing unless actually performed.
 
-Do not claim manual browser testing unless it was performed.
+Report real command results.
 
 ---
 
-# PART I — IMPLEMENTATION PHASES
+# PART J — IMPLEMENTATION PHASES
 
-## 42. Phase 1 — Audit and Design
+## 46. Phase 1 — Architecture Audit
 
-- Inspect current architecture.
-- Confirm existing pagination.
-- Confirm read-cursor behavior.
-- Define search API.
-- Define context API.
-- Choose query strategy.
-- Identify compatibility risks.
+- Inspect existing Nearby implementation.
+- Inspect PostGIS schema.
+- Inspect privacy settings.
+- Inspect Web map dependencies.
+- Identify gaps.
+- Propose minimal changes.
 
-## 43. Phase 2 — Backend Search
+## 47. Phase 2 — Privacy and Backend
 
-- Implement search query.
-- Implement authorization.
-- Implement validation.
-- Implement cursor pagination.
-- Add Backend tests.
-- Evaluate indexes.
-
-## 44. Phase 3 — Backend Context Navigation
-
-- Implement bounded context queries.
-- Implement target authorization.
-- Preserve existing MessageResponse metadata.
-- Support older/newer cursors.
+- Reuse or implement discoverability control.
+- Enforce location freshness.
+- Secure Nearby results.
+- Implement privacy-safe map representation.
+- Improve distance filtering if needed.
 - Add Backend tests.
 
-## 45. Phase 4 — Web Search UI
+## 48. Phase 3 — Nearby UI
 
-- Add search entry point.
-- Add search panel.
-- Add debounce.
-- Add paginated results.
-- Add safe highlighting.
-- Add keyboard and responsive support.
+- Improve Nearby layout.
+- Add List/Map modes.
+- Add radius filters.
+- Add user cards.
+- Add selection synchronization.
+- Add loading/empty/error states.
 - Add Web tests.
 
-## 46. Phase 5 — Jump Navigation
+## 49. Phase 4 — Social Actions
 
-- Implement loaded-message navigation.
-- Implement unloaded-message context loading.
-- Add temporary highlight.
-- Add Jump to latest.
-- Preserve realtime and read-cursor behavior.
-- Add Web tests.
+- Integrate friend requests.
+- Integrate profile navigation.
+- Integrate chat navigation.
+- Handle relationship state changes.
+- Add tests.
 
-## 47. Phase 6 — Regression
+## 50. Phase 5 — Quality and Regression
 
-- Run Backend tests.
-- Run Web tests/build.
-- Verify security.
-- Verify pagination.
-- Verify smart scrolling.
-- Verify unread safety.
-- Verify responsive layout.
+- Verify location privacy.
+- Verify authorization.
+- Verify spatial filtering.
+- Verify responsive layouts.
+- Verify accessibility.
+- Run Backend and Web tests.
 - Document limitations.
 
 Complete each phase before moving to the next.
 
 ---
 
-# PART J — ACCEPTANCE CRITERIA
+# PART K — ACCEPTANCE CRITERIA
 
-## 48. Completion Checklist
+## 51. Completion Checklist
 
 PROMPT_036 is complete when:
 
-- [ ] Search works in DIRECT conversations.
-- [ ] Search works in GROUP conversations.
-- [ ] Search is case-insensitive.
-- [ ] Vietnamese Unicode text is supported.
-- [ ] Search results are paginated.
-- [ ] Search ordering is deterministic.
-- [ ] Unauthorized search is rejected.
-- [ ] Search result snippets are safe to render.
-- [ ] Jump to an already loaded message works.
-- [ ] Jump to an unloaded message works.
-- [ ] Context loading is bounded.
-- [ ] Historical navigation supports older/newer messages.
-- [ ] Target highlighting works.
-- [ ] Jump to latest works.
-- [ ] Realtime messages remain available.
-- [ ] Read-cursor safety is preserved.
-- [ ] Smart scrolling remains correct.
-- [ ] Conversation-name search remains unchanged.
-- [ ] Reply navigation remains functional if implemented.
-- [ ] Image messages remain functional if implemented.
-- [ ] Light/Dark themes remain supported.
+- [ ] Nearby works with real Backend data.
+- [ ] List View works.
+- [ ] Map View works.
+- [ ] Radius filtering works.
+- [ ] PostGIS distance calculations are correct.
+- [ ] Nearby user cards display permitted information.
+- [ ] Friend relationship states are correct.
+- [ ] Friend request integration works.
+- [ ] Profile navigation works.
+- [ ] Chat navigation follows existing permissions.
+- [ ] Discoverability is user-controlled.
+- [ ] Opted-out users are excluded.
+- [ ] Stale locations are handled.
+- [ ] Exact coordinates of other users are not exposed.
+- [ ] Map markers respect the privacy model.
+- [ ] Location permission errors are handled.
+- [ ] Loading/empty/error states are implemented.
+- [ ] Light/Dark themes work.
 - [ ] Responsive layouts work.
 - [ ] Relevant Backend tests pass.
 - [ ] Web build and tests pass.
-- [ ] Mobile source remains unchanged.
+- [ ] Existing chat functionality remains operational.
+- [ ] Mobile code remains unchanged.
 
-## 49. Final Report
+## 52. Final Report
 
 Provide a Vietnamese report containing:
 
-1. Architecture audit.
-2. Search API design.
-3. Context API design.
-4. Database query strategy.
-5. Index or migration decisions.
-6. Web search UI.
-7. Jump-to-message implementation.
-8. Realtime and unread safety.
-9. Files modified.
-10. Backend test results.
-11. Web test/build results.
-12. Manual verification actually performed.
-13. Regression results.
-14. Performance considerations.
-15. Mobile compatibility assessment.
-16. Known limitations.
-17. Suggested scope for PROMPT_037.
+1. Existing Nearby architecture.
+2. Features reused.
+3. New Backend functionality.
+4. Database migrations.
+5. PostGIS query strategy.
+6. Location privacy decisions.
+7. Map implementation.
+8. Nearby UI improvements.
+9. Friend/profile/chat integration.
+10. Files modified.
+11. Backend test results.
+12. Web build/test results.
+13. Manual verification actually performed.
+14. Regression results.
+15. Known limitations.
+16. Recommended next milestone.
 
 Clearly distinguish:
 - Implemented and tested.

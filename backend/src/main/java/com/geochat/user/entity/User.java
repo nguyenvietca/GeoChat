@@ -30,6 +30,11 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    @Column(name="nearby_discoverable", nullable=false)
+    private boolean nearbyDiscoverable;
+    public boolean isNearbyDiscoverable() { return nearbyDiscoverable; }
+    public void setNearbyDiscoverable(boolean value) { nearbyDiscoverable=value; }
+
     public Long getId() {
         return id;
     }

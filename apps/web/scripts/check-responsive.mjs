@@ -5,12 +5,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const stage = process.argv[2] ?? 'verified';
-if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark', 'actions-light', 'actions-dark', 'images-light', 'images-dark'].includes(stage)) throw new Error('Unknown verification stage.');
+if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark', 'actions-light', 'actions-dark', 'images-light', 'images-dark', 'nearby-light', 'nearby-dark'].includes(stage)) throw new Error('Unknown verification stage.');
 const typingStage = stage.startsWith('typing-');
+const nearbyStage = stage.startsWith('nearby-');
 const imagesStage = stage.startsWith('images-');
 const photoFixture = 'iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAADzUlEQVR4nO3du21VQRRAUYNIaIQ2KMZ1IISog2Iow86dkZMSICEkvgL7ztkza8X2fWeku3XmyYGf3X16uAGanq8eAPh3AoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBD24rEe9Prtm8d6FJzg47v3//8QGxjCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCHs0f47IRPc3778mx979eHz08/CFQR8SrS/+hUxpwn4oG5//xwlFwn40G5/82Qlhwg44+nS/ekHyThBwAGXpfvjh8p4OH9Gmm5JvUM+nT+ygecaEo9VPJkNPNSQesfOw1cCnmhmLTOnOpwr9CzDI3GdnsYGHmR4vbk5TyDgKVpVtKbdmIBHKPZQnHk/AoYwAa/XXWXdybch4MXqDdTnrxPwSnu8/XucIkrAECbgZXZaXDudpUXAa+z3xu93ogQBQ5iAF9h1We16rskEDGECvtrea2rv0w0kYAgTMIQJ+FIn3DBPOOMcAoYwAUOYgK9zzt3ynJMuJ2AIEzCECRjCBHyR074WnnbeVQQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBd59eHzzUlOO+8qAoYwAUOYgCFMwNc552vhOSddTsAQJmAIE/ClTrhbnnDGOQQMYQKGMAFfbe8b5t6nG0jAECbgBXZdU7ueazIBQ5iA19hvWe13ogQBL7PTG7/TWVoEDGECXmmPxbXHKaIEvFj97a/PXyfg9boNdCffhoAhTMAjFFdZceb9CHiKVg+taTcm4EEqVVTmPMGL1QPwkzbub1/ejCTdaWzgiWZ2MnOqwwl4qGm1TJuHr1yh5xpynZbuZDbwdGv7Ue9wNnDAklUs3QQBZ1yWsXRDBBzzra5HL1m3RQI+vWTdpgk47/sC/zJm0W5DwFtR5mn8GQnCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCHs2d2nh9UzAP/IBoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwHDT9QXLM62/D75iIgAAAABJRU5ErkJggg==';
 const actionsStage = stage.startsWith('actions-');
-const output = path.resolve(imagesStage ? 'build/prompt035' : actionsStage ? 'build/prompt034' : typingStage ? 'build/prompt033' : 'build/prompt031', stage);
+const output = path.resolve(nearbyStage ? 'build/prompt036' : imagesStage ? 'build/prompt035' : actionsStage ? 'build/prompt034' : typingStage ? 'build/prompt033' : 'build/prompt031', stage);
 await mkdir(output, { recursive: true });
 // Keep browser caches outside Vite's watched app tree to avoid unrelated HTML reloads.
 const profileRoot = path.resolve('../../build/prompt031-browser-profiles');
@@ -72,8 +73,9 @@ const fixtureScript = `
     else if (pathname === '/api/v1/users/search') data = {items:[{...friend,relationship:'NONE'}]};
     else if (pathname.includes('/notifications/unread-count')) data = {unreadCount:3};
     else if (pathname === '/api/v1/notifications') data = {items:[{id:1,recipientId:9,type:'NEW_MESSAGE',title:'A notification with a long title that should remain readable',message:'Bạn có tin nhắn mới từ Rowan Nguyễn. '+ 'abcdef'.repeat(20),referenceType:'MESSAGE',referenceId:1,conversationId:41,read:false,createdAt:group.updatedAt,readAt:null}],unreadCount:1,total:1,hasMore:false};
-    else if (pathname.includes('/location/nearby')) data = {items:[{userId:22,displayName:friend.displayName,distanceMeters:1200}],radiusMeters:5000};
-    else if (pathname.includes('/location/')) data = {latitude:0,longitude:0};
+    else if (pathname.endsWith('/discoverability')) data = {discoverable:false};
+    else if (pathname.includes('/locations/nearby')) data = {items:[{userId:22,displayName:friend.displayName,distanceMeters:1000,mapArea:{key:'area',centerLatitude:0.025,centerLongitude:0.025,cellDegrees:0.05}}],radiusMeters:5000};
+    else if (pathname.includes('/locations/')) data = {latitude:0,longitude:0};
     if (mode === 'empty' && data.items) data = {...data,items:[],unreadCount:0,total:0,hasMore:false};
     return new Response(JSON.stringify({success:true,data,message:''}),{status:200,headers:{'Content-Type':'application/json'}});
   };
@@ -126,14 +128,15 @@ try {
   };
   socket.onclose = () => { for (const request of pending.values()) { clearTimeout(request.timeout); request.reject(new Error('Browser closed')); } pending.clear(); };
   await send('Page.enable');
+  if (nearbyStage) {await send('Network.enable');await send('Network.setBlockedURLs',{urls:['*tile.openstreetmap.org*']});}
   await send('Page.bringToFront');
   await send('Network.enable');
   await send('Network.setBlockedURLs', { urls: ['*fonts.googleapis.com*', '*fonts.gstatic.com*'] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage || actionsStage || imagesStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage || actionsStage || imagesStage || nearbyStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
   const results = [];
-  for (const width of (stage === 'keyboard' ? [375] : typingStage || actionsStage || imagesStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
+  for (const width of (stage === 'keyboard' ? [375] : typingStage || actionsStage || imagesStage || nearbyStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
     await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    for (const route of (stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage || actionsStage || imagesStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
+    for (const route of (nearbyStage ? ['nearby'] : stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage || actionsStage || imagesStage || nearbyStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
       await send('Emulation.setDeviceMetricsOverride', { width, height: stage === 'keyboard' ? 450 : 900, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `http://127.0.0.1:5179/${route.startsWith('public/') ? route.slice(7) : 'app/' + route}` });
       for (let attempt = 0; attempt < 50; attempt++) {
@@ -142,9 +145,12 @@ try {
       }
       if (route.includes('visual=create')) await evaluate(`document.querySelector('.sidebar-toolbar button')?.click()`);
       if (route.includes('visual=info')) await evaluate(`[...document.querySelectorAll('.chat-header button')].find(el=>el.textContent==='Group info')?.click()`);
-      if (route === 'nearby') await evaluate(`document.querySelector('.nearby-intro button')?.click()`);
+      if (route === 'nearby') {await delay(300);await evaluate(`document.querySelector('.nearby-intro button')?.click()`);}
       if (route === 'search') await evaluate(`const input=document.querySelector('#user-search'); const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; setter.call(input,'rowan');input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.search-form').requestSubmit();`);
       await delay(250);
+      if (nearbyStage) {for(let attempt=0;attempt<100;attempt++){if(await evaluate(`!!document.querySelector('.nearby-card') && !!document.querySelector('.leaflet-container')`))break;await delay(100);}}
+      if(nearbyStage && !(await evaluate(`!!document.querySelector('.nearby-card')`))) throw new Error(await evaluate(`document.body.innerText`));
+      if (nearbyStage && width === 375) {await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Map view').click()`);await delay(100);}
       const typingCheck = typingStage ? await evaluate(`(() => {
         const conversationId=Number(location.pathname.split('/').pop());
         const area=document.querySelector('.chat-message-area');
@@ -233,10 +239,16 @@ try {
         await writeFile(path.join(output,`${width}-${route.replaceAll('/','-')}-preview.png`),Buffer.from(previewShot.data,'base64'));
         await evaluate(`document.querySelector('[aria-label="Remove selected image"]').click();`);
       }
+      if(nearbyStage){
+        await evaluate(`document.querySelector('.nearby-card-select').click();`);await delay(100);
+        result.selectionOk=await evaluate(`!!document.querySelector('.nearby-card.selected') && !!document.querySelector('.nearby-area-marker.selected')`);
+        await evaluate(`document.querySelector('.nearby-area-marker').dispatchEvent(new MouseEvent('click',{bubbles:true}));`);
+        result.selectionOk=result.selectionOk&&await evaluate(`!!document.querySelector('.nearby-card.selected')`);
+      }
       results.push(result);
       await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
       console.log(`${width} ${route}: overflow=${result.overflow}, composerVisible=${result.composerVisible}`);
-      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms' || typingStage || actionsStage || imagesStage) {
+      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms' || typingStage || actionsStage || imagesStage || nearbyStage) {
         const screenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
         await writeFile(path.join(output, `${width}-${route.replace(/[^a-z0-9-]/gi, '-')}.png`), Buffer.from(screenshot.data, 'base64'));
       }
@@ -248,7 +260,7 @@ try {
     }
   }
   await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
-  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length || item.typingOk === false || item.typingStopped === false || item.actionsOk === false || item.viewerOk === false || item.previewOk === false);
+  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length || item.typingOk === false || item.typingStopped === false || item.actionsOk === false || item.viewerOk === false || item.previewOk === false || item.selectionOk === false);
   console.log(JSON.stringify({ stage, pages:results.length, failures, output }, null, 2));
   process.exitCode = failures.length ? 1 : 0;
 } finally {

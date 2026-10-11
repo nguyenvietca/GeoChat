@@ -40,7 +40,19 @@ public class LocationController {
 
 	@GetMapping("/nearby")
 	public ApiResponse<NearbyUsersResponse> getNearbyUsers(@AuthenticationPrincipal UserDetails principal,
-			@RequestParam("radius") Double radius, @RequestParam(value = "limit", defaultValue = "20") Integer limit) {
-		return ApiResponse.ok(locationService.getNearbyUsers(principal.getUsername(), radius, limit));
+			@RequestParam("radius") Double radius, @RequestParam(value = "limit", defaultValue = "20") Integer limit,
+			@RequestParam(defaultValue = "0") int page) {
+		return ApiResponse.ok(locationService.getNearbyUsers(principal.getUsername(), radius, limit, page));
+	}
+
+	@GetMapping("/discoverability")
+	public ApiResponse<LocationService.Discoverability> visibility(@AuthenticationPrincipal UserDetails user) {
+		return ApiResponse.ok(locationService.discoverability(user.getUsername()));
+	}
+
+	@org.springframework.web.bind.annotation.PutMapping("/discoverability")
+	public ApiResponse<LocationService.Discoverability> visibility(@AuthenticationPrincipal UserDetails user,
+			@RequestBody LocationService.Discoverability request) {
+		return ApiResponse.ok(locationService.setDiscoverability(user.getUsername(), request.discoverable()));
 	}
 }

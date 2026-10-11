@@ -20,6 +20,8 @@ import java.util.Optional;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(com.geochat.location.service.NearbyRequestGuard.RateLimitException.class)
+    public ResponseEntity<ApiResponse<Void>> rateLimit(Exception ex){return ResponseEntity.status(429).body(ApiResponse.error("Too many location requests. Please wait a minute"));}
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> handleUploadSize(Exception ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(ApiResponse.error("Image must be at most 5 MB"));

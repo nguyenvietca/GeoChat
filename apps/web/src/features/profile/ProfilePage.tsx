@@ -1,9 +1,22 @@
+import { Link, useParams } from 'react-router-dom';
+import { getPublicProfile } from '../../api/users';
 import { FormEvent, useEffect, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { updateMyProfile } from '../../api/users';
 import { useAuth } from '../../app/providers/AuthContext';
 
 export function ProfilePage() {
+  const {userId}=useParams();
+  return userId ? <PublicProfile userId={Number(userId)} /> : <MyProfile />;
+}
+function PublicProfile({userId}:{userId:number}) {
+  const {token}=useAuth();
+  const [person,setPerson]=useState<{displayName:string;username:string}|null>(null);
+  const [failure,setFailure]=useState('');
+  useEffect(()=>{let active=true;setPerson(null);setFailure('');if(token)void getPublicProfile(userId,token).then(value=>{if(active)setPerson(value);}).catch(()=>{if(active)setFailure('Profile unavailable.');});return()=>{active=false;};},[userId,token]);
+  return <section className="page-content"><div className="page-heading"><h1>Public profile</h1></div><Link to="/app/nearby">Back to Nearby</Link>{failure?<p role="alert">{failure}</p>:person?<section className="account-summary"><span className="person-avatar">{person.displayName.charAt(0)}</span><div><h2>{person.displayName}</h2><p>@{person.username}</p><p>GeoChat member</p></div></section>:<p role="status">Loading profile...</p>}</section>;
+}
+function MyProfile() {
   const { user, token, syncUser } = useAuth();
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [saving, setSaving] = useState(false);
