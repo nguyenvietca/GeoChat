@@ -51,7 +51,7 @@ public class ChatWebSocketController {
             throw new AccessDeniedException("Authentication required");
         }
 
-        MessageResponse message = chatService.sendMessageFromWebSocket(username, conversationId, request.content());
+        MessageResponse message = chatService.sendMessage(username, conversationId, request);
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, message);
     }
 

@@ -579,6 +579,49 @@ class ChatWebSocketIntegrationTest {
         aliceSession.disconnect(); bobSession.disconnect(); secondTab.disconnect();
     }
 
+    @Test
+    void replyPayloadAndReactionVersionsReachMembersOnSeparateTopics() throws Exception {
+        User owner = createUser("actions-ws-owner", "Owner");
+        User member = createUser("actions-ws-member", "Member");
+        User outsider = createUser("actions-ws-outsider", "Outsider");
+        markFriends(owner, member);
+        Long id = groupService.createGroup(owner.getUsername(), new CreateGroupRequest("Message actions", java.util.List.of(member.getId()))).groupId();
+        var original = chatService.sendMessage(owner.getUsername(), id, new SendMessageRequest("Original from owner"));
+        var ownerSession = connectSession(tokenFor(owner));
+        var memberSession = connectSession(tokenFor(member));
+        var outsiderSession = connectSession(tokenFor(outsider));
+        BlockingQueue<Map<String, Object>> messageQueue = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> ownerReactions = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> memberReactions = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> outsiderReactions = new LinkedBlockingQueue<>();
+        ownerSession.subscribe("/topic/chat/" + id, frameHandler(messageQueue));
+        ownerSession.subscribe("/topic/chat/" + id + "/reactions", frameHandler(ownerReactions));
+        memberSession.subscribe("/topic/chat/" + id + "/reactions", frameHandler(memberReactions));
+        outsiderSession.subscribe("/topic/chat/" + id + "/reactions", frameHandler(outsiderReactions));
+        org.awaitility.Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() ->
+                simpUserRegistry.getUser(owner.getUsername()).getSessions().stream().flatMap(session -> session.getSubscriptions().stream()).count() == 2
+                && simpUserRegistry.getUser(member.getUsername()).getSessions().stream().flatMap(session -> session.getSubscriptions().stream()).count() == 1);
+        memberSession.send("/app/chat/" + id + "/send", Map.of("content", "Reply over STOMP", "replyToMessageId", original.messageId()));
+        var reply = messageQueue.poll(5, TimeUnit.SECONDS);
+        assertThat(reply).isNotNull();
+        assertThat(((Number) reply.get("replyToMessageId")).longValue()).isEqualTo(original.messageId());
+        assertThat(((Map<?, ?>) reply.get("replyPreview")).get("excerpt")).isEqualTo("Original from owner");
+        chatService.setReaction(owner.getUsername(), id, original.messageId(), "heart", true);
+        var event = ownerReactions.poll(5, TimeUnit.SECONDS);
+        assertThat(event).isNotNull();
+        assertThat(event.keySet()).containsExactlyInAnyOrder("conversationId", "messageId", "version");
+        assertThat(((Number) event.get("version")).longValue()).isEqualTo(1);
+        assertThat(memberReactions.poll(5, TimeUnit.SECONDS)).isEqualTo(event);
+        assertThat(outsiderReactions.poll(1, TimeUnit.SECONDS)).isNull();
+        assertThat(messageQueue.poll(1, TimeUnit.SECONDS)).isNull();
+        groupService.removeMember(owner.getUsername(), id, member.getId());
+        chatService.setReaction(owner.getUsername(), id, original.messageId(), "heart", false);
+        assertThat(ownerReactions.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(memberReactions.poll(1, TimeUnit.SECONDS)).isNull();
+        ownerSession.disconnect(); memberSession.disconnect();
+        if (outsiderSession.isConnected()) outsiderSession.disconnect();
+    }
+
 	private Long openConversation(User alice, User bob) {
 		return chatService.openDirectConversation(alice.getUsername(), new OpenDirectChatRequest(bob.getId()))
 				.conversationId();

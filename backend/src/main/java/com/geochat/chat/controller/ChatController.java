@@ -25,6 +25,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import com.geochat.chat.dto.ChatDtos.MessageReactionState;
+import com.geochat.chat.dto.ChatDtos.ReactionStatesResponse;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -93,6 +98,24 @@ public class ChatController {
             @AuthenticationPrincipal UserDetails principal, @PathVariable Long conversationId,
             @Valid @RequestBody MarkConversationReadRequest request) {
         return ApiResponse.ok(chatService.markConversationRead(principal.getUsername(), conversationId, request.messageId()));
+    }
+
+    @PutMapping("/chats/{conversationId}/messages/{messageId}/reactions/{key}")
+    public ApiResponse<MessageReactionState> addReaction(@AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long conversationId, @PathVariable Long messageId, @PathVariable String key) {
+        return ApiResponse.ok(chatService.setReaction(principal.getUsername(), conversationId, messageId, key, true));
+    }
+
+    @DeleteMapping("/chats/{conversationId}/messages/{messageId}/reactions/{key}")
+    public ApiResponse<MessageReactionState> removeReaction(@AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long conversationId, @PathVariable Long messageId, @PathVariable String key) {
+        return ApiResponse.ok(chatService.setReaction(principal.getUsername(), conversationId, messageId, key, false));
+    }
+
+    @GetMapping("/chats/{conversationId}/reactions")
+    public ApiResponse<ReactionStatesResponse> getReactions(@AuthenticationPrincipal UserDetails principal,
+            @PathVariable Long conversationId, @RequestParam List<Long> messageIds) {
+        return ApiResponse.ok(chatService.getReactionStates(principal.getUsername(), conversationId, messageIds));
     }
 
     @GetMapping("/chats/{conversationId}/messages")

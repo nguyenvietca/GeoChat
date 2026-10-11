@@ -40,4 +40,15 @@ class TypingPresenceOutboundInterceptorTest {
         when(sessions.getUsername("observer")).thenReturn(null);
         assertThat(interceptor.preSend(event, null)).isNull();
     }
+
+    @Test void reactionDeliveryRechecksMembershipAndSession() {
+        when(sessions.getUsername("observer")).thenReturn("bob");
+        var event = frame("/topic/chat/50/reactions");
+        when(chat.isParticipant("bob", 50L)).thenReturn(true);
+        assertThat(interceptor.preSend(event, null)).isSameAs(event);
+        when(chat.isParticipant("bob", 50L)).thenReturn(false);
+        assertThat(interceptor.preSend(event, null)).isNull();
+        when(sessions.getUsername("observer")).thenReturn(null);
+        assertThat(interceptor.preSend(event, null)).isNull();
+    }
 }

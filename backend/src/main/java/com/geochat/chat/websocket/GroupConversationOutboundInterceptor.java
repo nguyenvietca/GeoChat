@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 @Component
 public class GroupConversationOutboundInterceptor implements ChannelInterceptor {
 
-    private static final Pattern CHAT_DESTINATION = Pattern.compile("/topic/chat/(\\d+)(?:/typing)?");
+    private static final Pattern CHAT_DESTINATION = Pattern.compile("/topic/chat/(\\d+)(?:/(?:typing|reactions))?");
 
     private static final Pattern PRESENCE_DESTINATION = Pattern.compile("/topic/presence/(\\d+)");
 

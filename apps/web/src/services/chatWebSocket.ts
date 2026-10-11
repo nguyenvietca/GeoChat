@@ -6,12 +6,14 @@ import {
   publishToStompDestination,
   subscribeToStompDestination,
 } from './stompConnection';
+import { ReactionEvent } from '../types';
 
 export type ChatConnectionState = StompConnectionState;
 
 export type ChatWebSocketHandlers = {
   onMessage: (message: ChatMessage) => void;
   onTyping?: (event: ChatTypingEvent) => void;
+  onReaction?: (event: ReactionEvent) => void;
   onStateChange: (state: ChatConnectionState) => void;
 };
 
@@ -38,7 +40,24 @@ export function subscribeToConversation(
       if (typingEvent?.conversationId === conversationId) handlers.onTyping?.(typingEvent);
     },
   });
-  return () => { unsubscribeTyping(); unsubscribeMessages(); };
+  const unsubscribeReactions = subscribeToStompDestination(token, `/topic/chat/${conversationId}/reactions`, {
+    onStateChange: () => {},
+    onFrame: (body) => {
+      const event = parseReactionEvent(body);
+      if (event?.conversationId === conversationId) handlers.onReaction?.(event);
+    },
+  });
+  return () => { unsubscribeReactions(); unsubscribeTyping(); unsubscribeMessages(); };
+}
+
+export function parseReactionEvent(body: string): ReactionEvent | null {
+  try {
+    const value: unknown = JSON.parse(body);
+    if (!isRecord(value) || !Number.isSafeInteger(value.conversationId) || Number(value.conversationId) <= 0
+      || !Number.isSafeInteger(value.messageId) || Number(value.messageId) <= 0
+      || !Number.isSafeInteger(value.version) || Number(value.version) <= 0) return null;
+    return { conversationId: Number(value.conversationId), messageId: Number(value.messageId), version: Number(value.version) };
+  } catch { return null; }
 }
 
 let typingActivityId = 0;

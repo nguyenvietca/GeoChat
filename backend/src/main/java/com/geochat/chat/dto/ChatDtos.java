@@ -54,8 +54,21 @@ public class ChatDtos {
             Long conversationId,
             Long senderId,
             String content,
-            Instant createdAt
-    ) {}
+            Instant createdAt,
+            Long replyToMessageId,
+            ReplyPreview replyPreview,
+            List<ReactionSummary> reactions,
+            long reactionVersion
+    ) {
+        public MessageResponse(Long messageId, Long conversationId, Long senderId, String content, Instant createdAt) {
+            this(messageId, conversationId, senderId, content, createdAt, null, null, List.of(), 0);
+        }
+    }
+
+    public record ReplyPreview(Long messageId, String senderDisplayName, String excerpt) {}
+    public record ReactionSummary(String emoji, long count, boolean reactedByMe) {}
+    public record MessageReactionState(Long messageId, long version, List<ReactionSummary> reactions) {}
+    public record ReactionStatesResponse(List<MessageReactionState> items) {}
 
     public record MessageListResponse(
             List<MessageResponse> items,

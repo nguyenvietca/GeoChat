@@ -109,7 +109,16 @@ export type ChatMessage = {
   senderId: number;
   content: string;
   createdAt: string;
+  replyToMessageId?: number | null;
+  replyPreview?: ReplyPreview | null;
+  reactions?: ReactionSummary[];
+  reactionVersion?: number;
 };
+
+export type ReplyPreview = { messageId: number; senderDisplayName: string; excerpt: string };
+export type ReactionSummary = { emoji: string; count: number; reactedByMe: boolean };
+export type MessageReactionState = { messageId: number; version: number; reactions: ReactionSummary[] };
+export type ReactionEvent = { conversationId: number; messageId: number; version: number };
 
 export type ChatTypingEvent = {
   eventId?: number;
@@ -127,7 +136,7 @@ export type MessageListResponse = {
   size: number;
 };
 
-export type SendMessageRequest = { content: string };
+export type SendMessageRequest = { content: string; replyToMessageId?: number };
 
 export type GroupInfo = {
   groupId: number;

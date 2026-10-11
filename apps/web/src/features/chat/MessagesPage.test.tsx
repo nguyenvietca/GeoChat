@@ -7,8 +7,11 @@ import { getConversationDetail, getConversationPresence, getConversations, getMe
 import { addGroupMembers, createGroup, deleteGroup, getGroup, getGroupMembers, leaveGroup, removeGroupMember, renameGroup } from '../../api/groups';
 import { ChatMessage, ChatTypingEvent, ConversationDetail, GroupInfo, GroupManagementEvent, User } from '../../types';
 import { publishTypingState, subscribeToConversation } from '../../services/chatWebSocket';
+import { getMessageReactions, setMessageReaction } from '../../api/reactions';
+import { ReactionEvent } from '../../types';
 
-type Handlers = { onMessage: (message: ChatMessage) => void; onTyping?: (event: ChatTypingEvent) => void };
+type Handlers = { onMessage: (message: ChatMessage) => void; onTyping?: (event: ChatTypingEvent) => void;
+  onReaction?: (event: ReactionEvent) => void; onStateChange: (state: 'connecting' | 'connected' | 'reconnecting') => void };
 type PresenceHandler = (presence: { userId: number; online: boolean }) => void;
 
 const socket = vi.hoisted(() => ({
@@ -20,6 +23,7 @@ const socket = vi.hoisted(() => ({
 }));
 
 vi.mock('../../api/auth', () => ({ getCurrentUser: vi.fn() }));
+vi.mock('../../api/reactions', () => ({ getMessageReactions: vi.fn(), setMessageReaction: vi.fn() }));
 vi.mock('../../api/users', () => ({ searchUsers: vi.fn() }));
 vi.mock('../../api/location', () => ({ getNearbyUsers: vi.fn(), updateCurrentLocation: vi.fn() }));
 vi.mock('../../api/notifications', () => ({
@@ -108,12 +112,121 @@ describe('web messages split view and group chat', () => {
       conversationId: id, type: id === 50 || id === 60 ? 'GROUP' : 'DIRECT', participants: [mira, rowan], createdAt: '', updatedAt: '',
     }));
     vi.mocked(getMessages).mockResolvedValue({ items: [], total: 0, page: 0, size: 20 });
+    vi.mocked(getMessageReactions).mockResolvedValue({ items: [] });
     vi.mocked(getConversationPresence).mockResolvedValue({ items: [{ userId: 22, online: false }] });
     vi.mocked(getGroup).mockResolvedValue(groupInfo(22));
     vi.mocked(getGroupMembers).mockResolvedValue({ items: [
       { user: rowan, role: 'OWNER', joinedAt: '' }, { user: mira, role: 'MEMBER', joinedAt: '' },
     ] });
     vi.mocked(openDirectConversation).mockResolvedValue({ conversationId: 41, type: 'DIRECT', participant: rowan });
+  });
+
+  it('keeps the draft when replying/cancelling, sends the reference and renders a navigable quoted preview', async () => {
+    const original = message(7, 41, 22, 'An original note');
+    vi.mocked(getMessages).mockResolvedValueOnce({ items: [original], total: 1, page: 0, size: 20 });
+    await openMessages('/app/chat/41');
+    await screen.findByText(original.content);
+    const input = screen.getByLabelText('Message') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'Draft stays' } });
+    const selectReply = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for message 7' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Reply' }));
+    };
+    selectReply();
+    expect(screen.getByLabelText('Reply preview').textContent).toContain('Replying to Rowan Park');
+    expect(input.value).toBe('Draft stays');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel reply' }));
+    expect(screen.queryByLabelText('Reply preview')).toBeNull();
+    expect(input.value).toBe('Draft stays');
+    expect(document.activeElement).toBe(input);
+    selectReply();
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    vi.mocked(sendMessage).mockResolvedValueOnce({ ...message(8, 41, 9, 'Draft stays'), replyToMessageId: 7,
+      replyPreview: { messageId: 7, senderDisplayName: 'Rowan Park', excerpt: original.content } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(sendMessage).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(sendMessage).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(41, { content: 'Draft stays', replyToMessageId: 7 }, 'session-token'));
+    await waitFor(() => expect(input.value).toBe(''));
+    expect(screen.queryByLabelText('Reply preview')).toBeNull();
+    const row = document.querySelector<HTMLElement>('[data-message-id="7"]')!;
+    row.scrollIntoView = vi.fn();
+    fireEvent.click(document.querySelector('.message-quote')!);
+    expect(row.scrollIntoView).toHaveBeenCalled();
+    expect(document.activeElement).toBe(row);
+    expect(document.querySelectorAll('[data-message-id]')).toHaveLength(2);
+  });
+
+  it('clears reply state on conversation switching and handles an unloaded original', async () => {
+    vi.mocked(getConversations).mockResolvedValue({ items: [directConversation, { ...groupConversation, groupName: 'Trip crew' }] });
+    vi.mocked(getMessages).mockResolvedValueOnce({ items: [{ ...message(7, 41, 22, 'Reply note'), replyToMessageId: 1,
+      replyPreview: { messageId: 1, senderDisplayName: 'Rowan Park', excerpt: 'Older unloaded note' } }], total: 1, page: 0, size: 20 });
+    await openMessages('/app/chat/41');
+    await screen.findByText('Reply note');
+    fireEvent.click(document.querySelector('.message-quote')!);
+    expect(screen.getByText(/The original message is not loaded/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for message 7' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reply' }));
+    expect(screen.getByLabelText('Reply preview')).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: /Trip crew/ }));
+    await waitFor(() => expect(screen.queryByLabelText('Reply preview')).toBeNull());
+    await waitFor(() => expect(screen.getByLabelText('Message').hasAttribute('disabled')).toBe(false));
+    vi.mocked(sendMessage).mockResolvedValueOnce(message(10, 50, 9, 'New conversation'));
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'New conversation' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(50, { content: 'New conversation' }, 'session-token'));
+  });
+
+  it('adds/removes reactions, batches version events and preserves message ordering and reading position', async () => {
+    vi.mocked(getMessages).mockResolvedValueOnce({ items: [message(7, 41, 22, 'React to me')], total: 1, page: 0, size: 20 });
+    await openMessages('/app/chat/41');
+    await screen.findByText('React to me');
+    const area = document.querySelector('.chat-message-area') as HTMLDivElement;
+    Object.defineProperties(area, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 } });
+    area.scrollTop = 100; fireEvent.scroll(area); area.scrollTo = vi.fn();
+    vi.mocked(setMessageReaction).mockResolvedValueOnce({ messageId: 7, version: 1, reactions: [{ emoji: '👍', count: 1, reactedByMe: true }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for message 7' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'React' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Thumbs up' }));
+    await screen.findByRole('button', { name: 'Thumbs up: 1, reacted by you' });
+    expect(setMessageReaction).toHaveBeenCalledWith(41, 7, 'thumbs-up', true, 'session-token');
+    const handlers = socket.handlers.get(41) as Handlers;
+    vi.mocked(getMessageReactions).mockResolvedValueOnce({ items: [{ messageId: 7, version: 3, reactions: [{ emoji: '👍', count: 2, reactedByMe: true }] }] });
+    act(() => {
+      handlers.onReaction?.({ conversationId: 41, messageId: 7, version: 3 });
+      handlers.onReaction?.({ conversationId: 41, messageId: 7, version: 3 });
+      handlers.onReaction?.({ conversationId: 41, messageId: 7, version: 2 });
+      handlers.onReaction?.({ conversationId: 50, messageId: 7, version: 8 });
+    });
+    await screen.findByRole('button', { name: 'Thumbs up: 2, reacted by you' });
+    expect(getMessageReactions).toHaveBeenCalledTimes(1);
+    expect(getMessages).toHaveBeenCalledTimes(1);
+    expect(area.scrollTop).toBe(100);
+    expect(area.scrollTo).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
+    vi.mocked(setMessageReaction).mockResolvedValueOnce({ messageId: 7, version: 4, reactions: [{ emoji: '👍', count: 1, reactedByMe: false }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Thumbs up: 2, reacted by you' }));
+    await screen.findByRole('button', { name: 'Thumbs up: 1' });
+    expect(setMessageReaction).toHaveBeenLastCalledWith(41, 7, 'thumbs-up', false, 'session-token');
+    expect(document.querySelectorAll('[data-message-id]')).toHaveLength(1);
+  });
+
+  it('reconciles reactions for older loaded pages after reconnect', async () => {
+    vi.mocked(getMessages).mockResolvedValueOnce({ items: [message(7, 41, 22, 'Latest loaded')], total: 21, page: 0, size: 20 });
+    await openMessages('/app/chat/41');
+    await screen.findByText('Latest loaded');
+    const handlers = socket.handlers.get(41) as Handlers;
+    act(() => handlers.onStateChange('connected'));
+    vi.mocked(getMessages).mockResolvedValueOnce({ items: [message(1, 41, 22, 'Older loaded')], total: 21, page: 1, size: 20 });
+    fireEvent.click(screen.getByRole('button', { name: 'Load older messages' }));
+    await screen.findByText('Older loaded');
+    vi.mocked(getMessageReactions).mockResolvedValueOnce({ items: [{ messageId: 1, version: 5, reactions: [{ emoji: '❤️', count: 3, reactedByMe: false }] }] });
+    act(() => { handlers.onStateChange('reconnecting'); handlers.onStateChange('connected'); });
+    await screen.findByRole('button', { name: 'Heart: 3' });
+    expect(getMessageReactions).toHaveBeenCalledWith(41, [7, 1], 'session-token');
+    expect(document.querySelectorAll('[data-message-id]')).toHaveLength(2);
   });
 
   it('filters direct and group names locally, trims case, clears search and preserves selection', async () => {

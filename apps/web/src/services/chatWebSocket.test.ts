@@ -4,6 +4,7 @@ import {
   disconnectAllChatWebSockets,
   parseChatMessage,
   parseChatTypingEvent,
+  parseReactionEvent,
   parseConversationReadState,
   parseGroupManagementEvent,
   parseUserPresence,
@@ -203,12 +204,30 @@ describe('web chat WebSocket service', () => {
 
     expect(onStateChange).toHaveBeenCalledWith('connected');
     expect(onStateChange).toHaveBeenCalledWith('reconnecting');
-    expect(stompHarness.client.subscribe).toHaveBeenCalledTimes(4);
-    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(2);
+    expect(stompHarness.client.subscribe).toHaveBeenCalledTimes(6);
+    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(3);
 
     cleanup();
     expect(stompHarness.client.deactivate).toHaveBeenCalledOnce();
-    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(4);
+    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(6);
+  });
+
+  it('routes persisted reaction versions separately from messages and typing, and cleans up', () => {
+    const onMessage = vi.fn(), onTyping = vi.fn(), onReaction = vi.fn();
+    const cleanup = subscribeToConversation(42, 'jwt', { onMessage, onTyping, onReaction, onStateChange: vi.fn() });
+    (stompHarness.configuration as StompConfiguration).onConnect();
+    const receive = stompHarness.frameCallbacks.get('/topic/chat/42/reactions') as (frame: { body: string }) => void;
+    const event = { conversationId: 42, messageId: 7, version: 3 };
+    receive({ body: JSON.stringify({ ...event, conversationId: 77 }) });
+    receive({ body: JSON.stringify({ ...event, version: -1 }) });
+    receive({ body: JSON.stringify(event) });
+    expect(onReaction).toHaveBeenCalledExactlyOnceWith(event);
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(onTyping).not.toHaveBeenCalled();
+    expect(parseReactionEvent('{broken')).toBeNull();
+    expect(parseReactionEvent(JSON.stringify({ ...event, messageId: 0 }))).toBeNull();
+    cleanup();
+    expect(stompHarness.subscription.unsubscribe).toHaveBeenCalledTimes(3);
   });
 
   it('shares one authenticated STOMP connection between chat and notifications', () => {

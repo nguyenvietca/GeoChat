@@ -5,9 +5,10 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const stage = process.argv[2] ?? 'verified';
-if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark'].includes(stage)) throw new Error('Unknown verification stage.');
+if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark', 'actions-light', 'actions-dark'].includes(stage)) throw new Error('Unknown verification stage.');
 const typingStage = stage.startsWith('typing-');
-const output = path.resolve(typingStage ? 'build/prompt033' : 'build/prompt031', stage);
+const actionsStage = stage.startsWith('actions-');
+const output = path.resolve(actionsStage ? 'build/prompt034' : typingStage ? 'build/prompt033' : 'build/prompt031', stage);
 await mkdir(output, { recursive: true });
 // Keep browser caches outside Vite's watched app tree to avoid unrelated HTML reloads.
 const profileRoot = path.resolve('../../build/prompt031-browser-profiles');
@@ -32,7 +33,7 @@ function send(method, params = {}) {
 }
 async function evaluate(expression) {
   const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+  if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
   return result.result.value;
 }
 
@@ -61,7 +62,8 @@ const fixtureScript = `
     else if (pathname.endsWith('/messages')) {
       const id = pathname.includes('/50/') ? 50 : 41;
       data = {items:Array.from({length:24},(_,index)=>({messageId:index+1,conversationId:id,senderId:index%3 ? 22 : 9,content:index===23?'Tin nhắn nhiều dòng\\nNội dung tiếng Việt và đường dẫn dài https://example.com/'+ 'abcdefgh'.repeat(12):'Một tin nhắn để kiểm tra bố cục '+index,createdAt:'2026-10-10T10:00:'+String(index).padStart(2,'0')+'Z'})),total:24,page:0,size:20};
-    } else if (pathname.endsWith('/presence')) data = {items:[{userId:22,online:true}]};
+    } else if (pathname.endsWith('/reactions')) data = {items:[]};
+    else if (pathname.endsWith('/presence')) data = {items:[{userId:22,online:true}]};
     else if (pathname.endsWith('/read')) data = {conversationId:pathname.includes('/50/')?50:41,unreadCount:0,readStateVersion:2};
     else if (/\\/chats\\/\\d+$/.test(pathname)) data = {conversationId:pathname.endsWith('/50')?50:41,type:pathname.endsWith('/50')?'GROUP':'DIRECT',participants:[group.owner,friend],createdAt:group.createdAt,updatedAt:group.updatedAt,limitedMessagesRemaining:null};
     else if (pathname === '/api/v1/users/search') data = {items:[{...friend,relationship:'NONE'}]};
@@ -124,11 +126,11 @@ try {
   await send('Page.bringToFront');
   await send('Network.enable');
   await send('Network.setBlockedURLs', { urls: ['*fonts.googleapis.com*', '*fonts.gstatic.com*'] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage || actionsStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
   const results = [];
-  for (const width of (stage === 'keyboard' ? [375] : typingStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
+  for (const width of (stage === 'keyboard' ? [375] : typingStage || actionsStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
     await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    for (const route of (stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
+    for (const route of (stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage || actionsStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
       await send('Emulation.setDeviceMetricsOverride', { width, height: stage === 'keyboard' ? 450 : 900, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `http://127.0.0.1:5179/${route.startsWith('public/') ? route.slice(7) : 'app/' + route}` });
       for (let attempt = 0; attempt < 50; attempt++) {
@@ -162,7 +164,7 @@ try {
         const rect = element => element?.getBoundingClientRect();
         const composer=rect(document.querySelector('.chat-composer'));
         const nav=rect(document.querySelector('.sidebar'));
-        const controls=[...document.querySelectorAll('button,input,select,textarea,.side-nav a,.mobile-account-nav a')].filter(el => el.getBoundingClientRect().width > 0);
+        const controls=[...document.querySelectorAll('button,input,select,textarea,.side-nav a,.mobile-account-nav a')].filter(el => { const r=el.getBoundingClientRect(); const area=el.closest('.chat-message-area')?.getBoundingClientRect(); return r.width>0 && (!area || (r.top>=area.top && r.bottom<=area.bottom)); });
         const outside=controls.filter(el=>{const r=rect(el);return r.left < -1 || r.right > innerWidth+1;}).map(el=>el.textContent || el.id);
         const links=[...document.querySelectorAll('.side-nav:first-of-type a')];
         const overlapping=controls.flatMap((a,index)=>controls.slice(index+1).filter(b=>{const x=rect(a),y=rect(b);return !a.contains(b) && !b.contains(a) && Math.min(x.right,y.right)-Math.max(x.left,y.left)>2 && Math.min(x.bottom,y.bottom)-Math.max(x.top,y.top)>2;}).map(b=>[a.textContent.trim()||a.id,b.textContent.trim()||b.id]));
@@ -172,10 +174,46 @@ try {
         function areaScroll(){return document.querySelector('.chat-message-area').scrollTop;}
         return {typingOk,theme:document.documentElement.dataset.theme,typingLabel:indicator?.textContent,navigationUsable:links.every(el=>{const r=rect(el);return r.height>=44 && r.top>=0 && r.bottom<=innerHeight;}),overlapping,height:innerHeight,width:innerWidth,route:location.pathname,scrollWidth:document.documentElement.scrollWidth,overflow:document.documentElement.scrollWidth > innerWidth,controlsOutside:outside,composerVisible:!composer || (composer.top>=0 && composer.bottom<=innerHeight && (innerWidth>680 || composer.bottom<=nav.top)),navLinks:[...document.querySelectorAll('.side-nav:first-of-type a')].map(el=>({label:el.textContent.trim(),height:rect(el).height})),headerHeight:rect(document.querySelector('.chat-header'))?.height,titleWidth:rect(document.querySelector('.chat-person-details'))?.width};
       })()`);
+      if (actionsStage) {
+        result.actionsOk = await evaluate(`(() => {
+          const area=document.querySelector('.chat-message-area');
+          area.scrollTop=0;
+          const trigger=area.querySelector('.message-action-trigger[aria-label^="Actions for"]');
+          trigger.click();
+          return true;
+        })()`);
+        await delay(50);
+        const checkMenu = async (suffix) => {
+          const geometry = await evaluate(`(() => {
+            const menu=document.querySelector('.message-action-popover');
+            const rect=menu?.getBoundingClientRect();
+            const controls=[...menu?.querySelectorAll('button') ?? []];
+            const area=document.querySelector('.chat-message-area').getBoundingClientRect();
+            return !!rect && rect.top>=area.top && rect.bottom<=area.bottom && rect.left>=0 && rect.right<=innerWidth && rect.top>=0 && rect.bottom<=innerHeight && controls.every(button=>button.getBoundingClientRect().height>=44);
+          })()`);
+          const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+          await writeFile(path.join(output, `${width}-${route.replaceAll('/', '-')}-${suffix}.png`),Buffer.from(shot.data,'base64'));
+          return geometry;
+        };
+        result.menuOk = await checkMenu('menu');
+        result.actionsOk = result.actionsOk && result.menuOk;
+        await evaluate(`[...document.querySelectorAll('[role=menuitem]')].find(button=>button.textContent==='React').click()`);
+        await delay(50);
+        result.pickerOk = await checkMenu('picker');
+        result.actionsOk = result.actionsOk && result.pickerOk;
+        await evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));`);
+        await delay(50);
+        await evaluate(`document.querySelector('.message-action-trigger[aria-label^="Actions for"]').click();`);
+        await delay(50);
+        await evaluate(`[...document.querySelectorAll('[role=menuitem]')].find(button=>button.textContent==='Reply').click();`);
+        await delay(50);
+        result.actionsOk = result.actionsOk && await evaluate(`!!document.querySelector('.composer-reply') && document.activeElement?.id==='chat-message' && document.documentElement.scrollWidth<=innerWidth`);
+        await evaluate(`document.querySelector('[aria-label="Cancel reply"]').click()`);
+      }
       results.push(result);
       await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
       console.log(`${width} ${route}: overflow=${result.overflow}, composerVisible=${result.composerVisible}`);
-      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms' || typingStage) {
+      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms' || typingStage || actionsStage) {
         const screenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
         await writeFile(path.join(output, `${width}-${route.replace(/[^a-z0-9-]/gi, '-')}.png`), Buffer.from(screenshot.data, 'base64'));
       }
@@ -187,7 +225,7 @@ try {
     }
   }
   await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
-  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length || item.typingOk === false || item.typingStopped === false);
+  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length || item.typingOk === false || item.typingStopped === false || item.actionsOk === false);
   console.log(JSON.stringify({ stage, pages:results.length, failures, output }, null, 2));
   process.exitCode = failures.length ? 1 : 0;
 } finally {

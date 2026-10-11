@@ -1,6 +1,10 @@
 package com.geochat.chat.service;
 
 import com.geochat.chat.repository.UnreadStateRow;
+import com.geochat.chat.repository.MessageReactionRepository;
+import com.geochat.chat.entity.MessageReaction;
+import com.geochat.chat.event.MessageReactionsChangedEvent;
+import com.geochat.chat.dto.ChatDtos.*;
 import com.geochat.chat.dto.ChatDtos.ReadStateResponse;
 import com.geochat.chat.event.ConversationReadEvent;
 import com.geochat.chat.event.ConversationActivityEvent;
@@ -54,6 +58,7 @@ public class ChatService {
 	private final ConversationRepository conversationRepository;
 	private final ConversationParticipantRepository conversationParticipantRepository;
 	private final MessageRepository messageRepository;
+	private final MessageReactionRepository reactionRepository;
 	private final UserRepository userRepository;
 	private final FriendRequestRepository friendRequestRepository;
 	private final ApplicationEventPublisher applicationEventPublisher;
@@ -65,10 +70,11 @@ public class ChatService {
 			ConversationParticipantRepository conversationParticipantRepository, MessageRepository messageRepository,
 			UserRepository userRepository, FriendRequestRepository friendRequestRepository,
 				ApplicationEventPublisher applicationEventPublisher, LocationService locationService,
-				WebSocketSessionRegistry webSocketSessionRegistry) {
+				WebSocketSessionRegistry webSocketSessionRegistry, MessageReactionRepository reactionRepository) {
 		this.conversationRepository = conversationRepository;
 		this.conversationParticipantRepository = conversationParticipantRepository;
 		this.messageRepository = messageRepository;
+		this.reactionRepository = reactionRepository;
 		this.userRepository = userRepository;
 		this.friendRequestRepository = friendRequestRepository;
 		this.applicationEventPublisher = applicationEventPublisher;
@@ -293,13 +299,13 @@ public class ChatService {
 	@Transactional
 	public MessageResponse sendMessage(String username, Long conversationId, SendMessageRequest request) {
 		String content = normalizeContent(request == null ? null : request.content());
-		return createPersistedMessage(username, conversationId, content);
+		return createPersistedMessage(username, conversationId, content, request == null ? null : request.replyToMessageId());
 	}
 
 	@Transactional
 	public MessageResponse sendMessageFromWebSocket(String username, Long conversationId, String rawContent) {
 		String content = normalizeContent(rawContent);
-		return createPersistedMessage(username, conversationId, content);
+		return createPersistedMessage(username, conversationId, content, null);
 	}
 
 	@Transactional(readOnly = true)
@@ -317,17 +323,17 @@ public class ChatService {
 		return new TypingEventResponse(conversationId, sender.getId(), sender.getDisplayName(), "TYPING", state, 0);
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	public MessageListResponse listMessages(String username, Long conversationId, Integer limit) {
 		return listMessages(username, conversationId, limit, 0);
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	public MessageListResponse listMessages(String username, Long conversationId, Integer limit, Integer page) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-		Conversation conversation = conversationRepository.findById(conversationId)
+		Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
 				.orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
 
 		if (!conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, currentUser.getId())) {
@@ -340,9 +346,7 @@ public class ChatService {
 		List<Message> messages = messageRepository.findByConversationIdOrderByCreatedAtDescIdDesc(
 				conversation.getId(), pageable);
 
-		List<MessageResponse> items = new ArrayList<>(messages.stream().map(message -> new MessageResponse(message.getId(),
-				message.getConversationId(), message.getSenderId(), message.getContent(), message.getCreatedAt()))
-				.toList());
+		List<MessageResponse> items = new ArrayList<>(presentMessages(messages, currentUser.getId()));
 		Collections.reverse(items);
 
 		return new MessageListResponse(items, messageRepository.countByConversationId(conversation.getId()), safePage,
@@ -357,7 +361,7 @@ public class ChatService {
         return conversationParticipantRepository.existsForUsername(conversationId, username);
 	}
 
-	private MessageResponse createPersistedMessage(String username, Long conversationId, String content) {
+	private MessageResponse createPersistedMessage(String username, Long conversationId, String content, Long replyToMessageId) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
@@ -387,7 +391,13 @@ public class ChatService {
 			throw new IllegalArgumentException("You can send at most 5 messages before becoming friends. Add each other as friends to continue");
 		}
 
-		Message message = new Message();
+		if (replyToMessageId != null) {
+            messageRepository.findById(replyToMessageId)
+                    .filter(target -> target.getConversationId().equals(conversationId))
+                    .orElseThrow(() -> new IllegalArgumentException("Reply must reference an existing message in this conversation"));
+        }
+        Message message = new Message();
+        message.setReplyToMessageId(replyToMessageId);
 		message.setConversationId(conversation.getId());
 		message.setSenderId(currentUser.getId());
 		message.setContent(content);
@@ -408,14 +418,104 @@ public class ChatService {
 			}
 		}
 
-        MessageResponse response = new MessageResponse(saved.getId(), saved.getConversationId(), saved.getSenderId(),
-                saved.getContent(), saved.getCreatedAt());
+        MessageResponse response = presentMessages(List.of(saved), currentUser.getId()).getFirst();
         // Version every activity so delayed unread snapshots can be ignored by clients.
         conversationParticipantRepository.advanceReadStateVersions(conversationId);
         applicationEventPublisher.publishEvent(new ConversationActivityEvent(response,
                 currentUser.getDisplayName()));
         return response;
 	}
+
+    // URL-safe keys avoid servlet/path encoding differences for emoji characters.
+    public static final List<String> REACTION_KEYS = List.of("thumbs-up", "heart", "laugh", "surprised", "sad", "angry");
+    public static final List<String> REACTION_EMOJIS = List.of("👍", "❤️", "😂", "😮", "😢", "😡");
+
+    @Transactional
+    public MessageReactionState setReaction(String username, Long conversationId, Long messageId, String key, boolean add) {
+        User user = requireActionUser(username, conversationId);
+        Message message = messageRepository.findById(messageId)
+                .filter(item -> item.getConversationId().equals(conversationId))
+                .orElseThrow(() -> new IllegalArgumentException("Reaction target must be a message in this conversation"));
+        int index = REACTION_KEYS.indexOf(key);
+        if (index < 0) throw new IllegalArgumentException("Unsupported reaction emoji");
+        String emoji = REACTION_EMOJIS.get(index);
+        boolean exists = reactionRepository.existsByMessageIdAndUserIdAndEmoji(messageId, user.getId(), emoji);
+        if (add != exists) {
+            if (add) reactionRepository.save(new MessageReaction(messageId, user.getId(), emoji));
+            else reactionRepository.deleteByMessageIdAndUserIdAndEmoji(messageId, user.getId(), emoji);
+            message.setReactionVersion(message.getReactionVersion() + 1);
+            messageRepository.saveAndFlush(message);
+            reactionRepository.flush();
+            applicationEventPublisher.publishEvent(new MessageReactionsChangedEvent(conversationId, messageId, message.getReactionVersion()));
+        }
+        return reactionStates(List.of(message), user.getId()).getFirst();
+    }
+
+    @Transactional
+    public ReactionStatesResponse getReactionStates(String username, Long conversationId, List<Long> messageIds) {
+        if (messageIds == null || messageIds.isEmpty() || messageIds.size() > 100
+                || messageIds.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new IllegalArgumentException("Provide between 1 and 100 positive message IDs");
+        }
+        User user = requireActionUser(username, conversationId);
+        List<Message> messages = messageRepository.findAllById(messageIds.stream().distinct().toList());
+        if (messages.size() != messageIds.stream().distinct().count()
+                || messages.stream().anyMatch(message -> !message.getConversationId().equals(conversationId))) {
+            throw new IllegalArgumentException("Reaction targets must be messages in this conversation");
+        }
+        return new ReactionStatesResponse(reactionStates(messages, user.getId()));
+    }
+
+    // Group membership changes and hard deletion use this same conversation lock.
+    private User requireActionUser(String username, Long conversationId) {
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> new EntityNotFoundException("Conversation not found"));
+        if (!conversationParticipantRepository.existsByConversationIdAndUserId(conversationId, user.getId())) {
+            throw new AccessDeniedException("You are not a participant in this conversation");
+        }
+        return user;
+    }
+
+    private List<MessageReactionState> reactionStates(List<Message> messages, Long userId) {
+        if (messages.isEmpty()) return List.of();
+        var rows = reactionRepository.summarize(messages.stream().map(Message::getId).toList(), userId);
+        Map<Long, List<ReactionSummary>> grouped = new java.util.HashMap<>();
+        for (var row : rows) {
+            grouped.computeIfAbsent(row.getMessageId(), id -> new ArrayList<>())
+                    .add(new ReactionSummary(row.getEmoji(), row.getReactionCount(), row.getMyCount() > 0));
+        }
+        grouped.values().forEach(items -> items.sort(Comparator.comparingInt(item -> REACTION_EMOJIS.indexOf(item.emoji()))));
+        return messages.stream().map(message -> new MessageReactionState(message.getId(), message.getReactionVersion(),
+                grouped.getOrDefault(message.getId(), List.of()))).toList();
+    }
+
+    private List<MessageResponse> presentMessages(List<Message> messages, Long userId) {
+        if (messages.isEmpty()) return List.of();
+        var replyIds = messages.stream().map(Message::getReplyToMessageId).filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, Message> originals = messageRepository.findAllById(replyIds).stream()
+                .collect(Collectors.toMap(Message::getId, java.util.function.Function.identity()));
+        Map<Long, User> senders = userRepository.findAllById(originals.values().stream().map(Message::getSenderId).distinct().toList())
+                .stream().collect(Collectors.toMap(User::getId, java.util.function.Function.identity()));
+        Map<Long, MessageReactionState> reactions = reactionStates(messages, userId).stream()
+                .collect(Collectors.toMap(MessageReactionState::messageId, java.util.function.Function.identity()));
+        return messages.stream().map(message -> {
+            Message original = originals.get(message.getReplyToMessageId());
+            ReplyPreview preview = null;
+            if (original != null && original.getConversationId().equals(message.getConversationId())) {
+                User sender = senders.get(original.getSenderId());
+                String content = original.getContent();
+                int end = content.offsetByCodePoints(0, Math.min(160, content.codePointCount(0, content.length())));
+                preview = new ReplyPreview(original.getId(), sender == null ? "Member" : sender.getDisplayName(),
+                        content.substring(0, end));
+            }
+            var state = reactions.get(message.getId());
+            return new MessageResponse(message.getId(), message.getConversationId(), message.getSenderId(),
+                    message.getContent(), message.getCreatedAt(), message.getReplyToMessageId(), preview,
+                    state.reactions(), state.version());
+        }).toList();
+    }
 
     @Transactional
     public ReadStateResponse markConversationRead(String username, Long conversationId, Long messageId) {

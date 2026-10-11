@@ -26,6 +26,22 @@ public class Message {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Column(name = "reply_to_message_id")
+    private Long replyToMessageId;
+
+    @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
+    @jakarta.persistence.JoinColumn(name = "reply_to_message_id", insertable = false, updatable = false)
+    @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.SET_NULL)
+    private Message replyToMessage;
+
+    @Column(name = "reaction_version", nullable = false)
+    private long reactionVersion;
+
+    public Long getReplyToMessageId() { return replyToMessageId; }
+    public void setReplyToMessageId(Long value) { replyToMessageId = value; }
+    public long getReactionVersion() { return reactionVersion; }
+    public void setReactionVersion(long value) { reactionVersion = value; }
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 

@@ -100,7 +100,8 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
 
             Long conversationId = StompCommand.SUBSCRIBE.equals(accessor.getCommand())
                     ? extractConversationId(destination, "/topic/chat/",
-                        destination != null && destination.endsWith("/typing") ? "/typing" : "")
+                        destination != null && destination.endsWith("/typing") ? "/typing"
+                        : destination != null && destination.endsWith("/reactions") ? "/reactions" : "")
                     : extractConversationId(destination, "/app/chat/",
                         destination != null && destination.endsWith("/typing") ? "/typing" : "/send");
             if (conversationId == null) {

@@ -10,6 +10,10 @@ import { useConversationRead } from './useConversationRead';
 import { compareMessageOrder, formatMessageTime } from './messagePresentation';
 import { LimitedChatFriendship } from './LimitedChatFriendship';
 import { GroupInfoPanel } from './GroupInfoPanel';
+import { MessageActions } from './MessageActions';
+import { applyReactionState } from './reactions';
+import { getMessageReactions, setMessageReaction } from '../../api/reactions';
+import { MessageReactionState, ReplyPreview } from '../../types';
 
 const PAGE_SIZE = 20;
 const MAX_MESSAGE_LENGTH = 5000;
@@ -43,6 +47,16 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState('');
+  const [replyTarget, setReplyTarget] = useState<ReplyPreview | null>(null);
+  const [actionFeedback, setActionFeedback] = useState('');
+  const [reactionBusy, setReactionBusy] = useState<Set<number>>(new Set());
+  const reactionBusyRef = useRef(new Set<number>());
+  const reactionStatesRef = useRef(new Map<number, MessageReactionState>());
+  const reactionEventVersionsRef = useRef(new Map<number, number>());
+  const pendingReactionIdsRef = useRef(new Set<number>());
+  const reactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [error, setError] = useState('');
   const [sendError, setSendError] = useState('');
   const [checkingRecent, setCheckingRecent] = useState(false);
@@ -73,6 +87,66 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   useConversationRead(conversationId, token, messages, loading, messageAreaRef, onReadState);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (reactionTimerRef.current) clearTimeout(reactionTimerRef.current);
+    };
+  }, []);
+
+  function applyReactionSnapshot(states: MessageReactionState[]) {
+    for (const state of states) {
+      const previous = reactionStatesRef.current.get(state.messageId);
+      if (previous && state.version < previous.version) continue;
+      reactionStatesRef.current.set(state.messageId, state);
+    }
+    setMessages((current) => current.map((message) => applyReactionState(message, reactionStatesRef.current.get(message.messageId))));
+  }
+
+  async function refreshReactions(ids: number[]) {
+    if (!token || ids.length === 0) return;
+    try {
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const response = await getMessageReactions(conversationId, ids.slice(offset, offset + 100), token);
+        if (!mountedRef.current) return;
+        applyReactionSnapshot(response.items);
+      }
+    } catch {
+      if (mountedRef.current) setActionFeedback('Unable to refresh reactions.');
+    }
+  }
+
+  function queueReactionRefresh(messageId: number) {
+    pendingReactionIdsRef.current.add(messageId);
+    if (reactionTimerRef.current) return;
+    reactionTimerRef.current = setTimeout(() => {
+      reactionTimerRef.current = null;
+      const ids = [...pendingReactionIdsRef.current];
+      pendingReactionIdsRef.current.clear();
+      void refreshReactions(ids);
+    }, 60);
+  }
+
+  async function toggleReaction(messageId: number, key: string, add: boolean) {
+    if (!token || reactionBusyRef.current.has(messageId)) return;
+    reactionBusyRef.current.add(messageId);
+    setReactionBusy(new Set(reactionBusyRef.current));
+    setActionFeedback('');
+    try {
+      const state = await setMessageReaction(conversationId, messageId, key, add, token);
+      if (mountedRef.current) applyReactionSnapshot([state]);
+    } catch (failure) {
+      if (mountedRef.current) {
+        setActionFeedback(failure instanceof ApiError ? failure.message : 'Unable to update reaction. Try again.');
+        queueReactionRefresh(messageId);
+      }
+    } finally {
+      reactionBusyRef.current.delete(messageId);
+      if (mountedRef.current) setReactionBusy(new Set(reactionBusyRef.current));
+    }
+  }
+
+  useEffect(() => {
     if (!Number.isSafeInteger(conversationId) || conversationId <= 0) {
       setError('This conversation link is invalid.');
       setLoading(false);
@@ -100,7 +174,10 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       setGroup(info);
       if (info) onGroupChanged(info);
       for (const message of response.items) knownMessageIds.current.add(message.messageId);
-      setMessages((current) => mergeMessages(current, response.items));
+      setMessages((current) => mergeMessages(current, response.items.map((message) => applyReactionState(message, reactionStatesRef.current.get(message.messageId)))));
+      for (const message of response.items) {
+        if ((reactionEventVersionsRef.current.get(message.messageId) ?? 0) > (message.reactionVersion ?? 0)) queueReactionRefresh(message.messageId);
+      }
       setTotal(Math.max(response.total, response.items.length));
       setPage(response.page);
     }).catch((loadError: unknown) => {
@@ -178,6 +255,8 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
         setConnection(state);
         if (state === 'reconnecting') { clearRemoteTyping(); typingEventIdsRef.current.clear(); }
         if (state === 'connected') {
+          // Reconcile all loaded pages, including older messages, without reloading history.
+          if (connected) void refreshReactions([...knownMessageIds.current]);
           if (typingActiveRef.current && draftRef.current.trim()) {
             publishTypingState(conversationId, token, 'START');
           }
@@ -194,6 +273,14 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       },
       onMessage: (message) => { if (active) addMessage(message); },
       onTyping: (event) => { if (active) receiveTyping(event); },
+      onReaction: (event) => {
+        if (!active || event.conversationId !== conversationId) return;
+        const previous = Math.max(reactionEventVersionsRef.current.get(event.messageId) ?? 0,
+          reactionStatesRef.current.get(event.messageId)?.version ?? 0);
+        if (event.version <= previous) return;
+        reactionEventVersionsRef.current.set(event.messageId, event.version);
+        if (knownMessageIds.current.has(event.messageId)) queueReactionRefresh(event.messageId);
+      },
     });
     return () => {
       active = false;
@@ -241,6 +328,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
     if (!nearBottomRef.current) setHasNewMessages(true);
     onMessageRef.current?.(message, conversationRef.current?.participants.find((item) => item.userId === message.senderId)?.displayName);
     setMessages((current) => mergeMessages(current, [message]));
+    if ((reactionEventVersionsRef.current.get(message.messageId) ?? 0) > (message.reactionVersion ?? 0)) queueReactionRefresh(message.messageId);
     setTotal((current) => current + 1);
     if (message.senderId === user?.id) {
       setLimitedMessagesRemaining((current) => current === null ? null : Math.max(0, current - 1));
@@ -259,7 +347,10 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       const area = messageAreaRef.current;
       if (area) pendingOlderScrollRef.current = { height: area.scrollHeight, top: area.scrollTop };
       for (const message of response.items) knownMessageIds.current.add(message.messageId);
-      setMessages((current) => mergeMessages(current, response.items));
+      setMessages((current) => mergeMessages(current, response.items.map((message) => applyReactionState(message, reactionStatesRef.current.get(message.messageId)))));
+      for (const message of response.items) {
+        if ((reactionEventVersionsRef.current.get(message.messageId) ?? 0) > (message.reactionVersion ?? 0)) queueReactionRefresh(message.messageId);
+      }
       setTotal(response.total);
       setPage(response.page);
     } catch (loadError) {
@@ -280,7 +371,9 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
     setError('');
     shouldScrollToBottomRef.current = true;
     try {
-      const savedMessage = await sendMessage(conversationId, { content }, token);
+      const savedMessage = await sendMessage(conversationId, { content, ...(replyTarget ? { replyToMessageId: replyTarget.messageId } : {}) }, token);
+      if (!mountedRef.current) return;
+      setReplyTarget((current) => current === replyTarget ? null : current);
       onMessageRef.current?.(savedMessage, user?.displayName);
       if (!knownMessageIds.current.has(savedMessage.messageId)) {
         knownMessageIds.current.add(savedMessage.messageId);
@@ -457,11 +550,28 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
                 ? conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member'
                 : null;
               return (
-                <div className={outgoing ? 'chat-message-row outgoing' : 'chat-message-row incoming'} key={message.messageId} data-message-id={message.messageId}>
+                <div className={outgoing ? 'chat-message-row outgoing' : 'chat-message-row incoming'} key={message.messageId} data-message-id={message.messageId} tabIndex={-1}>
                   <article className={outgoing ? 'chat-bubble outgoing-bubble' : 'chat-bubble incoming-bubble'}>
                     {sender ? <strong className="chat-sender">{sender}</strong> : null}
+                    {message.replyToMessageId ? <button type="button" className="message-quote" onClick={() => {
+                      const original = messageAreaRef.current?.querySelector<HTMLElement>(`[data-message-id="${message.replyToMessageId}"]`);
+                      if (!original) { setActionFeedback('The original message is not loaded. Load older messages to find it.'); return; }
+                      original.scrollIntoView?.({ block: 'center', behavior: 'auto' });
+                      original.focus({ preventScroll: true });
+                    }}>
+                      <strong>{message.replyPreview?.senderDisplayName ?? 'Original message'}</strong>
+                      <span>{message.replyPreview?.excerpt ?? 'Preview unavailable'}</span>
+                    </button> : null}
                     <p>{message.content}</p>
                     <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
+                    <MessageActions message={message} busy={reactionBusy.has(message.messageId)}
+                      onReact={(key, add) => void toggleReaction(message.messageId, key, add)}
+                      onReply={() => {
+                        setReplyTarget({ messageId: message.messageId,
+                          senderDisplayName: conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member',
+                          excerpt: [...message.content].slice(0, 160).join('') });
+                        requestAnimationFrame(() => composerRef.current?.focus());
+                      }} />
                   </article>
                 </div>
               );
@@ -489,9 +599,16 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
           <div className="typing-indicator" role="status" aria-label="Typing activity" title={typingLabel || undefined} aria-live="polite" aria-atomic="true">
             {typingPeople ? <><span className="typing-people">{typingPeople}</span>{' '}<span className="typing-action">{typingAction}</span></> : null}
           </div>
+          {actionFeedback ? <div className="message-action-status" role="status">{actionFeedback}
+            <button type="button" onClick={() => { setActionFeedback(''); void refreshReactions([...knownMessageIds.current]); }}>Refresh reactions</button>
+          </div> : null}
+          {replyTarget ? <div className="composer-reply" aria-label="Reply preview">
+            <span><strong>Replying to {replyTarget.senderDisplayName}</strong><small>{replyTarget.excerpt}</small></span>
+            <button type="button" aria-label="Cancel reply" onClick={() => { setReplyTarget(null); composerRef.current?.focus(); }}>×</button>
+          </div> : null}
           <form className="chat-composer" onSubmit={(event) => void submitMessage(event)}>
             <label className="visually-hidden" htmlFor="chat-message">Message</label>
-            <textarea id="chat-message" value={draft} onChange={(event) => {
+            <textarea ref={composerRef} id="chat-message" value={draft} onChange={(event) => {
               setDraft(event.target.value);
               updateTypingFromDraft(event.target.value);
             }} onKeyDown={handleComposerKeyDown}
@@ -518,6 +635,10 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
 export function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) {
   const messagesById = new Map<number, ChatMessage>();
   for (const message of existing) messagesById.set(message.messageId, message);
-  for (const message of incoming) messagesById.set(message.messageId, message);
+  for (const message of incoming) {
+    const previous = messagesById.get(message.messageId);
+    messagesById.set(message.messageId, previous && (previous.reactionVersion ?? 0) > (message.reactionVersion ?? 0)
+      ? { ...message, reactions: previous.reactions, reactionVersion: previous.reactionVersion } : message);
+  }
   return [...messagesById.values()].sort(compareMessageOrder);
 }
