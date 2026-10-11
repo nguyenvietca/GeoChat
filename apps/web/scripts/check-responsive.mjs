@@ -5,10 +5,12 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const stage = process.argv[2] ?? 'verified';
-if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark', 'actions-light', 'actions-dark'].includes(stage)) throw new Error('Unknown verification stage.');
+if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark', 'actions-light', 'actions-dark', 'images-light', 'images-dark'].includes(stage)) throw new Error('Unknown verification stage.');
 const typingStage = stage.startsWith('typing-');
+const imagesStage = stage.startsWith('images-');
+const photoFixture = 'iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAADzUlEQVR4nO3du21VQRRAUYNIaIQ2KMZ1IISog2Iow86dkZMSICEkvgL7ztkza8X2fWeku3XmyYGf3X16uAGanq8eAPh3AoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBD24rEe9Prtm8d6FJzg47v3//8QGxjCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCHs0f47IRPc3778mx979eHz08/CFQR8SrS/+hUxpwn4oG5//xwlFwn40G5/82Qlhwg44+nS/ekHyThBwAGXpfvjh8p4OH9Gmm5JvUM+nT+ygecaEo9VPJkNPNSQesfOw1cCnmhmLTOnOpwr9CzDI3GdnsYGHmR4vbk5TyDgKVpVtKbdmIBHKPZQnHk/AoYwAa/XXWXdybch4MXqDdTnrxPwSnu8/XucIkrAECbgZXZaXDudpUXAa+z3xu93ogQBQ5iAF9h1We16rskEDGECvtrea2rv0w0kYAgTMIQJ+FIn3DBPOOMcAoYwAUOYgK9zzt3ynJMuJ2AIEzCECRjCBHyR074WnnbeVQQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBd59eHzzUlOO+8qAoYwAUOYgCFMwNc552vhOSddTsAQJmAIE/ClTrhbnnDGOQQMYQKGMAFfbe8b5t6nG0jAECbgBXZdU7ueazIBQ5iA19hvWe13ogQBL7PTG7/TWVoEDGECXmmPxbXHKaIEvFj97a/PXyfg9boNdCffhoAhTMAjFFdZceb9CHiKVg+taTcm4EEqVVTmPMGL1QPwkzbub1/ejCTdaWzgiWZ2MnOqwwl4qGm1TJuHr1yh5xpynZbuZDbwdGv7Ue9wNnDAklUs3QQBZ1yWsXRDBBzzra5HL1m3RQI+vWTdpgk47/sC/zJm0W5DwFtR5mn8GQnCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCHs2d2nh9UzAP/IBoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwHDT9QXLM62/D75iIgAAAABJRU5ErkJggg==';
 const actionsStage = stage.startsWith('actions-');
-const output = path.resolve(actionsStage ? 'build/prompt034' : typingStage ? 'build/prompt033' : 'build/prompt031', stage);
+const output = path.resolve(imagesStage ? 'build/prompt035' : actionsStage ? 'build/prompt034' : typingStage ? 'build/prompt033' : 'build/prompt031', stage);
 await mkdir(output, { recursive: true });
 // Keep browser caches outside Vite's watched app tree to avoid unrelated HTML reloads.
 const profileRoot = path.resolve('../../build/prompt031-browser-profiles');
@@ -52,6 +54,7 @@ const fixtureScript = `
     const mode = new URLSearchParams(location.search).get('visual');
     if (mode === 'loading' && pathname === '/api/v1/friends') return new Promise(() => {});
     if (mode === 'error' && pathname === '/api/v1/friends') return new Response(JSON.stringify({success:false,data:null,message:'Unable to load friends. Please try again.'}), {status:500,headers:{'Content-Type':'application/json'}});
+    if (pathname.startsWith('/api/v1/chats/images/')) return originalFetch('data:image/png;base64,${photoFixture}');
     let data = {};
     if (pathname === '/api/v1/users/me') data = user;
     else if (pathname === '/api/v1/chats') data = {items:conversations};
@@ -61,7 +64,7 @@ const fixtureScript = `
     else if (pathname.includes('/groups/')) data = group;
     else if (pathname.endsWith('/messages')) {
       const id = pathname.includes('/50/') ? 50 : 41;
-      data = {items:Array.from({length:24},(_,index)=>({messageId:index+1,conversationId:id,senderId:index%3 ? 22 : 9,content:index===23?'Tin nhắn nhiều dòng\\nNội dung tiếng Việt và đường dẫn dài https://example.com/'+ 'abcdefgh'.repeat(12):'Một tin nhắn để kiểm tra bố cục '+index,createdAt:'2026-10-10T10:00:'+String(index).padStart(2,'0')+'Z'})),total:24,page:0,size:20};
+      data = {items:Array.from({length:24},(_,index)=>({messageId:index+1,conversationId:id,senderId:index%3 ? 22 : 9,...(${imagesStage} && index===23 ? {attachment:{attachmentId:1,contentType:'image/png',sizeBytes:1000,width:320,height:200}}:{}),content:index===23?'Tin nhắn nhiều dòng\\nNội dung tiếng Việt và đường dẫn dài https://example.com/'+ 'abcdefgh'.repeat(12):'Một tin nhắn để kiểm tra bố cục '+index,createdAt:'2026-10-10T10:00:'+String(index).padStart(2,'0')+'Z'})),total:24,page:0,size:20};
     } else if (pathname.endsWith('/reactions')) data = {items:[]};
     else if (pathname.endsWith('/presence')) data = {items:[{userId:22,online:true}]};
     else if (pathname.endsWith('/read')) data = {conversationId:pathname.includes('/50/')?50:41,unreadCount:0,readStateVersion:2};
@@ -126,11 +129,11 @@ try {
   await send('Page.bringToFront');
   await send('Network.enable');
   await send('Network.setBlockedURLs', { urls: ['*fonts.googleapis.com*', '*fonts.gstatic.com*'] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage || actionsStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage || actionsStage || imagesStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
   const results = [];
-  for (const width of (stage === 'keyboard' ? [375] : typingStage || actionsStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
+  for (const width of (stage === 'keyboard' ? [375] : typingStage || actionsStage || imagesStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
     await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    for (const route of (stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage || actionsStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
+    for (const route of (stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage || actionsStage || imagesStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
       await send('Emulation.setDeviceMetricsOverride', { width, height: stage === 'keyboard' ? 450 : 900, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `http://127.0.0.1:5179/${route.startsWith('public/') ? route.slice(7) : 'app/' + route}` });
       for (let attempt = 0; attempt < 50; attempt++) {
@@ -210,10 +213,30 @@ try {
         result.actionsOk = result.actionsOk && await evaluate(`!!document.querySelector('.composer-reply') && document.activeElement?.id==='chat-message' && document.documentElement.scrollWidth<=innerWidth`);
         await evaluate(`document.querySelector('[aria-label="Cancel reply"]').click()`);
       }
+      if (imagesStage) {
+        await evaluate(`document.querySelector('.chat-image')?.scrollIntoView({block:'center'});`);
+        for(let attempt=0;attempt<100;attempt++) {
+          if(await evaluate(`!!document.querySelector('.chat-image:not(:disabled)')`))break;
+          await delay(100);
+        }
+        await evaluate(`document.querySelector('.chat-image:not(:disabled)').click();`);
+        await delay(50);
+        result.viewerOk = await evaluate(`(() => {const viewer=document.querySelector('.image-viewer');const r=viewer?.getBoundingClientRect();return !!r && r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;})()`);
+        const viewerShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+        await writeFile(path.join(output,`${width}-${route.replaceAll('/','-')}-viewer.png`),Buffer.from(viewerShot.data,'base64'));
+        await evaluate(`document.querySelector('[aria-label="Close photo viewer"]').click();`);
+        await delay(50);
+        await evaluate(`(async()=>{const blob=await (await fetch('data:image/png;base64,${photoFixture}')).blob();const transfer=new DataTransfer();transfer.items.add(new File([blob],'selected-photo.png',{type:'image/png'}));const input=document.querySelector('[aria-label="Choose image"]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await delay(50);
+        result.previewOk=await evaluate(`(() => {const preview=document.querySelector('.selected-image');const composer=document.querySelector('.chat-composer').getBoundingClientRect();return !!preview && composer.bottom<=innerHeight && document.documentElement.scrollWidth<=innerWidth;})()`);
+        const previewShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+        await writeFile(path.join(output,`${width}-${route.replaceAll('/','-')}-preview.png`),Buffer.from(previewShot.data,'base64'));
+        await evaluate(`document.querySelector('[aria-label="Remove selected image"]').click();`);
+      }
       results.push(result);
       await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
       console.log(`${width} ${route}: overflow=${result.overflow}, composerVisible=${result.composerVisible}`);
-      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms' || typingStage || actionsStage) {
+      if (['chat/50', 'chat', 'friends', 'profile', 'notifications'].includes(route) || route.includes('?visual=') || stage === 'forms' || typingStage || actionsStage || imagesStage) {
         const screenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
         await writeFile(path.join(output, `${width}-${route.replace(/[^a-z0-9-]/gi, '-')}.png`), Buffer.from(screenshot.data, 'base64'));
       }
@@ -225,7 +248,7 @@ try {
     }
   }
   await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
-  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length || item.typingOk === false || item.typingStopped === false || item.actionsOk === false);
+  const failures = results.filter(item=>item.overflow || item.controlsOutside.length || !item.composerVisible || !item.navigationUsable || item.overlapping.length || item.typingOk === false || item.typingStopped === false || item.actionsOk === false || item.viewerOk === false || item.previewOk === false);
   console.log(JSON.stringify({ stage, pages:results.length, failures, output }, null, 2));
   process.exitCode = failures.length ? 1 : 0;
 } finally {

@@ -69,7 +69,7 @@ export function MessageActions({ message, busy, onReply, onReact }: Props) {
       {open === 'actions' ? <>
         <button type="button" role="menuitem" onClick={() => { setOpen(null); onReply(); }}>Reply</button>
         <button type="button" role="menuitem" onClick={() => setOpen('reactions')}>React</button>
-        <button type="button" role="menuitem" onClick={() => void copy()}>Copy text</button>
+        {message.content ? <button type="button" role="menuitem" onClick={() => void copy()}>Copy text</button> : null}
       </> : supportedReactions.map((item) => {
         const selected = message.reactions?.some((reaction) => reaction.emoji === item.emoji && reaction.reactedByMe) ?? false;
         return <button key={item.key} type="button" role="menuitemcheckbox" aria-checked={selected} aria-label={item.label}

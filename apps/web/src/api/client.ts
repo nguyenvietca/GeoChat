@@ -10,6 +10,7 @@ type ApiRequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   token?: string;
   body?: unknown;
+  signal?: AbortSignal;
 };
 
 export class ApiError extends Error {
@@ -32,10 +33,11 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       method: options.method ?? 'GET',
       headers: {
         Accept: 'application/json',
-        ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(options.body === undefined || options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
       },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.body === undefined ? undefined : options.body instanceof FormData ? options.body : JSON.stringify(options.body),
+      signal: options.signal,
     });
   } catch {
     throw new ApiError('Unable to connect. Check your network and try again.');
@@ -71,4 +73,13 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   }
 
   return payload.data;
+}
+
+export async function apiImage(path: string, token: string, signal: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}${path}`, { headers: { Authorization: `Bearer ${token}` }, signal, cache: 'no-store' });
+  if (response.status === 401) unauthorizedHandler?.();
+  if (!response.ok) throw new ApiError('Image unavailable.', response.status);
+  const blob = await response.blob();
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(blob.type) || blob.size > 5 * 1024 * 1024) throw new ApiError('Invalid image response.');
+  return blob;
 }

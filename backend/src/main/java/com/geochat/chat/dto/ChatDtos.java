@@ -58,12 +58,15 @@ public class ChatDtos {
             Long replyToMessageId,
             ReplyPreview replyPreview,
             List<ReactionSummary> reactions,
-            long reactionVersion
+            long reactionVersion,
+            ImageAttachment attachment
     ) {
         public MessageResponse(Long messageId, Long conversationId, Long senderId, String content, Instant createdAt) {
-            this(messageId, conversationId, senderId, content, createdAt, null, null, List.of(), 0);
+            this(messageId, conversationId, senderId, content, createdAt, null, null, List.of(), 0, null);
         }
     }
+
+    public record ImageAttachment(Long attachmentId, String contentType, long sizeBytes, int width, int height) {}
 
     public record ReplyPreview(Long messageId, String senderDisplayName, String excerpt) {}
     public record ReactionSummary(String emoji, long count, boolean reactedByMe) {}

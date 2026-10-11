@@ -34,3 +34,7 @@ Thumbs.db
 backend/.classpath
 backend/.project
 backend/.settings
+
+# Private chat image storage
+var/chat-images/
+**/var/chat-images/

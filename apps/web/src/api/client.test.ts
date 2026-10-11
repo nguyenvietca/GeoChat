@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiRequest, setUnauthorizedHandler } from './client';
+import { apiRequest, apiImage, setUnauthorizedHandler } from './client';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -7,6 +7,18 @@ afterEach(() => {
 });
 
 describe('web API client', () => {
+  it('sends multipart without overriding the boundary and loads private bytes without token URLs',async()=>{
+    const fetchMock=vi.fn().mockResolvedValueOnce({ok:true,status:200,text:async()=>JSON.stringify({success:true,data:{id:1}})})
+      .mockResolvedValueOnce({ok:true,status:200,blob:async()=>new Blob(['image'],{type:'image/png'})});
+    vi.stubGlobal('fetch',fetchMock);
+    const body=new FormData();body.append('image',new Blob(['image'],{type:'image/png'}),'photo.png');
+    await apiRequest('/images',{method:'POST',body,token:'jwt'});
+    const options=fetchMock.mock.calls[0][1];expect(options.body).toBe(body);expect(options.headers['Content-Type']).toBeUndefined();
+    await apiImage('/api/v1/chats/images/1','jwt',new AbortController().signal);
+    expect(fetchMock.mock.calls[1][0]).not.toContain('jwt');
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({cache:'no-store',headers:{Authorization:'Bearer jwt'}});
+  });
+
   it('attaches the bearer token centrally and parses the API envelope', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

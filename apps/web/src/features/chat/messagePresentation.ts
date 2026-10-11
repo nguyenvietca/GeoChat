@@ -27,7 +27,7 @@ export function updateConversation(item: Conversation, message: ChatMessage, sen
   if (item.lastMessageId === message.messageId) return sender && sender !== item.lastMessageSender
     ? { ...item, lastMessageSender: sender } : item;
   if (item.lastMessageAt && compareMessageOrder(message, { createdAt: item.lastMessageAt, messageId: item.lastMessageId ?? 0 }) < 0) return item;
-  return { ...item, lastMessage: message.content, lastMessageId: message.messageId,
+  return { ...item, lastMessage: message.attachment ? `Photo${message.content ? ': ' + message.content : ''}` : message.content, lastMessageId: message.messageId,
     lastMessageAt: message.createdAt, lastMessageSender: sender ?? null };
 }
 

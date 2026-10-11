@@ -44,6 +44,7 @@ public class GroupService {
     private final int maxGroupMembers;
 
     private final MessageRepository messageRepository;
+    private final com.geochat.chat.repository.MessageAttachmentRepository attachments;
 
     public GroupService(ConversationRepository conversationRepository,
                         MessageRepository messageRepository,
@@ -51,7 +52,7 @@ public class GroupService {
                         UserRepository userRepository,
                         FriendRequestRepository friendRequestRepository,
                         ApplicationEventPublisher applicationEventPublisher,
-                        @Value("${app.chat.max-group-members:100}") int maxGroupMembers) {
+                        @Value("${app.chat.max-group-members:100}") int maxGroupMembers, com.geochat.chat.repository.MessageAttachmentRepository attachments) {
         this.conversationRepository = conversationRepository;
         this.participantRepository = participantRepository;
         this.userRepository = userRepository;
@@ -59,6 +60,7 @@ public class GroupService {
         this.applicationEventPublisher = applicationEventPublisher;
         this.maxGroupMembers = maxGroupMembers;
         this.messageRepository = messageRepository;
+        this.attachments = attachments;
     }
 
     @Transactional
@@ -273,7 +275,9 @@ public class GroupService {
                         participant.getRole(), participant.getCreatedAt()))
                 .toList();
 
+        var imageKeys = attachments.findByConversationId(groupId).stream().map(com.geochat.chat.entity.MessageAttachment::getStorageKey).toList();
         messageRepository.deleteAllByConversationId(groupId);
+        applicationEventPublisher.publishEvent(new com.geochat.chat.event.ChatImagesDeletedEvent(imageKeys));
         participantRepository.deleteAll(participants);
         conversationRepository.delete(conversation);
         for (GroupMemberResponse member : formerMembers) {

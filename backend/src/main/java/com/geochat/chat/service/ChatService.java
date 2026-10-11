@@ -59,6 +59,8 @@ public class ChatService {
 	private final ConversationParticipantRepository conversationParticipantRepository;
 	private final MessageRepository messageRepository;
 	private final MessageReactionRepository reactionRepository;
+    private final com.geochat.chat.repository.MessageAttachmentRepository attachmentRepository;
+    private final ImageStorage imageStorage;
 	private final UserRepository userRepository;
 	private final FriendRequestRepository friendRequestRepository;
 	private final ApplicationEventPublisher applicationEventPublisher;
@@ -70,11 +72,12 @@ public class ChatService {
 			ConversationParticipantRepository conversationParticipantRepository, MessageRepository messageRepository,
 			UserRepository userRepository, FriendRequestRepository friendRequestRepository,
 				ApplicationEventPublisher applicationEventPublisher, LocationService locationService,
-				WebSocketSessionRegistry webSocketSessionRegistry, MessageReactionRepository reactionRepository) {
+				WebSocketSessionRegistry webSocketSessionRegistry, MessageReactionRepository reactionRepository, com.geochat.chat.repository.MessageAttachmentRepository attachmentRepository, ImageStorage imageStorage) {
 		this.conversationRepository = conversationRepository;
 		this.conversationParticipantRepository = conversationParticipantRepository;
 		this.messageRepository = messageRepository;
 		this.reactionRepository = reactionRepository;
+        this.attachmentRepository = attachmentRepository; this.imageStorage = imageStorage;
 		this.userRepository = userRepository;
 		this.friendRequestRepository = friendRequestRepository;
 		this.applicationEventPublisher = applicationEventPublisher;
@@ -242,6 +245,9 @@ public class ChatService {
 			items.add(summary);
 		}
 
+        var latestIds = items.stream().map(ConversationSummaryResponse::lastMessageId).filter(java.util.Objects::nonNull).toList();
+        java.util.Set<Long> latestImages = latestIds.isEmpty() ? java.util.Set.of() : attachmentRepository.findByMessageIdIn(latestIds).stream().map(com.geochat.chat.entity.MessageAttachment::getMessageId).collect(Collectors.toSet());
+        items.replaceAll(item -> item.lastMessageId() == null || !latestImages.contains(item.lastMessageId()) ? item : new ConversationSummaryResponse(item.conversationId(),item.type(),item.participant(),item.updatedAt(),"Photo"+(item.lastMessage().isBlank()?"":": "+item.lastMessage()),item.lastMessageId(),item.lastMessageAt(),item.lastMessageSender(),item.groupName(),item.unreadCount(),item.readStateVersion(),item.readStateSince()));
         items.sort(Comparator.comparing(
                 (ConversationSummaryResponse item) -> item.lastMessageAt() == null ? item.updatedAt() : item.lastMessageAt(),
                 Comparator.reverseOrder()).thenComparing(ConversationSummaryResponse::conversationId));
@@ -362,6 +368,9 @@ public class ChatService {
 	}
 
 	private MessageResponse createPersistedMessage(String username, Long conversationId, String content, Long replyToMessageId) {
+        return createPersistedMessage(username, conversationId, content, replyToMessageId, null, null);
+    }
+    private MessageResponse createPersistedMessage(String username, Long conversationId, String content, Long replyToMessageId, ImageStorage.Stored image, String requestId) {
 		User currentUser = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
@@ -379,7 +388,7 @@ public class ChatService {
             }
         }
 
-		if (content == null || content.isBlank()) {
+		if (image == null && (content == null || content.isBlank())) {
 			throw new IllegalArgumentException("message content is required");
 		}
 
@@ -404,6 +413,7 @@ public class ChatService {
 		message.setCreatedAt(Instant.now());
 
 		Message saved = messageRepository.save(message);
+        if (image != null) attachmentRepository.saveAndFlush(new com.geochat.chat.entity.MessageAttachment(saved.getId(),conversationId,currentUser.getId(),requestId,image));
 
 		conversation.setUpdatedAt(Instant.now());
 		conversationRepository.save(conversation);
@@ -425,6 +435,38 @@ public class ChatService {
                 currentUser.getDisplayName()));
         return response;
 	}
+
+    @Transactional
+    public MessageResponse sendImage(String username, Long conversationId, org.springframework.web.multipart.MultipartFile file, String caption, Long replyId, String requestId) {
+        // Membership lock serializes duplicate submissions and deletion with image binding.
+        User user = requireActionUser(username, conversationId);
+        try { if (!java.util.UUID.fromString(requestId).toString().equals(requestId)) throw new IllegalArgumentException(); }
+        catch (RuntimeException ex) { throw new IllegalArgumentException("A valid image request ID is required"); }
+        var previous = attachmentRepository.findByRequestId(requestId);
+        if (previous.isPresent()) {
+            var image = previous.get();
+            if (!image.getUploaderId().equals(user.getId()) || !image.getConversationId().equals(conversationId)) throw new AccessDeniedException("Image request unavailable");
+            var saved = messageRepository.findById(image.getMessageId()).orElseThrow();
+            if (!saved.getContent().equals(caption == null ? "" : caption.trim()) || !java.util.Objects.equals(saved.getReplyToMessageId(), replyId)) throw new IllegalArgumentException("This image was already sent with different text. Check recent messages before choosing it again");
+            return presentMessages(List.of(saved), user.getId()).getFirst();
+        }
+        String text = caption == null ? "" : caption.trim();
+        if (text.length() > 5000) throw new IllegalArgumentException("Caption must be at most 5000 characters");
+        ImageStorage.Stored stored = imageStorage.store(file);
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+            @Override public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) try { imageStorage.delete(stored.key()); } catch (RuntimeException ignored) { }
+            }
+        });
+        return createPersistedMessage(username, conversationId, text, replyId, stored, requestId);
+    }
+
+    @Transactional
+    public com.geochat.chat.entity.MessageAttachment authorizedImage(String username, Long id) {
+        var image = attachmentRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Image unavailable"));
+        if (!isParticipant(username, image.getConversationId())) throw new EntityNotFoundException("Image unavailable");
+        return image;
+    }
 
     // URL-safe keys avoid servlet/path encoding differences for emoji characters.
     public static final List<String> REACTION_KEYS = List.of("thumbs-up", "heart", "laugh", "surprised", "sad", "angry");
@@ -500,12 +542,13 @@ public class ChatService {
                 .stream().collect(Collectors.toMap(User::getId, java.util.function.Function.identity()));
         Map<Long, MessageReactionState> reactions = reactionStates(messages, userId).stream()
                 .collect(Collectors.toMap(MessageReactionState::messageId, java.util.function.Function.identity()));
+        Map<Long, com.geochat.chat.dto.ChatDtos.ImageAttachment> images = attachmentRepository.findByMessageIdIn(messages.stream().map(Message::getId).toList()).stream().collect(Collectors.toMap(com.geochat.chat.entity.MessageAttachment::getMessageId, item -> new com.geochat.chat.dto.ChatDtos.ImageAttachment(item.getId(),item.getContentType(),item.getSizeBytes(),item.getWidth(),item.getHeight())));
         return messages.stream().map(message -> {
             Message original = originals.get(message.getReplyToMessageId());
             ReplyPreview preview = null;
             if (original != null && original.getConversationId().equals(message.getConversationId())) {
                 User sender = senders.get(original.getSenderId());
-                String content = original.getContent();
+                String content = original.getContent().isBlank() ? "Photo" : original.getContent();
                 int end = content.offsetByCodePoints(0, Math.min(160, content.codePointCount(0, content.length())));
                 preview = new ReplyPreview(original.getId(), sender == null ? "Member" : sender.getDisplayName(),
                         content.substring(0, end));
@@ -513,7 +556,7 @@ public class ChatService {
             var state = reactions.get(message.getId());
             return new MessageResponse(message.getId(), message.getConversationId(), message.getSenderId(),
                     message.getContent(), message.getCreatedAt(), message.getReplyToMessageId(), preview,
-                    state.reactions(), state.version());
+                    state.reactions(), state.version(), images.get(message.getId()));
         }).toList();
     }
 

@@ -103,7 +103,10 @@ export type OpenDirectConversationResponse = {
   participant: ConversationUser;
 };
 
+export type ImageAttachment = { attachmentId: number; contentType: string; sizeBytes: number; width: number; height: number };
+
 export type ChatMessage = {
+  attachment?: ImageAttachment | null;
   messageId: number;
   conversationId: number;
   senderId: number;

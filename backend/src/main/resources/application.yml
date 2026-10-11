@@ -1,4 +1,8 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   application:
     name: geochat
   datasource:
@@ -36,3 +40,9 @@ push-notifications:
 
 server:
   port: ${SERVER_PORT:8080}
+
+geochat:
+  upload:
+    storage-path: ${GEOCHAT_IMAGE_STORAGE:./var/chat-images}
+    max-image-size: ${GEOCHAT_MAX_IMAGE_SIZE:5242880}
+    allowed-types: ${GEOCHAT_IMAGE_TYPES:image/jpeg,image/png,image/webp}

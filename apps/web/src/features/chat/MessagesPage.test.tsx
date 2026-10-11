@@ -7,6 +7,7 @@ import { getConversationDetail, getConversationPresence, getConversations, getMe
 import { addGroupMembers, createGroup, deleteGroup, getGroup, getGroupMembers, leaveGroup, removeGroupMember, renameGroup } from '../../api/groups';
 import { ChatMessage, ChatTypingEvent, ConversationDetail, GroupInfo, GroupManagementEvent, User } from '../../types';
 import { publishTypingState, subscribeToConversation } from '../../services/chatWebSocket';
+import { sendImage } from '../../api/images';
 import { getMessageReactions, setMessageReaction } from '../../api/reactions';
 import { ReactionEvent } from '../../types';
 
@@ -22,6 +23,7 @@ const socket = vi.hoisted(() => ({
   presenceHandlers: new Map<number, PresenceHandler>(),
 }));
 
+vi.mock('../../api/images', async (original) => ({ ...(await original<typeof import('../../api/images')>()), sendImage: vi.fn() }));
 vi.mock('../../api/auth', () => ({ getCurrentUser: vi.fn() }));
 vi.mock('../../api/reactions', () => ({ getMessageReactions: vi.fn(), setMessageReaction: vi.fn() }));
 vi.mock('../../api/users', () => ({ searchUsers: vi.fn() }));
@@ -119,6 +121,73 @@ describe('web messages split view and group chat', () => {
       { user: rowan, role: 'OWNER', joinedAt: '' }, { user: mira, role: 'MEMBER', joinedAt: '' },
     ] });
     vi.mocked(openDirectConversation).mockResolvedValue({ conversationId: 41, type: 'DIRECT', participant: rowan });
+  });
+
+  it('selects/removes an image without losing draft and sends an image-only message', async () => {
+    const create=vi.fn().mockReturnValue('blob:selection');const revoke=vi.fn();
+    Object.defineProperty(URL,'createObjectURL',{configurable:true,value:create});
+    Object.defineProperty(URL,'revokeObjectURL',{configurable:true,value:revoke});
+    await openMessages('/app/chat/41');
+    const composer=await screen.findByRole('textbox',{name:'Message'});
+    await waitFor(()=>expect((composer as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(composer,{target:{value:'Caption draft'}});
+    const file=new File(['valid image'],'photo.png',{type:'image/png'});
+    fireEvent.change(screen.getByLabelText('Choose image'),{target:{files:[file]}});
+    expect(screen.getByAltText('Selected photo, not sent')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{name:'Remove selected image'}));
+    expect((composer as HTMLTextAreaElement).value).toBe('Caption draft');expect(revoke).toHaveBeenCalledWith('blob:selection');
+    fireEvent.change(composer,{target:{value:''}});
+    fireEvent.change(screen.getByLabelText('Choose image'),{target:{files:[file]}});
+    vi.mocked(sendImage).mockResolvedValueOnce(message(70,41,9,'Photo saved'));
+    fireEvent.click(screen.getByRole('button',{name:'Send'}));
+    await screen.findByText('Photo saved');
+    expect(sendImage).toHaveBeenCalledWith(41,file,'',expect.any(String),undefined,'session-token',expect.any(AbortSignal));
+    expect(screen.queryByLabelText('Selected image preview')).toBeNull();
+  });
+
+  it('rejects unsupported/oversized images and preserves selection for an idempotent retry', async () => {
+    Object.defineProperty(URL,'createObjectURL',{configurable:true,value:vi.fn().mockReturnValue('blob:retry')});
+    Object.defineProperty(URL,'revokeObjectURL',{configurable:true,value:vi.fn()});
+    await openMessages('/app/chat/41');
+    const composer=await screen.findByRole('textbox',{name:'Message'});
+    await waitFor(()=>expect((composer as HTMLTextAreaElement).disabled).toBe(false));
+    const input=screen.getByLabelText('Choose image');
+    fireEvent.change(input,{target:{files:[new File(['bad'],'file.svg',{type:'image/svg+xml'})]}});
+    await screen.findByText('Choose a JPEG, PNG or WebP image.');
+    fireEvent.change(input,{target:{files:[new File([new Uint8Array(5242881)],'big.png',{type:'image/png'})]}});
+    await screen.findByText('Image must be at most 5 MB.');
+    const file=new File(['image'],'photo.png',{type:'image/png'});
+    fireEvent.change(input,{target:{files:[file]}});fireEvent.change(composer,{target:{value:'Caption'}});
+    vi.mocked(sendImage).mockRejectedValueOnce(new Error('network'));
+    fireEvent.click(screen.getByRole('button',{name:'Send'}));
+    await screen.findByText(/Your draft is saved/);
+    expect(screen.getByLabelText('Selected image preview')).toBeTruthy();
+    expect((composer as HTMLTextAreaElement).value).toBe('Caption');
+    const key=vi.mocked(sendImage).mock.calls.at(-1)![3];
+    vi.mocked(sendImage).mockResolvedValueOnce(message(71,41,9,'Caption'));
+    fireEvent.click(screen.getByRole('button',{name:'Send'}));
+    await waitFor(()=>expect(screen.queryByLabelText('Selected image preview')).toBeNull());
+    expect(vi.mocked(sendImage).mock.calls.at(-1)![3]).toBe(key);
+  });
+
+  it('isolates a pending image send when switching conversation and revokes its preview', async () => {
+    const revoke=vi.fn();
+    Object.defineProperty(URL,'createObjectURL',{configurable:true,value:vi.fn().mockReturnValue('blob:pending')});
+    Object.defineProperty(URL,'revokeObjectURL',{configurable:true,value:revoke});
+    vi.mocked(getConversations).mockResolvedValue({items:[directConversation,{...groupConversation,groupName:'Trip crew'}]});
+    await openMessages('/app/chat/41');
+    await waitFor(()=>expect(screen.getByLabelText('Message').hasAttribute('disabled')).toBe(false));
+    fireEvent.change(screen.getByLabelText('Choose image'),{target:{files:[new File(['image'],'photo.png',{type:'image/png'})]}});
+    let finish:(message:ChatMessage)=>void=()=>{};
+    vi.mocked(sendImage).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    fireEvent.click(screen.getByRole('button',{name:'Send'}));
+    await screen.findByText('Uploading and sending...');
+    const signal=vi.mocked(sendImage).mock.calls.at(-1)![6];
+    fireEvent.click(screen.getByRole('link',{name:/Trip crew/}));
+    await waitFor(()=>expect(screen.queryByLabelText('Selected image preview')).toBeNull());
+    expect(signal.aborted).toBe(true);expect(revoke).toHaveBeenCalledWith('blob:pending');
+    await act(async()=>{finish(message(80,41,9,'Late photo'));});
+    expect(screen.queryByText('Late photo')).toBeNull();
   });
 
   it('keeps the draft when replying/cancelling, sends the reference and renders a navigable quoted preview', async () => {

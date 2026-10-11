@@ -1,4 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { sendImage, validateImage } from '../../api/images';
+import { ChatImage } from './ChatImage';
 import { Link } from 'react-router-dom';
 import { getConversationDetail, getConversationPresence, getMessages, sendMessage } from '../../api/chats';
 import { ApiError } from '../../api/client';
@@ -47,6 +49,17 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState('');
+  const [selectedImage,setSelectedImage]=useState<{file:File;url:string;requestId:string}|null>(null);
+  const imageInputRef=useRef<HTMLInputElement>(null);
+  const imageUploadRef=useRef<AbortController|null>(null);
+  useEffect(()=>()=>{imageUploadRef.current?.abort();},[]);
+  useEffect(()=>()=>{if(selectedImage)URL.revokeObjectURL(selectedImage.url);},[selectedImage]);
+  function selectImage(file?:File){
+    if(!file)return;
+    const failure=validateImage(file);
+    if(failure){setSendError(failure);return;}
+    setSendError('');setSelectedImage({file,url:URL.createObjectURL(file),requestId:crypto.randomUUID()});
+  }
   const [replyTarget, setReplyTarget] = useState<ReplyPreview | null>(null);
   const [actionFeedback, setActionFeedback] = useState('');
   const [reactionBusy, setReactionBusy] = useState<Set<number>>(new Set());
@@ -364,15 +377,19 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const submitMessage = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const content = draft.trim();
-    if (!content || content.length > MAX_MESSAGE_LENGTH || !token || sendingRef.current || limitedMessagesRemaining === 0) return;
+    if ((!content && !selectedImage) || content.length > MAX_MESSAGE_LENGTH || !token || sendingRef.current || limitedMessagesRemaining === 0) return;
     sendingRef.current = true;
     setSending(true);
     setSendError('');
     setError('');
     shouldScrollToBottomRef.current = true;
     try {
-      const savedMessage = await sendMessage(conversationId, { content, ...(replyTarget ? { replyToMessageId: replyTarget.messageId } : {}) }, token);
+      imageUploadRef.current=new AbortController();
+      const savedMessage = selectedImage
+        ? await sendImage(conversationId,selectedImage.file,content,selectedImage.requestId,replyTarget?.messageId,token,imageUploadRef.current.signal)
+        : await sendMessage(conversationId, { content, ...(replyTarget ? { replyToMessageId: replyTarget.messageId } : {}) }, token);
       if (!mountedRef.current) return;
+      setSelectedImage(null);
       setReplyTarget((current) => current === replyTarget ? null : current);
       onMessageRef.current?.(savedMessage, user?.displayName);
       if (!knownMessageIds.current.has(savedMessage.messageId)) {
@@ -387,6 +404,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
         setDraft('');
       }
     } catch (sendFailure) {
+      if (!mountedRef.current) return;
       if (sendFailure instanceof ApiError && sendFailure.status === 400 && token) {
         // Another tab/account may have consumed the remaining quota.
         void getConversationDetail(conversationId, token).then((detail) => {
@@ -562,14 +580,15 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
                       <strong>{message.replyPreview?.senderDisplayName ?? 'Original message'}</strong>
                       <span>{message.replyPreview?.excerpt ?? 'Preview unavailable'}</span>
                     </button> : null}
-                    <p>{message.content}</p>
+                    {message.attachment && token ? <ChatImage attachment={message.attachment} token={token} /> : null}
+                    {message.content ? <p>{message.content}</p> : null}
                     <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
                     <MessageActions message={message} busy={reactionBusy.has(message.messageId)}
                       onReact={(key, add) => void toggleReaction(message.messageId, key, add)}
                       onReply={() => {
                         setReplyTarget({ messageId: message.messageId,
                           senderDisplayName: conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member',
-                          excerpt: [...message.content].slice(0, 160).join('') });
+                          excerpt: [...(message.content || (message.attachment ? 'Photo' : ''))].slice(0, 160).join('') });
                         requestAnimationFrame(() => composerRef.current?.focus());
                       }} />
                   </article>
@@ -606,7 +625,16 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
             <span><strong>Replying to {replyTarget.senderDisplayName}</strong><small>{replyTarget.excerpt}</small></span>
             <button type="button" aria-label="Cancel reply" onClick={() => { setReplyTarget(null); composerRef.current?.focus(); }}>×</button>
           </div> : null}
+          {selectedImage ? <div className="selected-image" aria-label="Selected image preview">
+            <img src={selectedImage.url} alt="Selected photo, not sent" />
+            <span>{selectedImage.file.name}<small>{sending?'Uploading and sending...':'Not sent yet'}</small></span>
+            <button type="button" disabled={sending} aria-label="Remove selected image" onClick={()=>setSelectedImage(null)}>Remove</button>
+          </div> : null}
           <form className="chat-composer" onSubmit={(event) => void submitMessage(event)}>
+            <input ref={imageInputRef} type="file" className="visually-hidden" aria-label="Choose image" accept="image/jpeg,image/png,image/webp" tabIndex={-1} onChange={event=>{selectImage(event.target.files?.[0]);event.target.value='';}} />
+            <button className="image-attach-button" type="button" aria-label="Attach image" title="Attach image" disabled={sending||loading||!conversation||limitedMessagesRemaining===0} onClick={()=>imageInputRef.current?.click()}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>
+            </button>
             <label className="visually-hidden" htmlFor="chat-message">Message</label>
             <textarea ref={composerRef} id="chat-message" value={draft} onChange={(event) => {
               setDraft(event.target.value);
@@ -616,7 +644,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
               onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }}
               placeholder={limitedMessagesRemaining === 0 ? 'Message limit reached' : 'Write a message…'} maxLength={MAX_MESSAGE_LENGTH} rows={1}
               disabled={loading || !conversation || limitedMessagesRemaining === 0} />
-            <button className="primary-button" type="submit" disabled={sending || loading || !conversation || !draft.trim() || limitedMessagesRemaining === 0}>{sending ? 'Sending…' : 'Send'}</button>
+            <button className="primary-button" type="submit" disabled={sending || loading || !conversation || (!draft.trim()&&!selectedImage) || limitedMessagesRemaining === 0}>{sending ? 'Sending…' : 'Send'}</button>
           </form>
           {limitedMessagesRemaining !== null ? <div className="limited-chat-notice">
             <p role="status">{limitedMessagesRemaining > 0 ? `${limitedMessagesRemaining} of 5 messages remaining.` : 'Message limit reached.'}</p>

@@ -622,6 +622,32 @@ class ChatWebSocketIntegrationTest {
         if (outsiderSession.isConnected()) outsiderSession.disconnect();
     }
 
+    @Autowired private com.geochat.chat.controller.ChatImageController imageController;
+    @Test void directAndGroupImagesUseTheExistingMessageTopic() throws Exception {
+        User owner=createUser("photo-owner", "Photo Owner"),member=createUser("photo-member", "Photo Member");
+        markFriends(owner,member);
+        Long direct=openConversation(owner,member);
+        Long group=groupService.createGroup(owner.getUsername(),new CreateGroupRequest("Photos",java.util.List.of(member.getId()))).groupId();
+        byte[] bytes;
+        try(var input=getClass().getResourceAsStream("/images/valid.webp")){bytes=input.readAllBytes();}
+        for(Long id:java.util.List.of(direct,group)) {
+            var session=connectSession(tokenFor(member));
+            BlockingQueue<Map<String,Object>> queue=new LinkedBlockingQueue<>();
+            session.subscribe("/topic/chat/"+id,frameHandler(queue));
+            org.awaitility.Awaitility.await().atMost(5,TimeUnit.SECONDS).until(()->simpUserRegistry.getUser(member.getUsername()).getSessions().stream().flatMap(item->item.getSubscriptions().stream()).anyMatch(item->item.getDestination().equals("/topic/chat/"+id)));
+            var file=new org.springframework.mock.web.MockMultipartFile("image","photo.webp","image/webp",bytes);
+            var principal=org.springframework.security.core.userdetails.User.withUsername(owner.getUsername()).password("unused").roles("USER").build();
+            var response=imageController.send(principal,id,file,"A photo",null,java.util.UUID.randomUUID().toString());
+            var event=queue.poll(5,TimeUnit.SECONDS);assertThat(event).isNotNull();
+            assertThat(((Number)event.get("messageId")).longValue()).isEqualTo(response.data().messageId());
+            assertThat(((Map<?,?>)event.get("attachment")).get("attachmentId")).isNotNull();
+            assertThat(event.get("content")).isEqualTo("A photo");
+            assertThat(chatService.listMessages(member.getUsername(),id,20).items()).anyMatch(item->item.attachment()!=null);
+            session.disconnect();
+        }
+        groupService.deleteGroup(owner.getUsername(),group);
+    }
+
 	private Long openConversation(User alice, User bob) {
 		return chatService.openDirectConversation(alice.getUsername(), new OpenDirectChatRequest(bob.getId()))
 				.conversationId();
