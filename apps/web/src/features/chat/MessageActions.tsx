@@ -6,11 +6,12 @@ import { supportedReactions } from './reactions';
 type Props = {
   message: ChatMessage;
   busy: boolean;
+  showReactions?: boolean;
   onReply: () => void;
   onReact: (key: string, add: boolean) => void;
 };
 
-export function MessageActions({ message, busy, onReply, onReact }: Props) {
+export function MessageActions({ message, busy, onReply, onReact, showReactions = true }: Props) {
   const [open, setOpen] = useState<'actions' | 'reactions' | null>(null);
   const [feedback, setFeedback] = useState('');
   const [below, setBelow] = useState(false);
@@ -76,6 +77,13 @@ export function MessageActions({ message, busy, onReply, onReact }: Props) {
           disabled={busy} onClick={() => { onReact(item.key, !selected); setOpen(null); }}>{item.emoji}</button>;
       })}
     </div> : null}
+    {showReactions ? <MessageReactionBadges message={message} busy={busy} onReact={onReact} /> : null}
+    {feedback ? <small className="message-action-feedback" role="status">{feedback}</small> : null}
+  </div>;
+}
+
+export function MessageReactionBadges({ message, busy, onReact }: Pick<Props, 'message' | 'busy' | 'onReact'>) {
+  return <>
     {(message.reactions?.length ?? 0) > 0 ? <div className="message-reactions" aria-label="Message reactions">
       {message.reactions?.map((reaction) => {
         const item = supportedReactions.find((option) => option.emoji === reaction.emoji);
@@ -85,6 +93,5 @@ export function MessageActions({ message, busy, onReply, onReact }: Props) {
           disabled={busy} onClick={() => onReact(item.key, !reaction.reactedByMe)}>{reaction.emoji} <span>{reaction.count}</span></button>;
       })}
     </div> : null}
-    {feedback ? <small className="message-action-feedback" role="status">{feedback}</small> : null}
-  </div>;
+  </>;
 }

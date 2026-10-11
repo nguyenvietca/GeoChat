@@ -3337,3 +3337,13 @@ select {
 }
 .typing-people { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .typing-action { flex-shrink: 0; }
+
+/* Keep quick actions beside the bubble for both incoming and outgoing messages. */
+.chat-message-row { gap: 8px; }
+.chat-message-row > .chat-bubble { min-width: 0; max-width: min(560px, calc(100% - 124px)); }
+.chat-message-row > .message-actions { flex: 0 0 116px; width: 116px; align-self: center; padding-top: 0; color: var(--muted); }
+.chat-message-row > .message-actions .message-action-feedback { max-width: 100%; }
+@media (pointer: coarse), (max-width: 768px) {
+  .chat-message-row > .chat-bubble { max-width: calc(100% - 148px); }
+  .chat-message-row > .message-actions { flex-basis: 140px; width: 140px; }
+}

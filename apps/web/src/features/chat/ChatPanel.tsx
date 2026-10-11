@@ -12,7 +12,7 @@ import { useConversationRead } from './useConversationRead';
 import { compareMessageOrder, formatMessageTime } from './messagePresentation';
 import { LimitedChatFriendship } from './LimitedChatFriendship';
 import { GroupInfoPanel } from './GroupInfoPanel';
-import { MessageActions } from './MessageActions';
+import { MessageActions, MessageReactionBadges } from './MessageActions';
 import { applyReactionState } from './reactions';
 import { getMessageReactions, setMessageReaction } from '../../api/reactions';
 import { MessageReactionState, ReplyPreview } from '../../types';
@@ -583,7 +583,9 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
                     {message.attachment && token ? <ChatImage attachment={message.attachment} token={token} /> : null}
                     {message.content ? <p>{message.content}</p> : null}
                     <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
-                    <MessageActions message={message} busy={reactionBusy.has(message.messageId)}
+                    <MessageReactionBadges message={message} busy={reactionBusy.has(message.messageId)} onReact={(key, add) => void toggleReaction(message.messageId, key, add)} />
+                  </article>
+                    <MessageActions showReactions={false} message={message} busy={reactionBusy.has(message.messageId)}
                       onReact={(key, add) => void toggleReaction(message.messageId, key, add)}
                       onReply={() => {
                         setReplyTarget({ messageId: message.messageId,
@@ -591,7 +593,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
                           excerpt: [...(message.content || (message.attachment ? 'Photo' : ''))].slice(0, 160).join('') });
                         requestAnimationFrame(() => composerRef.current?.focus());
                       }} />
-                  </article>
+
                 </div>
               );
             })}
