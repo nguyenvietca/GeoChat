@@ -1,12 +1,5 @@
 package com.geochat.friend.controller;
 
-import com.geochat.common.response.ApiResponse;
-import com.geochat.friend.dto.CreateFriendRequestRequest;
-import com.geochat.friend.dto.FriendListResponse;
-import com.geochat.friend.dto.FriendRequestListResponse;
-import com.geochat.friend.dto.FriendRequestResponse;
-import com.geochat.friend.service.FriendRequestService;
-import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +9,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.geochat.common.response.ApiResponse;
+import com.geochat.friend.dto.CreateFriendRequestRequest;
+import com.geochat.friend.dto.FriendListResponse;
+import com.geochat.friend.dto.FriendRelationshipResponse;
+import com.geochat.friend.dto.FriendRequestListResponse;
+import com.geochat.friend.dto.FriendRequestResponse;
+import com.geochat.friend.service.FriendRequestService;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -68,9 +71,14 @@ public class FriendRequestController {
 		return ApiResponse.ok(friendRequestService.getFriends(principal.getUsername()));
 	}
 
+	@GetMapping("/friends/relationships/{userId}")
+	public ApiResponse<FriendRelationshipResponse> getRelationship(@AuthenticationPrincipal UserDetails principal,
+			@PathVariable Long userId) {
+		return ApiResponse.ok(friendRequestService.getRelationship(principal.getUsername(), userId));
+	}
+
 	@DeleteMapping("/friends/{friendId}")
-	public ApiResponse<Void> removeFriend(@AuthenticationPrincipal UserDetails principal,
-			@PathVariable Long friendId) {
+	public ApiResponse<Void> removeFriend(@AuthenticationPrincipal UserDetails principal, @PathVariable Long friendId) {
 		friendRequestService.removeFriend(principal.getUsername(), friendId);
 		return ApiResponse.ok(null);
 	}

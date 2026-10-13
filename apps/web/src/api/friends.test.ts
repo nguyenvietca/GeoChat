@@ -4,6 +4,7 @@ import {
   acceptFriendRequest,
   cancelFriendRequest,
   getFriends,
+  getFriendRelationship,
   getIncomingFriendRequests,
   getOutgoingFriendRequests,
   removeFriend,
@@ -45,5 +46,10 @@ describe('friend API', () => {
     removeFriend(18, 'jwt');
 
     expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/friends/18', { method: 'DELETE', token: 'jwt' });
+  });
+
+  it('loads the shared relationship state through the authenticated client', () => {
+    getFriendRelationship(18, 'jwt');
+    expect(mockApiRequest).toHaveBeenCalledWith('/api/v1/friends/relationships/18', { token: 'jwt' });
   });
 });

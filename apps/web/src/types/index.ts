@@ -2,6 +2,9 @@ export type User = {
   id: number;
   username: string;
   displayName: string;
+  email?: string | null;
+  phoneNumber?: string | null;
+  avatarUpdatedAt?: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -33,6 +36,7 @@ export type UserSearchResult = {
   displayName: string;
   username: string;
   relationship: FriendRelationship;
+  requestId?: number | null;
 };
 
 export type FriendRelationship = 'NONE' | 'FRIENDS' | 'PENDING_OUTGOING' | 'PENDING_INCOMING';
@@ -64,6 +68,7 @@ export type FriendRequestResponse = {
 
 export type FriendListResponse = { items: FriendSummary[] };
 export type FriendRequestListResponse = { items: FriendRequestItem[] };
+export type FriendRelationshipResponse = { userId: number; relationship: FriendRelationship; requestId: number | null };
 
 export type ConversationUser = FriendSummary;
 
@@ -206,6 +211,8 @@ export type NearbyUser = {
 
 export type UserSearchResponse = {
   items: UserSearchResult[];
+  page?: number;
+  hasMore?: boolean;
 };
 
 export type NearbyUsersResponse = {

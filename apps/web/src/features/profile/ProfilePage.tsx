@@ -1,107 +1,42 @@
-import { Link, useParams } from 'react-router-dom';
-import { getPublicProfile } from '../../api/users';
-import { FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../../api/client';
-import { updateMyProfile } from '../../api/users';
+import { openDirectConversation } from '../../api/chats';
+import { acceptFriendRequest, cancelFriendRequest, getFriendRelationship, removeFriend, sendFriendRequest } from '../../api/friends';
+import { getPublicProfile, updateMyAvatar, updateMyProfile } from '../../api/users';
 import { useAuth } from '../../app/providers/AuthContext';
+import { FriendRelationship } from '../../types';
+import { UserAvatar } from './UserAvatar';
 
-export function ProfilePage() {
-  const {userId}=useParams();
-  return userId ? <PublicProfile userId={Number(userId)} /> : <MyProfile />;
+export function ProfilePage() { const { userId } = useParams(); return userId ? <PublicProfile userId={Number(userId)} /> : <MyProfile />; }
+
+function PublicProfile({ userId }: { userId: number }) {
+  const { token } = useAuth(); const navigate = useNavigate();
+  const [person, setPerson] = useState<{displayName:string;username:string;avatarUpdatedAt?:string|null}|null>(null);
+  const [relationship, setRelationship] = useState<FriendRelationship>('NONE'); const [requestId, setRequestId] = useState<number|null>(null);
+  const [busy, setBusy] = useState(false); const [failure, setFailure] = useState('');
+  useEffect(() => { let active=true; setPerson(null); setFailure(''); if(token) void Promise.all([getPublicProfile(userId,token),getFriendRelationship(userId,token)]).then(([value,state])=>{if(active){setPerson(value);setRelationship(state.relationship);setRequestId(state.requestId);}}).catch(()=>{if(active)setFailure('Profile unavailable.');}); return()=>{active=false;}; },[userId,token]);
+  async function act(action:'relationship'|'message'|'remove') { if(!token||busy)return; setBusy(true); setFailure(''); try {
+    if(action==='message'){const chat=await openDirectConversation(userId,token);navigate(`/app/chat/${chat.conversationId}`);return;}
+    if(action==='remove'){if(!person||!window.confirm(`Remove ${person.displayName} from your friends? Conversation history will remain available.`))return;await removeFriend(userId,token);setRelationship('NONE');return;}
+    if(relationship==='NONE'){const request=await sendFriendRequest(userId,token);setRelationship('PENDING_OUTGOING');setRequestId(request.requestId);}
+    else if(relationship==='PENDING_OUTGOING'&&requestId){await cancelFriendRequest(requestId,token);setRelationship('NONE');setRequestId(null);}
+    else if(relationship==='PENDING_INCOMING'&&requestId){await acceptFriendRequest(requestId,token);setRelationship('FRIENDS');setRequestId(null);}
+  } catch(error){setFailure(error instanceof ApiError?error.message:'Unable to update this connection.');} finally{setBusy(false);} }
+  const label=relationship==='NONE'?'Add friend':relationship==='PENDING_OUTGOING'?'Cancel request':relationship==='PENDING_INCOMING'?'Accept request':'Friends';
+  return <section className="page-content"><div className="page-heading"><h1>Public profile</h1></div><Link to="/app/friends?tab=find">Back to Find people</Link>{failure?<p role="alert">{failure}</p>:null}{person?<section className="account-summary public-profile-card"><UserAvatar userId={userId} displayName={person.displayName} avatarUpdatedAt={person.avatarUpdatedAt} token={token}/><div><h2>{person.displayName}</h2><p>@{person.username}</p><p>{relationship==='FRIENDS'?'Friend':relationship==='PENDING_INCOMING'?'Friend request received':relationship==='PENDING_OUTGOING'?'Friend request sent':'GeoChat member'}</p></div><div className="request-actions"><button className="primary-button" type="button" disabled={busy||relationship==='FRIENDS'} onClick={()=>void act('relationship')}>{busy?'Working…':label}</button>{relationship==='FRIENDS'?<><button className="quiet-light-button" type="button" disabled={busy} onClick={()=>void act('message')}>Message</button><button className="group-confirm-danger" type="button" disabled={busy} onClick={()=>void act('remove')}>Remove friend</button></>:null}</div></section>:!failure?<p role="status">Loading profile...</p>:null}</section>;
 }
-function PublicProfile({userId}:{userId:number}) {
-  const {token}=useAuth();
-  const [person,setPerson]=useState<{displayName:string;username:string}|null>(null);
-  const [failure,setFailure]=useState('');
-  useEffect(()=>{let active=true;setPerson(null);setFailure('');if(token)void getPublicProfile(userId,token).then(value=>{if(active)setPerson(value);}).catch(()=>{if(active)setFailure('Profile unavailable.');});return()=>{active=false;};},[userId,token]);
-  return <section className="page-content"><div className="page-heading"><h1>Public profile</h1></div><Link to="/app/nearby">Back to Nearby</Link>{failure?<p role="alert">{failure}</p>:person?<section className="account-summary"><span className="person-avatar">{person.displayName.charAt(0)}</span><div><h2>{person.displayName}</h2><p>@{person.username}</p><p>GeoChat member</p></div></section>:<p role="status">Loading profile...</p>}</section>;
-}
+
 function MyProfile() {
-  const { user, token, syncUser } = useAuth();
-  const [displayName, setDisplayName] = useState(user?.displayName ?? '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [fieldError, setFieldError] = useState(false);
-  const [success, setSuccess] = useState('');
-
-  useEffect(() => {
-    setDisplayName(user?.displayName ?? '');
-  }, [user?.displayName]);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedName = displayName.trim();
-    if (normalizedName.length < 2 || normalizedName.length > 100) {
-      setSuccess('');
-      setError('Display name must be between 2 and 100 characters.');
-      setFieldError(true);
-      return;
-    }
-    if (!token) {
-      setSuccess('');
-      setError('Your session has expired. Please sign in again.');
-      return;
-    }
-
-    setFieldError(false);
-    setSaving(true);
-    setError('');
-    setSuccess('');
-    try {
-      const updatedUser = await updateMyProfile({ displayName: normalizedName }, token);
-      syncUser(updatedUser);
-      setDisplayName(updatedUser.displayName);
-      setSuccess('Profile updated.');
-    } catch (updateError) {
-      setFieldError(updateError instanceof ApiError && updateError.status === 400);
-      setError(updateError instanceof ApiError ? updateError.message : 'Unable to update your profile right now.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!user) return null;
-
-  return (
-    <section className="page-content profile-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">YOUR ACCOUNT</p><h1>Profile</h1></div>
-        <span className="profile-avatar" aria-hidden="true">{user.displayName.charAt(0).toUpperCase() || '?'}</span>
-      </div>
-
-      <div className="profile-details" aria-label="Profile information">
-        <div><span className="summary-label">USERNAME</span><strong>@{user.username}</strong></div>
-      </div>
-
-      <section className="profile-editor" aria-labelledby="edit-profile-heading">
-        <div className="section-heading">
-          <div><h2 id="edit-profile-heading">Public profile</h2><p>Update the name other people see.</p></div>
-        </div>
-        {error ? <p className="inline-error" role="alert" id="profile-name-error">{error}</p> : null}
-        {success ? <p className="success-message" role="status">{success}</p> : null}
-        <form className="profile-form" noValidate onSubmit={(event) => void handleSubmit(event)}>
-          <label className="field-label" htmlFor="profile-display-name">Display name</label>
-          <input
-            id="profile-display-name"
-            name="displayName"
-            type="text"
-            autoComplete="nickname"
-            minLength={2}
-            maxLength={100}
-            required
-            value={displayName}
-            onChange={(event) => { setDisplayName(event.target.value); setFieldError(false); setError(''); setSuccess(''); }}
-            aria-invalid={fieldError} aria-describedby={error ? 'profile-name-help profile-name-error' : 'profile-name-help'}
-            disabled={saving}
-          />
-          <p className="profile-field-help" id="profile-name-help">Use 2-100 characters. This is the name people see in conversations.</p>
-          <div className="profile-actions">
-            <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button>
-            <button className="quiet-light-button" type="button" disabled={saving || displayName === user.displayName}
-              onClick={() => { setDisplayName(user.displayName); setError(''); setSuccess(''); setFieldError(false); }}>Cancel</button>
-          </div>
-        </form>
-      </section>
-    </section>
-  );
+  const {user,token,syncUser}=useAuth(); const [displayName,setDisplayName]=useState(user?.displayName??''); const [email,setEmail]=useState(user?.email??''); const [phoneNumber,setPhoneNumber]=useState(user?.phoneNumber??'');
+  const [saving,setSaving]=useState(false); const [uploading,setUploading]=useState(false); const [error,setError]=useState(''); const [success,setSuccess]=useState(''); const [nameInvalid,setNameInvalid]=useState(false);
+  useEffect(()=>{setDisplayName(user?.displayName??'');setEmail(user?.email??'');setPhoneNumber(user?.phoneNumber??'');},[user]);
+  async function save(event:FormEvent<HTMLFormElement>){event.preventDefault();const name=displayName.trim();if(name.length<2||name.length>100){setSuccess('');setError('Display name must be between 2 and 100 characters.');setNameInvalid(true);return;}if(!token){setError('Your session has expired. Please sign in again.');return;}setNameInvalid(false);setSaving(true);setError('');setSuccess('');try{const updated=await updateMyProfile({displayName:name,email:email.trim()||null,phoneNumber:phoneNumber.trim()||null},token);syncUser(updated);setSuccess('Profile updated.');}catch(e){setError(e instanceof ApiError?e.message:'Unable to update your profile right now.');}finally{setSaving(false);}}
+  async function changeAvatar(event:ChangeEvent<HTMLInputElement>){const image=event.target.files?.[0];event.target.value='';if(!image||!token)return;setUploading(true);setError('');setSuccess('');try{const updated=await updateMyAvatar(image,token);syncUser(updated);setSuccess('Avatar updated.');}catch(e){setError(e instanceof ApiError?e.message:'Unable to update your avatar.');}finally{setUploading(false);}}
+  if(!user)return null; const unchanged=displayName===user.displayName&&email===(user.email??'')&&phoneNumber===(user.phoneNumber??'');
+  return <section className="page-content profile-page"><div className="page-heading"><div><p className="eyebrow">YOUR ACCOUNT</p><h1>Profile</h1></div><div className="profile-avatar-editor"><UserAvatar userId={user.id} displayName={user.displayName} avatarUpdatedAt={user.avatarUpdatedAt} token={token} className="profile-avatar"/><label className="quiet-light-button avatar-upload-button">{uploading?'Uploading…':'Change avatar'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event=>void changeAvatar(event)} disabled={uploading}/></label></div></div>
+    <div className="profile-details" aria-label="Profile information"><div><span className="summary-label">USERNAME</span><strong>@{user.username}</strong></div><div><span className="summary-label">EMAIL</span><strong>{user.email||'Not provided'}</strong></div><div><span className="summary-label">PHONE</span><strong>{user.phoneNumber||'Not provided'}</strong></div></div>
+    <section className="profile-editor" aria-labelledby="edit-profile-heading"><div className="section-heading"><div><h2 id="edit-profile-heading">Profile details</h2><p>Update your public name and private contact details.</p></div></div>{error?<p className="inline-error" role="alert">{error}</p>:null}{success?<p className="success-message" role="status">{success}</p>:null}
+      <form className="profile-form" noValidate onSubmit={event=>void save(event)}><label className="field-label" htmlFor="profile-display-name">Display name</label><input id="profile-display-name" type="text" minLength={2} maxLength={100} required value={displayName} onChange={event=>{setDisplayName(event.target.value);setNameInvalid(false);setError('');}} disabled={saving} aria-invalid={nameInvalid} aria-describedby={nameInvalid?'profile-name-error':undefined}/><span id="profile-name-error" className="visually-hidden">{nameInvalid?error:''}</span><label className="field-label" htmlFor="profile-email">Email</label><input id="profile-email" type="email" autoComplete="email" maxLength={320} value={email} onChange={event=>setEmail(event.target.value)} disabled={saving}/><label className="field-label" htmlFor="profile-phone">Phone number</label><input id="profile-phone" type="tel" autoComplete="tel" maxLength={32} value={phoneNumber} onChange={event=>setPhoneNumber(event.target.value)} disabled={saving}/><p className="profile-field-help">Email and phone number are private and only visible on your account page.</p><div className="profile-actions"><button className="primary-button" type="submit" disabled={saving}>{saving?'Saving...':'Save changes'}</button><button className="quiet-light-button" type="button" disabled={saving||unchanged} onClick={()=>{setDisplayName(user.displayName);setEmail(user.email??'');setPhoneNumber(user.phoneNumber??'');setNameInvalid(false);setError('');setSuccess('');}}>Cancel</button></div></form>
+    </section></section>;
 }

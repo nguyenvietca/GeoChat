@@ -10,6 +10,7 @@ import {
   getOutgoingFriendRequests,
   sendFriendRequest,
   acceptFriendRequest,
+  getFriendRelationship,
 } from './api/friends';
 import { getConversations, openDiscoveryConversation, getConversationDetail, getConversationPresence, getMessages, openContextualConversation, openDirectConversation } from './api/chats';
 import { searchUsers, updateMyProfile, getPublicProfile } from './api/users';
@@ -29,6 +30,10 @@ vi.mock('./api/location', () => ({
 }));
 vi.mock('./api/friends', () => ({
   acceptFriendRequest: vi.fn(),
+  cancelFriendRequest: vi.fn(),
+  rejectFriendRequest: vi.fn(),
+  removeFriend: vi.fn(),
+  getFriendRelationship: vi.fn().mockResolvedValue({ userId: 3, relationship: 'NONE', requestId: null }),
   getFriends: vi.fn(),
   getIncomingFriendRequests: vi.fn(),
   getOutgoingFriendRequests: vi.fn(),
@@ -70,6 +75,7 @@ const mockGetFriends = vi.mocked(getFriends);
 const mockGetIncoming = vi.mocked(getIncomingFriendRequests);
 const mockGetOutgoing = vi.mocked(getOutgoingFriendRequests);
 const mockSendFriendRequest = vi.mocked(sendFriendRequest);
+const mockGetFriendRelationship = vi.mocked(getFriendRelationship);
 const mockGetConversationDetail = vi.mocked(getConversationDetail);
 const mockGetConversationPresence = vi.mocked(getConversationPresence);
 const mockGetMessages = vi.mocked(getMessages);
@@ -247,7 +253,7 @@ describe('web authentication and protected routes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     expect((await screen.findByRole('status')).textContent).toBe('Profile updated.');
-    expect(mockUpdateMyProfile).toHaveBeenCalledWith({ displayName: 'Mira Updated' }, 'session-token');
+    expect(mockUpdateMyProfile).toHaveBeenCalledWith({ displayName: 'Mira Updated', email: null, phoneNumber: null }, 'session-token');
     expect(screen.getByText('Mira Updated')).toBeTruthy();
   });
 
@@ -339,7 +345,7 @@ describe('user search', () => {
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^search$/i }));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'nobody' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-    expect(await screen.findByText('No users found. Try another name.')).toBeTruthy();
+    expect(await screen.findByText('No matching users. Try another name.')).toBeTruthy();
 
     mockSearchUsers.mockRejectedValueOnce(new ApiError('Search unavailable.', 500));
     fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'person' } });
@@ -407,6 +413,7 @@ describe('nearby location flow', () => {
     Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition:(success:PositionCallback)=>success({coords:{latitude:41.2,longitude:-72.8}} as GeolocationPosition)}});
     mockUpdateLocation.mockResolvedValue(undefined);mockGetNearbyUsers.mockResolvedValue({items:[{userId:3,displayName:'Kai',distanceMeters:0}],radiusMeters:5000});
     vi.mocked(getPublicProfile).mockResolvedValue({userId:3,displayName:'Kai Public',username:'kai'});
+    mockGetFriendRelationship.mockResolvedValue({userId:3,relationship:'NONE',requestId:null});
     await renderSignedIn();fireEvent.click(within(screen.getByRole('navigation',{name:'Main navigation'})).getByRole('link',{name:/nearby/i}));
     fireEvent.click(screen.getByRole('button',{name:'Use my location'}));await screen.findByText('Kai');
     fireEvent.click(screen.getByRole('link',{name:'View profile'}));await screen.findByRole('heading',{name:'Public profile'});
@@ -496,7 +503,7 @@ describe('nearby location flow', () => {
 
     expect(mockSendFriendRequest).toHaveBeenCalledWith(3, 'session-token');
     expect(await screen.findByText('Friend request sent to Kai.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Manage request' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel request' })).toBeTruthy();
   });
 
   it('opens a direct conversation for a nearby friend', async () => {

@@ -5,13 +5,14 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const stage = process.argv[2] ?? 'verified';
-if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark', 'actions-light', 'actions-dark', 'images-light', 'images-dark', 'nearby-light', 'nearby-dark'].includes(stage)) throw new Error('Unknown verification stage.');
+if (!['baseline', 'final', 'verified', 'forms', 'headers', 'keyboard', 'typing-light', 'typing-dark', 'actions-light', 'actions-dark', 'images-light', 'images-dark', 'nearby-light', 'nearby-dark', 'friends-light', 'friends-dark'].includes(stage)) throw new Error('Unknown verification stage.');
 const typingStage = stage.startsWith('typing-');
 const nearbyStage = stage.startsWith('nearby-');
+const friendsStage = stage.startsWith('friends-');
 const imagesStage = stage.startsWith('images-');
 const photoFixture = 'iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAADzUlEQVR4nO3du21VQRRAUYNIaIQ2KMZ1IISog2Iow86dkZMSICEkvgL7ztkza8X2fWeku3XmyYGf3X16uAGanq8eAPh3AoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBD24rEe9Prtm8d6FJzg47v3//8QGxjCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCHs0f47IRPc3778mx979eHz08/CFQR8SrS/+hUxpwn4oG5//xwlFwn40G5/82Qlhwg44+nS/ekHyThBwAGXpfvjh8p4OH9Gmm5JvUM+nT+ygecaEo9VPJkNPNSQesfOw1cCnmhmLTOnOpwr9CzDI3GdnsYGHmR4vbk5TyDgKVpVtKbdmIBHKPZQnHk/AoYwAa/XXWXdybch4MXqDdTnrxPwSnu8/XucIkrAECbgZXZaXDudpUXAa+z3xu93ogQBQ5iAF9h1We16rskEDGECvtrea2rv0w0kYAgTMIQJ+FIn3DBPOOMcAoYwAUOYgK9zzt3ynJMuJ2AIEzCECRjCBHyR074WnnbeVQQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwBd59eHzzUlOO+8qAoYwAUOYgCFMwNc552vhOSddTsAQJmAIE/ClTrhbnnDGOQQMYQKGMAFfbe8b5t6nG0jAECbgBXZdU7ueazIBQ5iA19hvWe13ogQBL7PTG7/TWVoEDGECXmmPxbXHKaIEvFj97a/PXyfg9boNdCffhoAhTMAjFFdZceb9CHiKVg+taTcm4EEqVVTmPMGL1QPwkzbub1/ejCTdaWzgiWZ2MnOqwwl4qGm1TJuHr1yh5xpynZbuZDbwdGv7Ue9wNnDAklUs3QQBZ1yWsXRDBBzzra5HL1m3RQI+vWTdpgk47/sC/zJm0W5DwFtR5mn8GQnCBAxhAoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCHs2d2nh9UzAP/IBoYwAUOYgCFMwBAmYAgTMIQJGMIEDGEChjABQ5iAIUzAECZgCBMwhAkYwgQMYQKGMAFDmIAhTMAQJmAIEzCECRjCBAxhAoYwAUOYgCFMwHDT9QXLM62/D75iIgAAAABJRU5ErkJggg==';
 const actionsStage = stage.startsWith('actions-');
-const output = path.resolve(nearbyStage ? 'build/prompt036' : imagesStage ? 'build/prompt035' : actionsStage ? 'build/prompt034' : typingStage ? 'build/prompt033' : 'build/prompt031', stage);
+const output = path.resolve(friendsStage ? 'build/prompt037' : nearbyStage ? 'build/prompt036' : imagesStage ? 'build/prompt035' : actionsStage ? 'build/prompt034' : typingStage ? 'build/prompt033' : 'build/prompt031', stage);
 await mkdir(output, { recursive: true });
 // Keep browser caches outside Vite's watched app tree to avoid unrelated HTML reloads.
 const profileRoot = path.resolve('../../build/prompt031-browser-profiles');
@@ -71,6 +72,8 @@ const fixtureScript = `
     else if (pathname.endsWith('/read')) data = {conversationId:pathname.includes('/50/')?50:41,unreadCount:0,readStateVersion:2};
     else if (/\\/chats\\/\\d+$/.test(pathname)) data = {conversationId:pathname.endsWith('/50')?50:41,type:pathname.endsWith('/50')?'GROUP':'DIRECT',participants:[group.owner,friend],createdAt:group.createdAt,updatedAt:group.updatedAt,limitedMessagesRemaining:null};
     else if (pathname === '/api/v1/users/search') data = {items:[{...friend,relationship:'NONE'}]};
+    else if (pathname.includes('/api/v1/friends/relationships/')) data = {userId:22,relationship:'FRIENDS',requestId:null};
+    else if (pathname.includes('/api/v1/users/22/profile')) data = friend;
     else if (pathname.includes('/notifications/unread-count')) data = {unreadCount:3};
     else if (pathname === '/api/v1/notifications') data = {items:[{id:1,recipientId:9,type:'NEW_MESSAGE',title:'A notification with a long title that should remain readable',message:'Bạn có tin nhắn mới từ Rowan Nguyễn. '+ 'abcdef'.repeat(20),referenceType:'MESSAGE',referenceId:1,conversationId:41,read:false,createdAt:group.updatedAt,readAt:null}],unreadCount:1,total:1,hasMore:false};
     else if (pathname.endsWith('/discoverability')) data = {discoverable:false};
@@ -132,11 +135,11 @@ try {
   await send('Page.bringToFront');
   await send('Network.enable');
   await send('Network.setBlockedURLs', { urls: ['*fonts.googleapis.com*', '*fonts.gstatic.com*'] });
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage || actionsStage || imagesStage || nearbyStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: (typingStage || actionsStage || imagesStage || nearbyStage || friendsStage ? `localStorage.setItem('geochat-theme','${stage.endsWith('dark') ? 'dark' : 'light'}');` : '') + fixtureScript + (typingStage ? typingSocketScript : '') });
   const results = [];
-  for (const width of (stage === 'keyboard' ? [375] : typingStage || actionsStage || imagesStage || nearbyStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
+  for (const width of (stage === 'keyboard' ? [375] : typingStage || actionsStage || imagesStage || nearbyStage || friendsStage ? [375, 768, 1440] : [375, 768, 1024, 1440])) {
     await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
-    for (const route of (nearbyStage ? ['nearby'] : stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage || actionsStage || imagesStage || nearbyStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
+    for (const route of (friendsStage ? ['friends', 'friends?tab=find', 'search', 'profile/22'] : nearbyStage ? ['nearby'] : stage === 'keyboard' ? ['chat/41?visual=keyboard', 'chat/50?visual=keyboard'] : typingStage || actionsStage || imagesStage || nearbyStage ? ['chat/41', 'chat/50'] : stage === 'forms' ? ['public/login', 'public/register', 'chat?visual=create', 'chat/50?visual=info'] : stage === 'headers' ? ['chat/41', 'chat/50'] : ['home', 'chat', 'chat/41', 'chat/50', 'friends', 'nearby', 'search', 'notifications', 'profile', 'settings', ...(width === 375 ? ['friends?visual=empty', 'friends?visual=error', 'friends?visual=loading', 'notifications?visual=empty', 'chat?visual=empty'] : [])])) {
       await send('Emulation.setDeviceMetricsOverride', { width, height: stage === 'keyboard' ? 450 : 900, deviceScaleFactor: 1, mobile: false });
       await send('Page.navigate', { url: `http://127.0.0.1:5179/${route.startsWith('public/') ? route.slice(7) : 'app/' + route}` });
       for (let attempt = 0; attempt < 50; attempt++) {

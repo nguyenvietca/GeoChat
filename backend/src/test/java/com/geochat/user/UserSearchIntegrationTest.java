@@ -67,6 +67,8 @@ class UserSearchIntegrationTest {
                 .andExpect(jsonPath("$.data.items[0].userId").value(org.hamcrest.Matchers.not(currentUser.getId())))
                 .andExpect(jsonPath("$.data.items[0].username").value("nguyenvana"))
                 .andExpect(jsonPath("$.data.items[0].displayName").value("Nguyen B"))
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.hasMore").value(false))
                 .andExpect(jsonPath("$.data.items[0].passwordHash").doesNotExist())
                 .andExpect(jsonPath("$.data.items[0].password").doesNotExist());
     }
@@ -105,13 +107,32 @@ class UserSearchIntegrationTest {
         request.setStatus(FriendRequestStatus.PENDING);
         request.setCreatedAt(Instant.now());
         request.setUpdatedAt(Instant.now());
-        friendRequestRepository.save(request);
+        request = friendRequestRepository.save(request);
 
         mockMvc.perform(get("/api/v1/users/search")
                         .header("Authorization", bearer(tokenFor(currentUser)))
                         .param("q", "friend"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].relationship").value("PENDING_OUTGOING"));
+                .andExpect(jsonPath("$.data.items[0].relationship").value("PENDING_OUTGOING"))
+                .andExpect(jsonPath("$.data.items[0].requestId").value(request.getId()));
+    }
+
+    @Test
+    void searchIsBoundedAndPagedAndExcludesInactiveAccounts() throws Exception {
+        User currentUser = createUser("page-owner", "Page Owner");
+        for (int index = 0; index < 22; index++) createUser("member-" + String.format("%02d", index), "Paged Member");
+        User inactive = createUser("member-inactive", "Paged Member");
+        inactive.setStatus(com.geochat.user.entity.UserStatus.INACTIVE);
+        userRepository.save(inactive);
+
+        mockMvc.perform(get("/api/v1/users/search").header("Authorization", bearer(tokenFor(currentUser)))
+                        .param("q", "member").param("page", "0"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(20))
+                .andExpect(jsonPath("$.data.hasMore").value(true));
+        mockMvc.perform(get("/api/v1/users/search").header("Authorization", bearer(tokenFor(currentUser)))
+                        .param("q", "member").param("page", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(2))
+                .andExpect(jsonPath("$.data.hasMore").value(false));
     }
 
     private User createUser(String username, String displayName) {

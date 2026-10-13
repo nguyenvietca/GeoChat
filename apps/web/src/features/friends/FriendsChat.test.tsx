@@ -180,7 +180,8 @@ describe('web friends and direct chat', () => {
 
     expect(await screen.findByText('@rowan')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Rowan Park' }));
-
+    expect(await screen.findByRole('alertdialog', { name: 'Remove Rowan Park?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove friend' }));
     expect(mockRemoveFriend).toHaveBeenCalledWith(22, 'session-token');
     expect(await screen.findByText('No friends yet. Search for people to connect.')).toBeTruthy();
   });
@@ -202,11 +203,11 @@ describe('web friends and direct chat', () => {
     expect(await screen.findByText('No outgoing requests.')).toBeTruthy();
   });
 
-  it('sends a friend request from Search and routes incoming/outgoing relationship states to the right list', async () => {
+  it('sends and manages friend requests directly from Search', async () => {
     const people = [
       { ...rowan, relationship: 'NONE' as const },
-      { userId: 23, username: 'alba', displayName: 'Alba', relationship: 'PENDING_INCOMING' as const },
-      { userId: 24, username: 'noah', displayName: 'Noah', relationship: 'PENDING_OUTGOING' as const },
+      { userId: 23, username: 'alba', displayName: 'Alba', relationship: 'PENDING_INCOMING' as const, requestId: 80 },
+      { userId: 24, username: 'noah', displayName: 'Noah', relationship: 'PENDING_OUTGOING' as const, requestId: 81 },
       { userId: 25, username: 'sam', displayName: 'Sam', relationship: 'FRIENDS' as const },
     ];
     const { searchUsers } = await import('../../api/users');
@@ -221,16 +222,14 @@ describe('web friends and direct chat', () => {
     expect(await screen.findByRole('button', { name: 'Add friend' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add friend' }));
     expect(mockSendFriendRequest).toHaveBeenCalledWith(22, 'session-token');
-    expect(await screen.findByRole('button', { name: 'Request sent · manage' })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
-    expect((await screen.findByRole('tab', { name: /Incoming/ })).getAttribute('aria-selected')).toBe('true');
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Main navigation' })).getByRole('link', { name: /^Search$/ }));
-    fireEvent.change(screen.getByLabelText('Username or display name'), { target: { value: 'people' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-    await screen.findByRole('button', { name: 'Request sent · manage' });
-    fireEvent.click(screen.getByRole('button', { name: 'Request sent · manage' }));
-    expect((await screen.findByRole('tab', { name: /Sent/ })).getAttribute('aria-selected')).toBe('true');
+    const cancelButtons = await screen.findAllByRole('button', { name: 'Cancel request' });
+    expect(cancelButtons.length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(mockAcceptFriendRequest).toHaveBeenCalledWith(80, 'session-token');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel request' }).hasAttribute('disabled')).toBe(false));
+    const remainingCancel = screen.getByRole('button', { name: 'Cancel request' });
+    fireEvent.click(remainingCancel);
+    expect(mockCancelFriendRequest).toHaveBeenCalledWith(81, 'session-token');
   });
 
   it('loads a conversation list and merges REST sends with duplicate STOMP frames once', async () => {

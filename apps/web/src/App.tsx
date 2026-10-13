@@ -11,6 +11,7 @@ import { MessagesPage } from './features/chat/MessagesPage';
 import { NotificationsPage } from './features/notifications/NotificationsPage';
 import { useNotifications } from './app/providers/NotificationContext';
 import { ProfilePage } from './features/profile/ProfilePage';
+import { UserAvatar } from './features/profile/UserAvatar';
 import { SettingsPage } from './features/settings/SettingsPage';
 
 function LoadingScreen() {
@@ -32,7 +33,7 @@ function ProtectedArea() {
 }
 
 function AppShell() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const { unreadCount } = useNotifications();
   return (
     <div className="app-frame">
@@ -77,7 +78,7 @@ function AppShell() {
         </nav>
         <div className="sidebar-bottom">
           <div className="signed-in-user">
-            <span className="avatar-initial">{user?.displayName?.charAt(0).toUpperCase() ?? '?'}</span>
+            {user ? <UserAvatar userId={user.id} displayName={user.displayName} avatarUpdatedAt={user.avatarUpdatedAt} token={token} className="avatar-initial" /> : <span className="avatar-initial">?</span>}
             <span className="user-meta"><strong>{user?.displayName}</strong><small>@{user?.username}</small></span>
           </div>
           <button className="quiet-button logout-button" type="button" onClick={logout}>Sign out</button>

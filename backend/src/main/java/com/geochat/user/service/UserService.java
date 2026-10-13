@@ -2,14 +2,20 @@ package com.geochat.user.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import com.geochat.chat.service.ImageStorage;
 import com.geochat.friend.entity.FriendRequestStatus;
 import com.geochat.friend.repository.FriendRequestRepository;
+import com.geochat.user.dto.PublicProfileResponse;
 import com.geochat.user.dto.RegisterRequest;
 import com.geochat.user.dto.UpdateMyProfileRequest;
 import com.geochat.user.dto.UserResponse;
@@ -27,16 +33,23 @@ public class UserService {
 	private final UserRepository userRepository;
 	private final FriendRequestRepository friendRequestRepository;
 	private final PasswordEncoder passwordEncoder;
+	private final ImageStorage imageStorage;
 
 	public UserService(UserRepository userRepository, FriendRequestRepository friendRequestRepository,
-			PasswordEncoder passwordEncoder) {
+			PasswordEncoder passwordEncoder, ImageStorage imageStorage) {
 		this.userRepository = userRepository;
 		this.friendRequestRepository = friendRequestRepository;
 		this.passwordEncoder = passwordEncoder;
+		this.imageStorage = imageStorage;
 	}
 
-    @Transactional(readOnly=true)
-    public com.geochat.chat.dto.ChatDtos.UserSummaryResponse publicProfile(Long id){var user=userRepository.findById(id).filter(item->item.getStatus()==UserStatus.ACTIVE).orElseThrow(()->new jakarta.persistence.EntityNotFoundException("Profile unavailable"));return new com.geochat.chat.dto.ChatDtos.UserSummaryResponse(user.getId(),user.getUsername(),user.getDisplayName());}
+	@Transactional(readOnly = true)
+	public PublicProfileResponse publicProfile(Long id) {
+		var user = userRepository.findById(id).filter(item -> item.getStatus() == UserStatus.ACTIVE)
+				.orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Profile unavailable"));
+		return PublicProfileResponse.from(user);
+	}
+
 	@Transactional
 	public UserResponse register(RegisterRequest request) {
 		String username = request.username().trim();
@@ -70,12 +83,62 @@ public class UserService {
 		User user = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new IllegalArgumentException("User not found"));
 		user.setDisplayName(request.displayName().trim());
+		if (request.email() != null)
+			user.setEmail(normalizeOptional(request.email()));
+		if (request.phoneNumber() != null)
+			user.setPhoneNumber(normalizePhone(request.phoneNumber()));
 		user.setUpdatedAt(Instant.now());
 		return UserResponse.from(userRepository.save(user));
 	}
 
+	@Transactional
+	public UserResponse updateAvatar(String username, MultipartFile image) {
+		User user = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new IllegalArgumentException("User not found"));
+		var stored = imageStorage.store(image);
+		String previous = user.getAvatarStorageKey();
+		user.setAvatarStorageKey(stored.key());
+		user.setAvatarContentType(stored.contentType());
+		user.setAvatarUpdatedAt(Instant.now());
+		user.setUpdatedAt(Instant.now());
+		UserResponse response = UserResponse.from(userRepository.saveAndFlush(user));
+		if (previous != null)
+			try {
+				imageStorage.delete(previous);
+			} catch (RuntimeException ignored) {
+			}
+		return response;
+	}
+
+	@Transactional(readOnly = true)
+	public AvatarData avatar(Long userId) {
+		User user = userRepository.findById(userId)
+				.filter(item -> item.getStatus() == UserStatus.ACTIVE && item.getAvatarStorageKey() != null)
+				.orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Avatar unavailable"));
+		return new AvatarData(imageStorage.read(user.getAvatarStorageKey()), user.getAvatarContentType());
+	}
+
+	public record AvatarData(byte[] bytes, String contentType) {
+	}
+
+	private String normalizeOptional(String value) {
+		return value == null || value.isBlank() ? null : value.trim();
+	}
+
+	private String normalizePhone(String value) {
+		String phone = normalizeOptional(value);
+		if (phone != null && !phone.matches("^[+]?[0-9 ()-]{7,32}$"))
+			throw new IllegalArgumentException("Phone number is invalid");
+		return phone;
+	}
+
 	@Transactional(readOnly = true)
 	public UserSearchResponse searchUsers(String currentUsername, String query) {
+		return searchUsers(currentUsername, query, 0);
+	}
+
+	@Transactional(readOnly = true)
+	public UserSearchResponse searchUsers(String currentUsername, String query, int page) {
 		String normalizedQuery = query == null ? "" : query.trim();
 
 		if (normalizedQuery.isBlank()) {
@@ -87,35 +150,40 @@ public class UserService {
 		if (normalizedQuery.length() > 100) {
 			throw new IllegalArgumentException("Search query must be at most 100 characters");
 		}
+		if (page < 0 || page > 49) {
+			throw new IllegalArgumentException("Search page must be between 0 and 49");
+		}
 
 		User currentUser = userRepository.findByUsernameIgnoreCase(currentUsername)
 				.orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-		List<User> users = userRepository.searchUsers(currentUser.getId(), normalizedQuery,
-				PageRequest.of(0, MAX_SEARCH_RESULTS));
+		var searchPage = userRepository.searchUsers(currentUser.getId(), normalizedQuery,
+				PageRequest.of(page, MAX_SEARCH_RESULTS));
+		List<User> users = searchPage.getContent();
+		boolean hasMore = searchPage.hasNext();
+		List<Long> userIds = users.stream().map(User::getId).toList();
+		Map<Long, com.geochat.friend.entity.FriendRequest> relationships = userIds.isEmpty() ? Map.of()
+				: friendRequestRepository
+						.findRelationships(currentUser.getId(), userIds,
+								List.of(FriendRequestStatus.PENDING, FriendRequestStatus.ACCEPTED))
+						.stream()
+						.collect(Collectors.toMap(
+								request -> request.getSenderId().equals(currentUser.getId()) ? request.getReceiverId()
+										: request.getSenderId(),
+								Function.identity(), (first, ignored) -> first));
 
-		List<UserSearchResult> items = users.stream().map(user -> new UserSearchResult(user.getId(),
-				user.getDisplayName(), user.getUsername(), determineRelationship(currentUser.getId(), user.getId())))
-				.toList();
+		List<UserSearchResult> items = users.stream().map(user -> {
+			var relationship = relationships.get(user.getId());
+			String state = relationship == null ? "NONE"
+					: relationship.getStatus() == FriendRequestStatus.ACCEPTED ? "FRIENDS"
+							: relationship.getSenderId().equals(currentUser.getId()) ? "PENDING_OUTGOING"
+									: "PENDING_INCOMING";
+			return new UserSearchResult(user.getId(), user.getDisplayName(), user.getUsername(), state,
+					relationship != null && relationship.getStatus() == FriendRequestStatus.PENDING
+							? relationship.getId()
+							: null);
+		}).toList();
 
-		return new UserSearchResponse(items);
-	}
-
-	private String determineRelationship(Long currentUserId, Long otherUserId) {
-		if (friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(currentUserId, otherUserId,
-				FriendRequestStatus.ACCEPTED)
-				|| friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(currentUserId, otherUserId,
-						FriendRequestStatus.ACCEPTED)) {
-			return "FRIENDS";
-		}
-		if (friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(currentUserId, otherUserId,
-				FriendRequestStatus.PENDING)) {
-			return "PENDING_OUTGOING";
-		}
-		if (friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(currentUserId, otherUserId,
-				FriendRequestStatus.PENDING)) {
-			return "PENDING_INCOMING";
-		}
-		return "NONE";
+		return new UserSearchResponse(items, page, hasMore);
 	}
 }

@@ -3,6 +3,7 @@ import {
   FriendListResponse,
   FriendRequestListResponse,
   FriendRequestResponse,
+  FriendRelationshipResponse,
 } from '../types';
 
 export function getFriends(token: string) {
@@ -14,6 +15,10 @@ export function removeFriend(userId: number, token: string) {
     method: 'DELETE',
     token,
   });
+}
+
+export function getFriendRelationship(userId: number, token: string) {
+  return apiRequest<FriendRelationshipResponse>(`/api/v1/friends/relationships/${userId}`, { token });
 }
 
 export function getIncomingFriendRequests(token: string) {

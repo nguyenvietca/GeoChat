@@ -1,7 +1,20 @@
 package com.geochat.friend.service;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.geochat.friend.dto.CreateFriendRequestRequest;
 import com.geochat.friend.dto.FriendListResponse;
+import com.geochat.friend.dto.FriendRelationshipResponse;
 import com.geochat.friend.dto.FriendRequestItemResponse;
 import com.geochat.friend.dto.FriendRequestListResponse;
 import com.geochat.friend.dto.FriendRequestResponse;
@@ -13,253 +26,259 @@ import com.geochat.notification.event.FriendRequestAcceptedEvent;
 import com.geochat.notification.event.FriendRequestCreatedEvent;
 import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
-import jakarta.persistence.EntityNotFoundException;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import jakarta.persistence.EntityNotFoundException;
 
 @Service
 public class FriendRequestService {
 
-    private final FriendRequestRepository friendRequestRepository;
-    private final UserRepository userRepository;
-    private final ApplicationEventPublisher applicationEventPublisher;
+	private final FriendRequestRepository friendRequestRepository;
+	private final UserRepository userRepository;
+	private final ApplicationEventPublisher applicationEventPublisher;
 
-    public FriendRequestService(FriendRequestRepository friendRequestRepository,
-                                UserRepository userRepository,
-                                ApplicationEventPublisher applicationEventPublisher) {
-        this.friendRequestRepository = friendRequestRepository;
-        this.userRepository = userRepository;
-        this.applicationEventPublisher = applicationEventPublisher;
-    }
+	public FriendRequestService(FriendRequestRepository friendRequestRepository, UserRepository userRepository,
+			ApplicationEventPublisher applicationEventPublisher) {
+		this.friendRequestRepository = friendRequestRepository;
+		this.userRepository = userRepository;
+		this.applicationEventPublisher = applicationEventPublisher;
+	}
 
-    @Transactional
-    public FriendRequestResponse createFriendRequest(String username, CreateFriendRequestRequest request) {
-        User sender = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+	@Transactional
+	public FriendRequestResponse createFriendRequest(String username, CreateFriendRequestRequest request) {
+		User sender = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        Long targetUserId = request.userId();
-        if (targetUserId == null) {
-            throw new IllegalArgumentException("User ID is required");
-        }
+		Long targetUserId = request.userId();
+		if (targetUserId == null) {
+			throw new IllegalArgumentException("User ID is required");
+		}
 
-        User targetUser = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new EntityNotFoundException("Target user not found"));
+		User targetUser = userRepository.findById(targetUserId)
+				.orElseThrow(() -> new EntityNotFoundException("Target user not found"));
 
-        if (sender.getId().equals(targetUser.getId())) {
-            throw new IllegalArgumentException("You cannot send a friend request to yourself");
-        }
+		if (sender.getId().equals(targetUser.getId())) {
+			throw new IllegalArgumentException("You cannot send a friend request to yourself");
+		}
 
-        if (areFriends(sender.getId(), targetUser.getId())) {
-            throw new IllegalArgumentException("Users are already friends");
-        }
+		if (areFriends(sender.getId(), targetUser.getId())) {
+			throw new IllegalArgumentException("Users are already friends");
+		}
 
-        boolean pendingAlreadyExists = friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(
-                sender.getId(), targetUser.getId(), FriendRequestStatus.PENDING)
-                || friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(
-                sender.getId(), targetUser.getId(), FriendRequestStatus.PENDING);
+		boolean pendingAlreadyExists = friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(sender.getId(),
+				targetUser.getId(), FriendRequestStatus.PENDING)
+				|| friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(sender.getId(), targetUser.getId(),
+						FriendRequestStatus.PENDING);
 
-        if (pendingAlreadyExists) {
-            throw new IllegalArgumentException("Friend request already exists");
-        }
+		if (pendingAlreadyExists) {
+			throw new IllegalArgumentException("Friend request already exists");
+		}
 
-        FriendRequest friendRequest = new FriendRequest();
-        friendRequest.setSenderId(sender.getId());
-        friendRequest.setReceiverId(targetUser.getId());
-        friendRequest.setStatus(FriendRequestStatus.PENDING);
-        friendRequest.setCreatedAt(Instant.now());
-        friendRequest.setUpdatedAt(Instant.now());
+		FriendRequest friendRequest = new FriendRequest();
+		friendRequest.setSenderId(sender.getId());
+		friendRequest.setReceiverId(targetUser.getId());
+		friendRequest.setStatus(FriendRequestStatus.PENDING);
+		friendRequest.setCreatedAt(Instant.now());
+		friendRequest.setUpdatedAt(Instant.now());
 
-        FriendRequest saved = friendRequestRepository.save(friendRequest);
-        applicationEventPublisher.publishEvent(new FriendRequestCreatedEvent(
-                saved.getId(),
-                saved.getReceiverId(),
-                saved.getSenderId(),
-                sender.getDisplayName()
-        ));
+		FriendRequest saved;
+		try {
+			saved = friendRequestRepository.saveAndFlush(friendRequest);
+		} catch (DataIntegrityViolationException conflict) {
+			throw new IllegalArgumentException("Friend request already exists");
+		}
+		applicationEventPublisher.publishEvent(new FriendRequestCreatedEvent(saved.getId(), saved.getReceiverId(),
+				saved.getSenderId(), sender.getDisplayName()));
 
-        return toResponse(saved);
-    }
+		return toResponse(saved);
+	}
 
-    @Transactional
-    public FriendRequestResponse acceptRequest(String username, Long requestId) {
-        User currentUser = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+	@Transactional
+	public FriendRequestResponse acceptRequest(String username, Long requestId) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        FriendRequest request = friendRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
+		FriendRequest request = friendRequestRepository.findByIdForUpdate(requestId)
+				.orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
 
-        if (!request.getReceiverId().equals(currentUser.getId())) {
-            throw new AccessDeniedException("You are not allowed to modify this request");
-        }
-        if (request.getStatus() != FriendRequestStatus.PENDING) {
-            throw new IllegalArgumentException("Friend request is not pending");
-        }
+		if (!request.getReceiverId().equals(currentUser.getId())) {
+			throw new AccessDeniedException("You are not allowed to modify this request");
+		}
+		if (request.getStatus() != FriendRequestStatus.PENDING) {
+			throw new IllegalArgumentException("Friend request is not pending");
+		}
 
-        request.setStatus(FriendRequestStatus.ACCEPTED);
-        request.setUpdatedAt(Instant.now());
+		request.setStatus(FriendRequestStatus.ACCEPTED);
+		request.setUpdatedAt(Instant.now());
 
-        FriendRequest saved = friendRequestRepository.save(request);
-        applicationEventPublisher.publishEvent(new FriendRequestAcceptedEvent(
-                saved.getId(),
-                saved.getSenderId(),
-                currentUser.getId(),
-                currentUser.getDisplayName()
-        ));
+		FriendRequest saved = friendRequestRepository.save(request);
+		applicationEventPublisher.publishEvent(new FriendRequestAcceptedEvent(saved.getId(), saved.getSenderId(),
+				currentUser.getId(), currentUser.getDisplayName()));
 
-        return toResponse(saved);
-    }
+		return toResponse(saved);
+	}
 
-    @Transactional
-    public FriendRequestResponse rejectRequest(String username, Long requestId) {
-        User currentUser = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+	@Transactional
+	public FriendRequestResponse rejectRequest(String username, Long requestId) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        FriendRequest request = friendRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
+		FriendRequest request = friendRequestRepository.findByIdForUpdate(requestId)
+				.orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
 
-        if (!request.getReceiverId().equals(currentUser.getId())) {
-            throw new AccessDeniedException("You are not allowed to modify this request");
-        }
-        if (request.getStatus() != FriendRequestStatus.PENDING) {
-            throw new IllegalArgumentException("Friend request is not pending");
-        }
+		if (!request.getReceiverId().equals(currentUser.getId())) {
+			throw new AccessDeniedException("You are not allowed to modify this request");
+		}
+		if (request.getStatus() != FriendRequestStatus.PENDING) {
+			throw new IllegalArgumentException("Friend request is not pending");
+		}
 
-        request.setStatus(FriendRequestStatus.REJECTED);
-        request.setUpdatedAt(Instant.now());
+		request.setStatus(FriendRequestStatus.REJECTED);
+		request.setUpdatedAt(Instant.now());
 
-        return toResponse(friendRequestRepository.save(request));
-    }
+		return toResponse(friendRequestRepository.save(request));
+	}
 
-    @Transactional
-    public FriendRequestResponse cancelRequest(String username, Long requestId) {
-        User currentUser = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+	@Transactional
+	public FriendRequestResponse cancelRequest(String username, Long requestId) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        FriendRequest request = friendRequestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
+		FriendRequest request = friendRequestRepository.findByIdForUpdate(requestId)
+				.orElseThrow(() -> new EntityNotFoundException("Friend request not found"));
 
-        if (!request.getSenderId().equals(currentUser.getId())) {
-            throw new AccessDeniedException("You are not allowed to modify this request");
-        }
-        if (request.getStatus() != FriendRequestStatus.PENDING) {
-            throw new IllegalArgumentException("Friend request is not pending");
-        }
+		if (!request.getSenderId().equals(currentUser.getId())) {
+			throw new AccessDeniedException("You are not allowed to modify this request");
+		}
+		if (request.getStatus() != FriendRequestStatus.PENDING) {
+			throw new IllegalArgumentException("Friend request is not pending");
+		}
 
-        request.setStatus(FriendRequestStatus.CANCELLED);
-        request.setUpdatedAt(Instant.now());
+		request.setStatus(FriendRequestStatus.CANCELLED);
+		request.setUpdatedAt(Instant.now());
 
-        return toResponse(friendRequestRepository.save(request));
-    }
+		return toResponse(friendRequestRepository.save(request));
+	}
 
-    @Transactional(readOnly = true)
-    public FriendRequestListResponse getIncomingFriendRequests(String username) {
-        User currentUser = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+	@Transactional(readOnly = true)
+	public FriendRequestListResponse getIncomingFriendRequests(String username) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        List<FriendRequestItemResponse> items = new ArrayList<>();
-        for (FriendRequest request : friendRequestRepository.findByReceiverIdAndStatusOrderByCreatedAtDesc(
-                currentUser.getId(), FriendRequestStatus.PENDING)) {
-            User sender = userRepository.findById(request.getSenderId())
-                    .orElseThrow(() -> new EntityNotFoundException("Sender user not found"));
-            items.add(new FriendRequestItemResponse(
-                    request.getId(),
-                    new UserSummaryResponse(sender.getId(), sender.getUsername(), sender.getDisplayName()),
-                    request.getCreatedAt()));
-        }
+		List<FriendRequest> requests = friendRequestRepository
+				.findByReceiverIdAndStatusOrderByCreatedAtDesc(currentUser.getId(), FriendRequestStatus.PENDING);
+		Map<Long, User> users = userRepository.findAllById(requests.stream().map(FriendRequest::getSenderId).toList())
+				.stream().collect(java.util.stream.Collectors.toMap(User::getId, user -> user));
+		List<FriendRequestItemResponse> items = new ArrayList<>();
+		for (FriendRequest request : requests) {
+			User sender = users.get(request.getSenderId());
+			if (sender == null)
+				continue;
+			items.add(new FriendRequestItemResponse(request.getId(),
+					new UserSummaryResponse(sender.getId(), sender.getUsername(), sender.getDisplayName()),
+					request.getCreatedAt()));
+		}
 
-        return new FriendRequestListResponse(items);
-    }
+		return new FriendRequestListResponse(items);
+	}
 
-    @Transactional(readOnly = true)
-    public FriendRequestListResponse getOutgoingFriendRequests(String username) {
-        User currentUser = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+	@Transactional(readOnly = true)
+	public FriendRequestListResponse getOutgoingFriendRequests(String username) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        List<FriendRequestItemResponse> items = new ArrayList<>();
-        for (FriendRequest request : friendRequestRepository.findBySenderIdAndStatusOrderByCreatedAtDesc(
-                currentUser.getId(), FriendRequestStatus.PENDING)) {
-            User receiver = userRepository.findById(request.getReceiverId())
-                    .orElseThrow(() -> new EntityNotFoundException("Receiver user not found"));
-            items.add(new FriendRequestItemResponse(
-                    request.getId(),
-                    new UserSummaryResponse(receiver.getId(), receiver.getUsername(), receiver.getDisplayName()),
-                    request.getCreatedAt()));
-        }
+		List<FriendRequest> requests = friendRequestRepository
+				.findBySenderIdAndStatusOrderByCreatedAtDesc(currentUser.getId(), FriendRequestStatus.PENDING);
+		Map<Long, User> users = userRepository.findAllById(requests.stream().map(FriendRequest::getReceiverId).toList())
+				.stream().collect(java.util.stream.Collectors.toMap(User::getId, user -> user));
+		List<FriendRequestItemResponse> items = new ArrayList<>();
+		for (FriendRequest request : requests) {
+			User receiver = users.get(request.getReceiverId());
+			if (receiver == null)
+				continue;
+			items.add(new FriendRequestItemResponse(request.getId(),
+					new UserSummaryResponse(receiver.getId(), receiver.getUsername(), receiver.getDisplayName()),
+					request.getCreatedAt()));
+		}
 
-        return new FriendRequestListResponse(items);
-    }
+		return new FriendRequestListResponse(items);
+	}
 
-    @Transactional(readOnly = true)
-    public FriendListResponse getFriends(String username) {
-        User currentUser = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+	@Transactional(readOnly = true)
+	public FriendListResponse getFriends(String username) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-        Map<Long, User> friendsById = new LinkedHashMap<>();
-        addAcceptedFriends(currentUser.getId(), friendsById, true);
-        addAcceptedFriends(currentUser.getId(), friendsById, false);
+		List<FriendRequest> sent = friendRequestRepository
+				.findBySenderIdAndStatusOrderByCreatedAtDesc(currentUser.getId(), FriendRequestStatus.ACCEPTED);
+		List<FriendRequest> received = friendRequestRepository
+				.findByReceiverIdAndStatusOrderByCreatedAtDesc(currentUser.getId(), FriendRequestStatus.ACCEPTED);
+		List<Long> friendIds = java.util.stream.Stream
+				.concat(sent.stream().map(FriendRequest::getReceiverId),
+						received.stream().map(FriendRequest::getSenderId))
+				.filter(id -> !id.equals(currentUser.getId())).distinct().toList();
+		Map<Long, User> friendsById = userRepository.findAllById(friendIds).stream().collect(java.util.stream.Collectors
+				.toMap(User::getId, user -> user, (first, ignored) -> first, LinkedHashMap::new));
 
-        return new FriendListResponse(friendsById.entrySet().stream()
-            .map(entry -> new com.geochat.friend.dto.FriendSummaryResponse(
-                entry.getKey(), entry.getValue().getUsername(), entry.getValue().getDisplayName()))
-                .toList());
-    }
+		return new FriendListResponse(friendsById.entrySet().stream()
+				.map(entry -> new com.geochat.friend.dto.FriendSummaryResponse(entry.getKey(),
+						entry.getValue().getUsername(), entry.getValue().getDisplayName()))
+				.toList());
+	}
 
-    @Transactional
-    public void removeFriend(String username, Long friendId) {
-        User currentUser = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new EntityNotFoundException("User not found"));
-        if (friendId == null || currentUser.getId().equals(friendId)) {
-            throw new IllegalArgumentException("A different friend ID is required");
-        }
+	@Transactional
+	public void removeFriend(String username, Long friendId) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+		if (friendId == null || currentUser.getId().equals(friendId)) {
+			throw new IllegalArgumentException("A different friend ID is required");
+		}
 
-        userRepository.findById(friendId)
-                .orElseThrow(() -> new EntityNotFoundException("Friend not found"));
-        if (!friendRequestRepository.areFriends(currentUser.getId(), friendId)) {
-            throw new IllegalArgumentException("Users are not friends");
-        }
+		userRepository.findById(friendId).orElseThrow(() -> new EntityNotFoundException("Friend not found"));
+		if (!friendRequestRepository.areFriends(currentUser.getId(), friendId)) {
+			throw new IllegalArgumentException("Users are not friends");
+		}
 
-        friendRequestRepository.deleteBySenderIdAndReceiverIdAndStatus(
-                currentUser.getId(), friendId, FriendRequestStatus.ACCEPTED);
-        friendRequestRepository.deleteBySenderIdAndReceiverIdAndStatus(
-                friendId, currentUser.getId(), FriendRequestStatus.ACCEPTED);
-    }
+		friendRequestRepository.deleteBySenderIdAndReceiverIdAndStatus(currentUser.getId(), friendId,
+				FriendRequestStatus.ACCEPTED);
+		friendRequestRepository.deleteBySenderIdAndReceiverIdAndStatus(friendId, currentUser.getId(),
+				FriendRequestStatus.ACCEPTED);
+	}
 
-        private void addAcceptedFriends(Long currentUserId, Map<Long, User> friendsById, boolean asSender) {
-        List<FriendRequest> requests = asSender
-                ? friendRequestRepository.findBySenderIdAndStatusOrderByCreatedAtDesc(currentUserId, FriendRequestStatus.ACCEPTED)
-                : friendRequestRepository.findByReceiverIdAndStatusOrderByCreatedAtDesc(currentUserId, FriendRequestStatus.ACCEPTED);
+	@Transactional(readOnly = true)
+	public FriendRelationshipResponse getRelationship(String username, Long otherUserId) {
+		User currentUser = userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+		if (otherUserId == null || currentUser.getId().equals(otherUserId)) {
+			throw new IllegalArgumentException("A different user ID is required");
+		}
+		userRepository.findById(otherUserId)
+				.filter(user -> user.getStatus() == com.geochat.user.entity.UserStatus.ACTIVE)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+		List<FriendRequest> matches = friendRequestRepository.findRelationships(currentUser.getId(),
+				List.of(otherUserId), List.of(FriendRequestStatus.PENDING, FriendRequestStatus.ACCEPTED));
+		FriendRequest relationship = matches.stream().findFirst().orElse(null);
+		if (relationship == null)
+			return new FriendRelationshipResponse(otherUserId, "NONE", null);
+		if (relationship.getStatus() == FriendRequestStatus.ACCEPTED) {
+			return new FriendRelationshipResponse(otherUserId, "FRIENDS", null);
+		}
+		String state = relationship.getSenderId().equals(currentUser.getId()) ? "PENDING_OUTGOING" : "PENDING_INCOMING";
+		return new FriendRelationshipResponse(otherUserId, state, relationship.getId());
+	}
 
-        for (FriendRequest request : requests) {
-            Long friendId = asSender ? request.getReceiverId() : request.getSenderId();
-            if (!friendId.equals(currentUserId)) {
-                userRepository.findById(friendId).ifPresent(user -> friendsById.putIfAbsent(user.getId(), user));
-            }
-        }
-    }
+	private boolean areFriends(Long firstUserId, Long secondUserId) {
+		return friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(firstUserId, secondUserId,
+				FriendRequestStatus.ACCEPTED)
+				|| friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(firstUserId, secondUserId,
+						FriendRequestStatus.ACCEPTED)
+				|| friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(secondUserId, firstUserId,
+						FriendRequestStatus.ACCEPTED)
+				|| friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(secondUserId, firstUserId,
+						FriendRequestStatus.ACCEPTED);
+	}
 
-    private boolean areFriends(Long firstUserId, Long secondUserId) {
-        return friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(firstUserId, secondUserId, FriendRequestStatus.ACCEPTED)
-                || friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(firstUserId, secondUserId, FriendRequestStatus.ACCEPTED)
-                || friendRequestRepository.existsBySenderIdAndReceiverIdAndStatus(secondUserId, firstUserId, FriendRequestStatus.ACCEPTED)
-                || friendRequestRepository.existsByReceiverIdAndSenderIdAndStatus(secondUserId, firstUserId, FriendRequestStatus.ACCEPTED);
-    }
-
-    private FriendRequestResponse toResponse(FriendRequest request) {
-        return new FriendRequestResponse(
-                request.getId(),
-                request.getSenderId(),
-                request.getReceiverId(),
-                request.getStatus(),
-                request.getCreatedAt(),
-                request.getUpdatedAt()
-        );
-    }
+	private FriendRequestResponse toResponse(FriendRequest request) {
+		return new FriendRequestResponse(request.getId(), request.getSenderId(), request.getReceiverId(),
+				request.getStatus(), request.getCreatedAt(), request.getUpdatedAt());
+	}
 }

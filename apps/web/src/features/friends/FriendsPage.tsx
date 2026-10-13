@@ -12,10 +12,11 @@ import {
 import { openDirectConversation } from '../../api/chats';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
-import { FriendRelationship, FriendRequestItem, FriendSummary } from '../../types';
+import { FriendRequestItem, FriendSummary } from '../../types';
+import { SearchPage } from '../search/SearchPage';
 
-type FriendsTab = 'friends' | 'incoming' | 'outgoing';
-const validTabs: FriendsTab[] = ['friends', 'incoming', 'outgoing'];
+type FriendsTab = 'friends' | 'incoming' | 'outgoing' | 'find';
+const validTabs: FriendsTab[] = ['friends', 'incoming', 'outgoing', 'find'];
 
 export function FriendsPage() {
   const { token } = useAuth();
@@ -33,6 +34,8 @@ export function FriendsPage() {
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [friendFilter, setFriendFilter] = useState('');
+  const [confirmingFriend, setConfirmingFriend] = useState<FriendSummary | null>(null);
 
   const refresh = async (initial = false) => {
     if (!token) {
@@ -118,6 +121,7 @@ export function FriendsPage() {
     try {
       await removeFriend(friend.userId, token);
       setFriends((items) => items.filter((item) => item.userId !== friend.userId));
+      setConfirmingFriend(null);
       setNotice(`${friend.displayName} removed from friends.`);
     } catch (removeError) {
       setError(removeError instanceof ApiError ? removeError.message : 'Unable to remove this friend.');
@@ -126,7 +130,8 @@ export function FriendsPage() {
     }
   };
 
-  const countForTab = activeTab === 'friends' ? friends.length : activeTab === 'incoming' ? incoming.length : outgoing.length;
+  const filteredFriends = friends.filter((friend) => `${friend.displayName} ${friend.username}`.toLocaleLowerCase().includes(friendFilter.trim().toLocaleLowerCase()));
+  const countForTab = activeTab === 'friends' ? filteredFriends.length : activeTab === 'incoming' ? incoming.length : activeTab === 'outgoing' ? outgoing.length : 0;
 
   return (
     <section className="page-content friends-page">
@@ -142,6 +147,7 @@ export function FriendsPage() {
           ['friends', 'Friends', friends.length],
           ['incoming', 'Incoming', incoming.length],
           ['outgoing', 'Sent', outgoing.length],
+          ['find', 'Find people', null],
         ] as const).map(([tab, label, count]) => (
           <button
             key={tab}
@@ -151,25 +157,30 @@ export function FriendsPage() {
             className={activeTab === tab ? 'segmented-tab selected' : 'segmented-tab'}
             onClick={() => selectTab(tab)}
           >
-            {label}<span>{count}</span>
+            {label}{count !== null ? <span>{count}</span> : null}
           </button>
         ))}
       </div>
       {error ? <div className="inline-error" role="alert">{error}<button type="button" onClick={() => void refresh(true)}>Try again</button></div> : null}
       {notice ? <p className="inline-notice" role="status">{notice}</p> : null}
-      {loading ? (
+      {activeTab === 'find' ? <SearchPage embedded /> : loading ? (
         <div className="result-state" role="status"><span className="spinner" />Loading {activeTab}…</div>
+      ) : activeTab === 'friends' && friends.length > 0 && countForTab === 0 ? (
+        <div className="result-state empty-state">No friends match this filter.</div>
       ) : countForTab === 0 ? (
         <div className="result-state empty-state">
           {activeTab === 'friends' ? 'No friends yet. Search for people to connect.' : activeTab === 'incoming' ? 'No incoming requests.' : 'No outgoing requests.'}
-          {activeTab === 'friends' ? <Link to="/app/search">Search people</Link> : null}
+          {activeTab === 'friends' ? <button type="button" onClick={() => selectTab('find')}>Find people</button> : null}
         </div>
       ) : (
-        <div className="results-list" aria-label={`${activeTab} list`}>
-          {activeTab === 'friends' ? friends.map((friend) => (
+        <><div className="friends-list-tools">
+          {activeTab === 'friends' ? <><label className="visually-hidden" htmlFor="friend-filter">Filter friends</label><input id="friend-filter" value={friendFilter} onChange={(event) => setFriendFilter(event.target.value)} placeholder="Filter your friends" /></> : null}
+        </div><div className="results-list" aria-label={`${activeTab} list`}>
+          {activeTab === 'friends' ? filteredFriends.map((friend) => (
             <article className="person-row friend-row" key={friend.userId}>
               <span className="person-avatar">{friend.displayName.charAt(0).toUpperCase()}</span>
               <span className="person-details"><strong>{friend.displayName}</strong><small>@{friend.username}</small></span>
+              <Link className="quiet-light-button compact-button" to={`/app/profile/${friend.userId}`}>Profile</Link>
               <button className="primary-button compact-button" type="button" onClick={() => void openChat(friend)} disabled={openingId !== null}>
                 {openingId === friend.userId ? 'Opening…' : 'Chat'}
               </button>
@@ -177,7 +188,7 @@ export function FriendsPage() {
                 className="quiet-light-button compact-button"
                 type="button"
                 aria-label={`Remove ${friend.displayName}`}
-                onClick={() => void removeFriendFromList(friend)}
+                onClick={() => setConfirmingFriend(friend)}
                 disabled={removingFriendId !== null}
               >
                 {removingFriendId === friend.userId ? 'Removing…' : 'Remove'}
@@ -192,8 +203,15 @@ export function FriendsPage() {
               onAction={(action) => void runRequestAction(request, action)}
             />
           ))}
-        </div>
+        </div></>
       )}
+      {confirmingFriend ? <div className="group-confirm-backdrop" role="presentation" onMouseDown={() => setConfirmingFriend(null)}>
+        <section className="group-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-friend-title" onMouseDown={(event) => event.stopPropagation()}>
+          <h2 id="remove-friend-title">Remove {confirmingFriend.displayName}?</h2>
+          <p>They will leave your friends list. Your existing conversation history will remain available.</p>
+          <div className="group-confirm-actions"><button type="button" className="quiet-light-button" onClick={() => setConfirmingFriend(null)}>Keep friend</button><button type="button" className="group-confirm-danger" disabled={removingFriendId !== null} onClick={() => void removeFriendFromList(confirmingFriend)}>{removingFriendId ? 'Removing…' : 'Remove friend'}</button></div>
+        </section>
+      </div> : null}
     </section>
   );
 }

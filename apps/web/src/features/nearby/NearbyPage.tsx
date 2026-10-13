@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getFriends, getIncomingFriendRequests, getOutgoingFriendRequests, sendFriendRequest, acceptFriendRequest } from '../../api/friends';
+import { getFriends, getIncomingFriendRequests, getOutgoingFriendRequests, sendFriendRequest, acceptFriendRequest, cancelFriendRequest, rejectFriendRequest } from '../../api/friends';
 import { openContextualConversation, openDirectConversation } from '../../api/chats';
 import { getNearbyUsers, updateCurrentLocation, getDiscoverability, setDiscoverability } from '../../api/location';
 import { ApiError } from '../../api/client';
@@ -14,6 +14,7 @@ export function NearbyPage() {
     const [people, setPeople] = useState<NearbyUser[]>([]); const [relationships, setRelationships] = useState<Record<number, FriendRelationship>>({});
     const radiusRef = useRef(radius); radiusRef.current = radius;
     const incoming = useRef(new Map<number, number>());
+    const outgoingRequests = useRef(new Map<number, number>());
     const [center, setCenter] = useState<{ latitude: number; longitude: number } | null>(null);
     const [selected, setSelected] = useState<number | null>(null); const [view, setView] = useState<'list' | 'map'>('list');
     const [searched, setSearched] = useState(false), [loading, setLoading] = useState(false), [locating, setLocating] = useState(false);
@@ -46,6 +47,7 @@ export function NearbyPage() {
             const [friends, requests, outgoing] = await Promise.all([getFriends(token), getIncomingFriendRequests(token), getOutgoingFriendRequests(token)]);
             if (!mounted.current || request !== generation.current) return;
             incoming.current = new Map(requests.items.map(item => [item.user.userId, item.requestId]));
+            outgoingRequests.current = new Map(outgoing.items.map(item => [item.user.userId, item.requestId]));
             const friendIds = new Set(friends.items.map(item => item.userId)), sent = new Set(outgoing.items.map(item => item.user.userId));
             const states = Object.fromEntries(response.items.map(person => [person.userId, friendIds.has(person.userId) ? 'FRIENDS' : incoming.current.has(person.userId) ? 'PENDING_INCOMING' : sent.has(person.userId) ? 'PENDING_OUTGOING' : 'NONE'])) as Record<number, FriendRelationship>;
             setRelationships(current => nextPage ? { ...current, ...states } : states);
@@ -79,6 +81,7 @@ export function NearbyPage() {
                 }
             }
             else if (state === 'PENDING_INCOMING') { const id = incoming.current.get(person.userId); if (!id) throw new Error(); await acceptFriendRequest(id, token); if (mounted.current) { setRelationships(current => ({ ...current, [person.userId]: 'FRIENDS' })); setNotice(`You and ${person.displayName} are now friends.`); } }
+            else if (state === 'PENDING_OUTGOING') { const id = outgoingRequests.current.get(person.userId); if (!id) throw new Error(); await cancelFriendRequest(id, token); if (mounted.current) { outgoingRequests.current.delete(person.userId); setRelationships(current => ({ ...current, [person.userId]: 'NONE' })); setNotice('Friend request cancelled.'); } }
         } catch (failure) {
             if (mounted.current) {
                 setError(failure instanceof ApiError ? failure.message : 'Unable to update this connection. Refresh nearby to check its current state.');
@@ -90,6 +93,14 @@ export function NearbyPage() {
                 setBusy(null);
             }
         }
+    }
+    async function reject(person: NearbyUser) {
+        if (!token || busyRef.current) return;
+        const id = incoming.current.get(person.userId); if (!id) return;
+        busyRef.current = true; setBusy(person.userId); setError('');
+        try { await rejectFriendRequest(id, token); if (mounted.current) { incoming.current.delete(person.userId); setRelationships(current => ({ ...current, [person.userId]: 'NONE' })); setNotice('Friend request rejected.'); } }
+        catch (failure) { if (mounted.current) setError(failure instanceof ApiError ? failure.message : 'Unable to reject this request.'); }
+        finally { busyRef.current = false; if (mounted.current) setBusy(null); }
     }
     function select(id: number) {
         setSelected(id);
@@ -153,10 +164,11 @@ export function NearbyPage() {
                                 <button type="button" disabled={busy !== null || loading} onClick={() => void action(person, true)}>
                                     {relationships[person.userId] === 'FRIENDS' ? 'Chat' : 'Message'}</button>
                                 {relationships[person.userId] === 'PENDING_OUTGOING' ?
-                                    <Link to="/app/friends?tab=outgoing">Manage request</Link> : relationships[person.userId] !== 'FRIENDS' ?
+                                    <button type="button" disabled={busy !== null || loading} onClick={() => void action(person)}>{busy === person.userId ? 'Working...' : 'Cancel request'}</button> : relationships[person.userId] !== 'FRIENDS' ?
                                         <button type="button" disabled={busy !== null || loading} onClick={() => void action(person)}>
                                             {busy === person.userId ? 'Working...' : relationships[person.userId] === 'PENDING_INCOMING' ? 'Accept request' : 'Add friend'}
                                         </button> : null}
+                                {relationships[person.userId] === 'PENDING_INCOMING' ? <button type="button" disabled={busy !== null || loading} onClick={() => void reject(person)}>Reject</button> : null}
                             </div>
                         </article>)}
                         {hasMore ? <button type="button" disabled={loading} onClick={() => void findNearby(false, page + 1)}>Load more people</button> : null}
