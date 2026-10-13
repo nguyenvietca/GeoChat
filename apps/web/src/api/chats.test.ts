@@ -64,4 +64,12 @@ describe('chat API', () => {
       method: 'POST', body: { content: 'hello' }, token: 'jwt',
     });
   });
+
+  it('sends the stable history cursor when loading older messages', () => {
+    getMessages(42, 1, 20, 'jwt', { beforeCreatedAt: '2026-01-01T00:00:00Z', beforeId: 99 });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      '/api/v1/chats/42/messages?page=1&limit=20&beforeCreatedAt=2026-01-01T00%3A00%3A00Z&beforeId=99',
+      { token: 'jwt' },
+    );
+  });
 });

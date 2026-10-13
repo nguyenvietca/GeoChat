@@ -38,629 +38,671 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class ChatIntegrationTest {
 
-    @Autowired
-    private WebApplicationContext webApplicationContext;
+	@Autowired
+	private WebApplicationContext webApplicationContext;
 
-    @Autowired
-    private UserRepository userRepository;
+	@Autowired
+	private UserRepository userRepository;
 
-        @Autowired
-        private ConversationRepository conversationRepository;
+	@Autowired
+	private ConversationRepository conversationRepository;
 
-        @Autowired
-        private ConversationParticipantRepository participantRepository;
+	@Autowired
+	private ConversationParticipantRepository participantRepository;
 
-        @Autowired
-        private MessageRepository messageRepository;
+	@Autowired
+	private MessageRepository messageRepository;
 
-        @Autowired
-        private UserLocationRepository locationRepository;
+	@Autowired
+	private UserLocationRepository locationRepository;
 
-    @Autowired
-    private FriendRequestRepository friendRequestRepository;
+	@Autowired
+	private FriendRequestRepository friendRequestRepository;
 
-    @Autowired
-    private PasswordEncoder passwordEncoder;
+	@Autowired
+	private PasswordEncoder passwordEncoder;
 
-    @Autowired
-    private JwtService jwtService;
+	@Autowired
+	private JwtService jwtService;
 
-        @Autowired
-        private ChatService chatService;
+	@Autowired
+	private ChatService chatService;
 
-        @Autowired
-        private GroupService groupService;
+	@Autowired
+	private GroupService groupService;
 
-    @Autowired
-    private jakarta.persistence.EntityManagerFactory entityManagerFactory;
+	@Autowired
+	private jakarta.persistence.EntityManagerFactory entityManagerFactory;
 
-    private MockMvc mockMvc;
+	private MockMvc mockMvc;
 
-    @BeforeEach
-    void setUp() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
-                .addFilters(webApplicationContext.getBean(FilterChainProxy.class))
-                .build();
-        messageRepository.deleteAll();
-        participantRepository.deleteAll();
-        conversationRepository.deleteAll();
-        locationRepository.deleteAll();
-        friendRequestRepository.deleteAll();
-        userRepository.deleteAll();
-    }
+	@BeforeEach
+	void setUp() {
+		mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
+				.addFilters(webApplicationContext.getBean(FilterChainProxy.class)).build();
+		messageRepository.deleteAll();
+		participantRepository.deleteAll();
+		conversationRepository.deleteAll();
+		locationRepository.deleteAll();
+		friendRequestRepository.deleteAll();
+		userRepository.deleteAll();
+	}
 
-    @Test
-    void openDirectConversationRequiresFriendshipAndReusesExistingConversation() throws Exception {
-        User alice = createUser("alice-chat", "Alice");
-        User bob = createUser("bob-chat", "Bob");
-        markFriends(alice, bob);
+	@Test
+	void openDirectConversationRequiresFriendshipAndReusesExistingConversation() throws Exception {
+		User alice = createUser("alice-chat", "Alice");
+		User bob = createUser("bob-chat", "Bob");
+		markFriends(alice, bob);
 
-        String first = mockMvc.perform(post("/api/v1/chats/direct")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(jsonBody(bob.getId())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.type").value("DIRECT"))
-                .andExpect(jsonPath("$.data.participant.userId").value(bob.getId()))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+		String first = mockMvc
+				.perform(post("/api/v1/chats/direct").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.type").value("DIRECT"))
+				.andExpect(jsonPath("$.data.participant.userId").value(bob.getId())).andReturn().getResponse()
+				.getContentAsString();
 
-        String second = mockMvc.perform(post("/api/v1/chats/direct")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(jsonBody(bob.getId())))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+		String second = mockMvc
+				.perform(post("/api/v1/chats/direct").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
-        org.junit.jupiter.api.Assertions.assertEquals(
-                new com.fasterxml.jackson.databind.ObjectMapper().readTree(first).path("data").path("conversationId").asText(),
-                new com.fasterxml.jackson.databind.ObjectMapper().readTree(second).path("data").path("conversationId").asText());
-    }
+		org.junit.jupiter.api.Assertions.assertEquals(
+				new com.fasterxml.jackson.databind.ObjectMapper().readTree(first).path("data").path("conversationId")
+						.asText(),
+				new com.fasterxml.jackson.databind.ObjectMapper().readTree(second).path("data").path("conversationId")
+						.asText());
+	}
 
-    @Test
-    void nearbyNonFriendsCanEachSendFiveMessagesButDistantUsersCannotOpenChat() throws Exception {
-        User alice = createUser("nearby-chat-alice", "Alice");
-        User bob = createUser("nearby-chat-bob", "Bob");
-        User distant = createUser("nearby-chat-distant", "Distant");
-        locationRepository.saveAll(java.util.List.of(
-                buildLocation(alice.getId(), 0.0, 0.0),
-                buildLocation(bob.getId(), 0.01, 0.0),
-                buildLocation(distant.getId(), 0.2, 0.0)));
+	@Test
+	void nearbyNonFriendsCanEachSendFiveMessagesButDistantUsersCannotOpenChat() throws Exception {
+		User alice = createUser("nearby-chat-alice", "Alice");
+		User bob = createUser("nearby-chat-bob", "Bob");
+		User distant = createUser("nearby-chat-distant", "Distant");
+		locationRepository.saveAll(java.util.List.of(buildLocation(alice.getId(), 0.0, 0.0),
+				buildLocation(bob.getId(), 0.01, 0.0), buildLocation(distant.getId(), 0.2, 0.0)));
 
-        mockMvc.perform(post("/api/v1/chats/direct")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(jsonBody(bob.getId())))
-                .andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/v1/chats/direct").header("Authorization", bearer(tokenFor(alice)))
+				.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isBadRequest());
 
-        String response = mockMvc.perform(post("/api/v1/chats/contextual")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":" + bob.getId() + ",\"radiusMeters\":5000}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.type").value("DIRECT"))
-                .andReturn().getResponse().getContentAsString();
-        long conversationId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response)
-                .path("data").path("conversationId").asLong();
+		String response = mockMvc
+				.perform(post("/api/v1/chats/contextual").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"userId\":" + bob.getId() + ",\"radiusMeters\":5000}"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.type").value("DIRECT")).andReturn().getResponse()
+				.getContentAsString();
+		long conversationId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).path("data")
+				.path("conversationId").asLong();
 
-        mockMvc.perform(get("/api/v1/chats/{conversationId}", conversationId)
-                        .header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.limitedMessagesRemaining").value(5));
-        mockMvc.perform(post("/api/v1/chats/contextual")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":" + distant.getId() + ",\"radiusMeters\":5000}"))
-                .andExpect(status().isForbidden());
+		mockMvc.perform(
+				get("/api/v1/chats/{conversationId}", conversationId).header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").value(5));
+		mockMvc.perform(post("/api/v1/chats/contextual").header("Authorization", bearer(tokenFor(alice)))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"userId\":" + distant.getId() + ",\"radiusMeters\":5000}"))
+				.andExpect(status().isForbidden());
 
-        for (int messageNumber = 0; messageNumber < 5; messageNumber++) {
-            mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
-                            .header("Authorization", bearer(tokenFor(alice)))
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"content\":\"Alice " + messageNumber + "\"}"))
-                    .andExpect(status().isOk());
-        }
-        mockMvc.perform(get("/api/v1/chats/{id}", conversationId).header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").value(0));
-        mockMvc.perform(get("/api/v1/chats/{id}", conversationId).header("Authorization", bearer(tokenFor(bob))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").value(5));
-        for (int messageNumber = 0; messageNumber < 5; messageNumber++) {
-            mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
-                            .header("Authorization", bearer(tokenFor(bob)))
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"content\":\"Bob " + messageNumber + "\"}"))
-                    .andExpect(status().isOk());
-        }
-        mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
-                        .header("Authorization", bearer(tokenFor(bob)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"Sixth message\"}"))
-                .andExpect(status().isBadRequest());
-    }
+		for (int messageNumber = 0; messageNumber < 5; messageNumber++) {
+			mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
+					.header("Authorization", bearer(tokenFor(alice))).contentType(MediaType.APPLICATION_JSON)
+					.content("{\"content\":\"Alice " + messageNumber + "\"}")).andExpect(status().isOk());
+		}
+		mockMvc.perform(get("/api/v1/chats/{id}", conversationId).header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").value(0));
+		mockMvc.perform(get("/api/v1/chats/{id}", conversationId).header("Authorization", bearer(tokenFor(bob))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").value(5));
+		for (int messageNumber = 0; messageNumber < 5; messageNumber++) {
+			mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
+					.header("Authorization", bearer(tokenFor(bob))).contentType(MediaType.APPLICATION_JSON)
+					.content("{\"content\":\"Bob " + messageNumber + "\"}")).andExpect(status().isOk());
+		}
+		mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationId)
+				.header("Authorization", bearer(tokenFor(bob))).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"content\":\"Sixth message\"}")).andExpect(status().isBadRequest());
+	}
 
-    @Test
-    void becomingFriendsAfterALimitedChatReusesOneUnlimitedConversation() throws Exception {
-        User alice = createUser("limited-then-friend-alice", "Alice");
-        User bob = createUser("limited-then-friend-bob", "Bob");
-        locationRepository.saveAll(java.util.List.of(
-                buildLocation(alice.getId(), 0.0, 0.0), buildLocation(bob.getId(), 0.01, 0.0)));
-        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        String limited = mockMvc.perform(post("/api/v1/chats/contextual")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":" + bob.getId() + ",\"radiusMeters\":5000}"))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        long limitedId = mapper.readTree(limited).path("data").path("conversationId").asLong();
-        markFriends(alice, bob);
+	@Test
+	void becomingFriendsAfterALimitedChatReusesOneUnlimitedConversation() throws Exception {
+		User alice = createUser("limited-then-friend-alice", "Alice");
+		User bob = createUser("limited-then-friend-bob", "Bob");
+		locationRepository.saveAll(
+				java.util.List.of(buildLocation(alice.getId(), 0.0, 0.0), buildLocation(bob.getId(), 0.01, 0.0)));
+		var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+		String limited = mockMvc
+				.perform(post("/api/v1/chats/contextual").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"userId\":" + bob.getId() + ",\"radiusMeters\":5000}"))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		long limitedId = mapper.readTree(limited).path("data").path("conversationId").asLong();
+		markFriends(alice, bob);
 
-        String friend = mockMvc.perform(post("/api/v1/chats/direct")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(jsonBody(bob.getId())))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        org.junit.jupiter.api.Assertions.assertEquals(limitedId,
-                mapper.readTree(friend).path("data").path("conversationId").asLong());
-        mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(1));
-        mockMvc.perform(get("/api/v1/chats/{id}", limitedId).header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.limitedMessagesRemaining").doesNotExist());
-    }
+		String friend = mockMvc
+				.perform(post("/api/v1/chats/direct").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		org.junit.jupiter.api.Assertions.assertEquals(limitedId,
+				mapper.readTree(friend).path("data").path("conversationId").asLong());
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1));
+		mockMvc.perform(get("/api/v1/chats/{id}", limitedId).header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").doesNotExist());
+	}
 
-        @Test
-        void membersOfTheSameGroupCanOpenAContextualChatWithoutLocationSharing() throws Exception {
-                User owner = createUser("context-group-owner", "Owner");
-                User member = createUser("context-group-member", "Member");
-                markFriends(owner, member);
-                groupService.createGroup(owner.getUsername(), new CreateGroupRequest("Shared group", java.util.List.of(member.getId())));
+	@Test
+	void membersOfTheSameGroupCanOpenAContextualChatWithoutLocationSharing() throws Exception {
+		User owner = createUser("context-group-owner", "Owner");
+		User member = createUser("context-group-member", "Member");
+		markFriends(owner, member);
+		groupService.createGroup(owner.getUsername(),
+				new CreateGroupRequest("Shared group", java.util.List.of(member.getId())));
 
-                mockMvc.perform(post("/api/v1/chats/contextual")
-                                                .header("Authorization", bearer(tokenFor(member)))
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content("{\"userId\":" + owner.getId() + "}"))
-                                .andExpect(status().isOk())
-                                .andExpect(jsonPath("$.data.type").value("DIRECT"));
-        }
+		mockMvc.perform(post("/api/v1/chats/contextual").header("Authorization", bearer(tokenFor(member)))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + owner.getId() + "}"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.type").value("DIRECT"));
+	}
 
-    @Test
-    void listAndDetailConversationForAuthenticatedParticipant() throws Exception {
-        User alice = createUser("alice-list", "Alice");
-        User bob = createUser("bob-list", "Bob");
-        markFriends(alice, bob);
+	@Test
+	void listAndDetailConversationForAuthenticatedParticipant() throws Exception {
+		User alice = createUser("alice-list", "Alice");
+		User bob = createUser("bob-list", "Bob");
+		markFriends(alice, bob);
 
-        String conversationId = mockMvc.perform(post("/api/v1/chats/direct")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(jsonBody(bob.getId())))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+		String conversationId = mockMvc
+				.perform(post("/api/v1/chats/direct").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
-        String conversationIdValue = new com.fasterxml.jackson.databind.ObjectMapper().readTree(conversationId)
-                .path("data").path("conversationId").asText();
+		String conversationIdValue = new com.fasterxml.jackson.databind.ObjectMapper().readTree(conversationId)
+				.path("data").path("conversationId").asText();
 
-        mockMvc.perform(get("/api/v1/chats")
-                        .header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].conversationId").value(conversationIdValue))
-                .andExpect(jsonPath("$.data.items[0].participant.userId").value(bob.getId()));
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
+				.andExpect(jsonPath("$.data.items[0].conversationId").value(conversationIdValue))
+				.andExpect(jsonPath("$.data.items[0].participant.userId").value(bob.getId()));
 
-        mockMvc.perform(get("/api/v1/chats/{conversationId}", conversationIdValue)
-                        .header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.conversationId").value(conversationIdValue))
-                .andExpect(jsonPath("$.data.type").value("DIRECT"));
-    }
+		mockMvc.perform(get("/api/v1/chats/{conversationId}", conversationIdValue).header("Authorization",
+				bearer(tokenFor(alice)))).andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.conversationId").value(conversationIdValue))
+				.andExpect(jsonPath("$.data.type").value("DIRECT"));
+	}
 
-    @Test
-    void conversationListIncludesLatestMessagePreview() throws Exception {
-        User alice = createUser("alice-preview", "Alice");
-        User bob = createUser("bob-preview", "Bob");
-        markFriends(alice, bob);
-        long conversationId = chatService.openDirectConversation(alice.getUsername(),
-                new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
-        chatService.sendMessage(alice.getUsername(), conversationId, new SendMessageRequest("Older message"));
-        chatService.sendMessage(alice.getUsername(), conversationId, new SendMessageRequest("Latest message"));
+	@Test
+	void conversationListIncludesLatestMessagePreview() throws Exception {
+		User alice = createUser("alice-preview", "Alice");
+		User bob = createUser("bob-preview", "Bob");
+		markFriends(alice, bob);
+		long conversationId = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		chatService.sendMessage(alice.getUsername(), conversationId, new SendMessageRequest("Older message"));
+		chatService.sendMessage(alice.getUsername(), conversationId, new SendMessageRequest("Latest message"));
 
-        mockMvc.perform(get("/api/v1/chats")
-                        .header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].lastMessage").value("Latest message"));
-    }
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].lastMessage").value("Latest message"));
+	}
 
-    @Test
-    void sendMessageAndReadMessagesWithPagination() throws Exception {
-        User alice = createUser("alice-message", "Alice");
-        User bob = createUser("bob-message", "Bob");
-        markFriends(alice, bob);
+	@Test
+	void sendMessageAndReadMessagesWithPagination() throws Exception {
+		User alice = createUser("alice-message", "Alice");
+		User bob = createUser("bob-message", "Bob");
+		markFriends(alice, bob);
 
-        String conversationId = mockMvc.perform(post("/api/v1/chats/direct")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(jsonBody(bob.getId())))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+		String conversationId = mockMvc
+				.perform(post("/api/v1/chats/direct").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
-        String conversationIdValue = new com.fasterxml.jackson.databind.ObjectMapper().readTree(conversationId)
-                .path("data").path("conversationId").asText();
+		String conversationIdValue = new com.fasterxml.jackson.databind.ObjectMapper().readTree(conversationId)
+				.path("data").path("conversationId").asText();
 
-        mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationIdValue)
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"Hello Bob!\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content").value("Hello Bob!"))
-                .andExpect(jsonPath("$.data.senderId").value(alice.getId()));
+		mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationIdValue)
+				.header("Authorization", bearer(tokenFor(alice))).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"content\":\"Hello Bob!\"}")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.content").value("Hello Bob!"))
+				.andExpect(jsonPath("$.data.senderId").value(alice.getId()));
 
-        mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationIdValue)
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .param("limit", "10"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].content").value("Hello Bob!"));
-    }
+		mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationIdValue)
+				.header("Authorization", bearer(tokenFor(alice))).param("limit", "10")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.items.length()").value(1))
+				.andExpect(jsonPath("$.data.items[0].content").value("Hello Bob!"));
+	}
 
-    @Test
-    void loadsMessagePagesFromNewestAndReturnsEachPageInChronologicalOrder() throws Exception {
-        User alice = createUser("alice-paged", "Alice");
-        User bob = createUser("bob-paged", "Bob");
-        markFriends(alice, bob);
-        long conversationId = chatService.openDirectConversation(alice.getUsername(),
-                new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+	@Test
+	void loadsMessagePagesFromNewestAndReturnsEachPageInChronologicalOrder() throws Exception {
+		User alice = createUser("alice-paged", "Alice");
+		User bob = createUser("bob-paged", "Bob");
+		markFriends(alice, bob);
+		long conversationId = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
 
-        for (int messageIndex = 0; messageIndex < 25; messageIndex++) {
-            chatService.sendMessage(alice.getUsername(), conversationId,
-                    new SendMessageRequest("Message " + messageIndex));
-        }
+		for (int messageIndex = 0; messageIndex < 25; messageIndex++) {
+			chatService.sendMessage(alice.getUsername(), conversationId,
+					new SendMessageRequest("Message " + messageIndex));
+		}
 
-        mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationId)
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .param("limit", "10")
-                        .param("page", "0"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(25))
-                .andExpect(jsonPath("$.data.page").value(0))
-                .andExpect(jsonPath("$.data.items[0].content").value("Message 15"))
-                .andExpect(jsonPath("$.data.items[9].content").value("Message 24"));
+		mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationId)
+				.header("Authorization", bearer(tokenFor(alice))).param("limit", "10").param("page", "0"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(25))
+				.andExpect(jsonPath("$.data.page").value(0))
+				.andExpect(jsonPath("$.data.items[0].content").value("Message 15"))
+				.andExpect(jsonPath("$.data.items[9].content").value("Message 24"));
 
-        mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationId)
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .param("limit", "10")
-                        .param("page", "1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.page").value(1))
-                .andExpect(jsonPath("$.data.items[0].content").value("Message 5"))
-                .andExpect(jsonPath("$.data.items[9].content").value("Message 14"));
-    }
+		mockMvc.perform(get("/api/v1/chats/{conversationId}/messages", conversationId)
+				.header("Authorization", bearer(tokenFor(alice))).param("limit", "10").param("page", "1"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.page").value(1))
+				.andExpect(jsonPath("$.data.items[0].content").value("Message 5"))
+				.andExpect(jsonPath("$.data.items[9].content").value("Message 14"));
+	}
 
-    @Test
-    void invalidMessagesRejectedAndNonParticipantsCannotAccess() throws Exception {
-        User alice = createUser("alice-invalid", "Alice");
-        User bob = createUser("bob-invalid", "Bob");
-        markFriends(alice, bob);
+	@Test
+	void invalidMessagesRejectedAndNonParticipantsCannotAccess() throws Exception {
+		User alice = createUser("alice-invalid", "Alice");
+		User bob = createUser("bob-invalid", "Bob");
+		markFriends(alice, bob);
 
-        String conversationId = mockMvc.perform(post("/api/v1/chats/direct")
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(jsonBody(bob.getId())))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+		String conversationId = mockMvc
+				.perform(post("/api/v1/chats/direct").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
-        String conversationIdValue = new com.fasterxml.jackson.databind.ObjectMapper().readTree(conversationId)
-                .path("data").path("conversationId").asText();
+		String conversationIdValue = new com.fasterxml.jackson.databind.ObjectMapper().readTree(conversationId)
+				.path("data").path("conversationId").asText();
 
-        mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationIdValue)
-                        .header("Authorization", bearer(tokenFor(alice)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"   \"}"))
-                .andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/v1/chats/{conversationId}/messages", conversationIdValue)
+				.header("Authorization", bearer(tokenFor(alice))).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"content\":\"   \"}")).andExpect(status().isBadRequest());
 
-        User carol = createUser("carol-chat", "Carol");
-        mockMvc.perform(get("/api/v1/chats/{conversationId}", conversationIdValue)
-                        .header("Authorization", bearer(tokenFor(carol))))
-                .andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/v1/chats/{conversationId}/presence", conversationIdValue)
-                        .header("Authorization", bearer(tokenFor(carol))))
-                .andExpect(status().isForbidden());
-    }
+		User carol = createUser("carol-chat", "Carol");
+		mockMvc.perform(get("/api/v1/chats/{conversationId}", conversationIdValue).header("Authorization",
+				bearer(tokenFor(carol)))).andExpect(status().isForbidden());
+		mockMvc.perform(get("/api/v1/chats/{conversationId}/presence", conversationIdValue).header("Authorization",
+				bearer(tokenFor(carol)))).andExpect(status().isForbidden());
+	}
 
-    @Test
-    void summariesUseActualLatestMessageTimeAndBatchDataForDirectAndOwnerOnlyGroups() throws Exception {
-        User alice = createUser("summary-alice", "Alice");
-        User bob = createUser("summary-bob", "Bob");
-        User outsider = createUser("summary-outsider", "Outsider");
-        markFriends(alice, bob);
-        Long directId = chatService.openDirectConversation(alice.getUsername(),
-                new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
-        Long groupId = groupService.createGroup(alice.getUsername(),
-                new CreateGroupRequest("Owner only", java.util.List.of())).groupId();
-        var direct = conversationRepository.findById(directId).orElseThrow();
-        direct.setUpdatedAt(Instant.parse("2030-01-01T00:00:00Z"));
-        conversationRepository.save(direct);
-        var first = new com.geochat.chat.entity.Message();
-        first.setConversationId(directId); first.setSenderId(bob.getId()); first.setContent("Earlier");
-        first.setCreatedAt(Instant.parse("2020-01-01T00:00:00Z"));
-        messageRepository.save(first);
-        var latest = new com.geochat.chat.entity.Message();
-        latest.setConversationId(directId); latest.setSenderId(alice.getId()); latest.setContent("Latest");
-        latest.setCreatedAt(first.getCreatedAt());
-        latest = messageRepository.save(latest);
-        var items = chatService.listConversations(alice.getUsername()).items();
-        org.assertj.core.api.Assertions.assertThat(items).hasSize(2);
-        org.assertj.core.api.Assertions.assertThat(items.get(0).conversationId()).isEqualTo(groupId);
-        org.assertj.core.api.Assertions.assertThat(items.get(0).lastMessage()).isNull();
-        org.assertj.core.api.Assertions.assertThat(items.get(0).groupName()).isEqualTo("Owner only");
-        org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessage()).isEqualTo("Latest");
-        org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessageId()).isEqualTo(latest.getId());
-        org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessageAt()).isEqualTo(latest.getCreatedAt());
-        org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessageSender()).isEqualTo("Alice");
-        org.assertj.core.api.Assertions.assertThat(chatService.listConversations(outsider.getUsername()).items()).isEmpty();
-        mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[1].participant.displayName").value("Bob"))
-                .andExpect(jsonPath("$.data.items[1].lastMessage").value("Latest"))
-                .andExpect(jsonPath("$.data.items[1].updatedAt").value("2030-01-01T00:00:00Z"))
-                .andExpect(jsonPath("$.data.items[1].lastMessageAt").value("2020-01-01T00:00:00Z"));
-    }
+	@Test
+	void summariesUseActualLatestMessageTimeAndBatchDataForDirectAndOwnerOnlyGroups() throws Exception {
+		User alice = createUser("summary-alice", "Alice");
+		User bob = createUser("summary-bob", "Bob");
+		User outsider = createUser("summary-outsider", "Outsider");
+		markFriends(alice, bob);
+		Long directId = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		Long groupId = groupService
+				.createGroup(alice.getUsername(), new CreateGroupRequest("Owner only", java.util.List.of())).groupId();
+		var direct = conversationRepository.findById(directId).orElseThrow();
+		direct.setUpdatedAt(Instant.parse("2030-01-01T00:00:00Z"));
+		conversationRepository.save(direct);
+		var first = new com.geochat.chat.entity.Message();
+		first.setConversationId(directId);
+		first.setSenderId(bob.getId());
+		first.setContent("Earlier");
+		first.setCreatedAt(Instant.parse("2020-01-01T00:00:00Z"));
+		messageRepository.save(first);
+		var latest = new com.geochat.chat.entity.Message();
+		latest.setConversationId(directId);
+		latest.setSenderId(alice.getId());
+		latest.setContent("Latest");
+		latest.setCreatedAt(first.getCreatedAt());
+		latest = messageRepository.save(latest);
+		var items = chatService.listConversations(alice.getUsername()).items();
+		org.assertj.core.api.Assertions.assertThat(items).hasSize(2);
+		org.assertj.core.api.Assertions.assertThat(items.get(0).conversationId()).isEqualTo(groupId);
+		org.assertj.core.api.Assertions.assertThat(items.get(0).lastMessage()).isNull();
+		org.assertj.core.api.Assertions.assertThat(items.get(0).groupName()).isEqualTo("Owner only");
+		org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessage()).isEqualTo("Latest");
+		org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessageId()).isEqualTo(latest.getId());
+		org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessageAt()).isEqualTo(latest.getCreatedAt());
+		org.assertj.core.api.Assertions.assertThat(items.get(1).lastMessageSender()).isEqualTo("Alice");
+		org.assertj.core.api.Assertions.assertThat(chatService.listConversations(outsider.getUsername()).items())
+				.isEmpty();
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items[1].participant.displayName").value("Bob"))
+				.andExpect(jsonPath("$.data.items[1].lastMessage").value("Latest"))
+				.andExpect(jsonPath("$.data.items[1].updatedAt").value("2030-01-01T00:00:00Z"))
+				.andExpect(jsonPath("$.data.items[1].lastMessageAt").value("2020-01-01T00:00:00Z"));
+	}
 
-    @Test
-    void summaryQueryCountDoesNotGrowWithTheNumberOfGroups() {
-        User owner = createUser("batch-owner", "Owner");
-        for (int index = 0; index < 8; index++) {
-            groupService.createGroup(owner.getUsername(), new CreateGroupRequest("Group " + index, java.util.List.of()));
-        }
-        var statistics = entityManagerFactory.unwrap(org.hibernate.SessionFactory.class).getStatistics();
-        statistics.setStatisticsEnabled(true);
-        statistics.clear();
-        try {
-            org.assertj.core.api.Assertions.assertThat(chatService.listConversations(owner.getUsername()).items()).hasSize(8);
-            org.assertj.core.api.Assertions.assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(7);
-        } finally {
-            statistics.setStatisticsEnabled(false);
-        }
-    }
+	@Test
+	void summaryQueryCountDoesNotGrowWithTheNumberOfGroups() {
+		User owner = createUser("batch-owner", "Owner");
+		for (int index = 0; index < 8; index++) {
+			groupService.createGroup(owner.getUsername(),
+					new CreateGroupRequest("Group " + index, java.util.List.of()));
+		}
+		var statistics = entityManagerFactory.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+		try {
+			org.assertj.core.api.Assertions.assertThat(chatService.listConversations(owner.getUsername()).items())
+					.hasSize(8);
+			org.assertj.core.api.Assertions.assertThat(statistics.getPrepareStatementCount()).isLessThanOrEqualTo(7);
+		} finally {
+			statistics.setStatisticsEnabled(false);
+		}
+	}
 
-    @Test
-    void discoveryAllowsNonFriendsWithoutLocationAndReusesTheirLimitedChat() throws Exception {
-        User alice = createUser("discovery-alice", "Alice");
-        User bob = createUser("discovery-bob", "Bob");
-        mockMvc.perform(post("/api/v1/chats/discovery").contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
-                .andExpect(status().isUnauthorized());
-        var result = mockMvc.perform(post("/api/v1/chats/discovery").header("Authorization", bearer(tokenFor(alice)))
-                .contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        long id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(result).path("data").path("conversationId").asLong();
-        org.assertj.core.api.Assertions.assertThat(chatService.openDiscoveryConversation(bob.getUsername(),
-                new com.geochat.chat.dto.OpenDirectChatRequest(alice.getId())).conversationId()).isEqualTo(id);
-        mockMvc.perform(get("/api/v1/chats/{id}", id).header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").value(5));
-        mockMvc.perform(post("/api/v1/chats/discovery").header("Authorization", bearer(tokenFor(alice)))
-                .contentType(MediaType.APPLICATION_JSON).content(jsonBody(alice.getId())))
-                .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/v1/chats/discovery").header("Authorization", bearer(tokenFor(alice)))
-                .contentType(MediaType.APPLICATION_JSON).content(jsonBody(Long.MAX_VALUE)))
-                .andExpect(status().isNotFound());
-    }
+	@Test
+	void discoveryAllowsNonFriendsWithoutLocationAndReusesTheirLimitedChat() throws Exception {
+		User alice = createUser("discovery-alice", "Alice");
+		User bob = createUser("discovery-bob", "Bob");
+		mockMvc.perform(
+				post("/api/v1/chats/discovery").contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isUnauthorized());
+		var result = mockMvc
+				.perform(post("/api/v1/chats/discovery").header("Authorization", bearer(tokenFor(alice)))
+						.contentType(MediaType.APPLICATION_JSON).content(jsonBody(bob.getId())))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		long id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(result).path("data").path("conversationId")
+				.asLong();
+		org.assertj.core.api.Assertions.assertThat(chatService.openDiscoveryConversation(bob.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(alice.getId())).conversationId()).isEqualTo(id);
+		mockMvc.perform(get("/api/v1/chats/{id}", id).header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.limitedMessagesRemaining").value(5));
+		mockMvc.perform(post("/api/v1/chats/discovery").header("Authorization", bearer(tokenFor(alice)))
+				.contentType(MediaType.APPLICATION_JSON).content(jsonBody(alice.getId())))
+				.andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/v1/chats/discovery").header("Authorization", bearer(tokenFor(alice)))
+				.contentType(MediaType.APPLICATION_JSON).content(jsonBody(Long.MAX_VALUE)))
+				.andExpect(status().isNotFound());
+	}
 
-    @Test
-    void concurrentRestAndStompSendsCannotExceedFiveAndFriendshipUnlocksTheExistingChat() throws Exception {
-        User alice = createUser("quota-alice", "Alice");
-        User bob = createUser("quota-bob", "Bob");
-        Long id = chatService.openDiscoveryConversation(alice.getUsername(),
-                new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
-        for (int index = 0; index < 4; index++) chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("Before " + index));
-        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
-        var start = new java.util.concurrent.CountDownLatch(1);
-        try {
-            var rest = pool.submit(() -> {
-                start.await();
-                try { chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("REST last slot")); return true; }
-                catch (IllegalArgumentException expected) { return false; }
-            });
-            var stomp = pool.submit(() -> {
-                start.await();
-                try { chatService.sendMessageFromWebSocket(alice.getUsername(), id, "STOMP last slot"); return true; }
-                catch (IllegalArgumentException expected) { return false; }
-            });
-            start.countDown();
-            org.assertj.core.api.Assertions.assertThat(rest.get(10, java.util.concurrent.TimeUnit.SECONDS)
-                    ^ stomp.get(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-        } finally { pool.shutdownNow(); }
-        org.assertj.core.api.Assertions.assertThat(messageRepository.countByConversationId(id)).isEqualTo(5);
-        org.assertj.core.api.Assertions.assertThat(chatService.getConversationDetail(alice.getUsername(), id).limitedMessagesRemaining()).isZero();
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> chatService.sendMessageFromWebSocket(alice.getUsername(), id, "Sixth"))
-                .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThat(chatService.getConversationDetail(bob.getUsername(), id).limitedMessagesRemaining()).isEqualTo(5);
-        for (int index = 0; index < 5; index++) chatService.sendMessageFromWebSocket(bob.getUsername(), id, "Bob " + index);
-        org.assertj.core.api.Assertions.assertThat(messageRepository.countByConversationId(id)).isEqualTo(10);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Bob sixth")))
-                .isInstanceOf(IllegalArgumentException.class);
-        markFriends(alice, bob);
-        org.assertj.core.api.Assertions.assertThat(chatService.getConversationDetail(alice.getUsername(), id).limitedMessagesRemaining()).isNull();
-        chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Now friends"));
-        org.assertj.core.api.Assertions.assertThat(messageRepository.countByConversationId(id)).isEqualTo(11);
-        org.assertj.core.api.Assertions.assertThat(conversationRepository.findById(id).orElseThrow().isContextualLimited()).isFalse();
-    }
+	@Test
+	void concurrentRestAndStompSendsCannotExceedFiveAndFriendshipUnlocksTheExistingChat() throws Exception {
+		User alice = createUser("quota-alice", "Alice");
+		User bob = createUser("quota-bob", "Bob");
+		Long id = chatService.openDiscoveryConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		for (int index = 0; index < 4; index++)
+			chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("Before " + index));
+		var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+		var start = new java.util.concurrent.CountDownLatch(1);
+		try {
+			var rest = pool.submit(() -> {
+				start.await();
+				try {
+					chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("REST last slot"));
+					return true;
+				} catch (IllegalArgumentException expected) {
+					return false;
+				}
+			});
+			var stomp = pool.submit(() -> {
+				start.await();
+				try {
+					chatService.sendMessageFromWebSocket(alice.getUsername(), id, "STOMP last slot");
+					return true;
+				} catch (IllegalArgumentException expected) {
+					return false;
+				}
+			});
+			start.countDown();
+			org.assertj.core.api.Assertions.assertThat(rest.get(10, java.util.concurrent.TimeUnit.SECONDS)
+					^ stomp.get(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+		} finally {
+			pool.shutdownNow();
+		}
+		org.assertj.core.api.Assertions.assertThat(messageRepository.countByConversationId(id)).isEqualTo(5);
+		org.assertj.core.api.Assertions
+				.assertThat(chatService.getConversationDetail(alice.getUsername(), id).limitedMessagesRemaining())
+				.isZero();
+		org.assertj.core.api.Assertions
+				.assertThatThrownBy(() -> chatService.sendMessageFromWebSocket(alice.getUsername(), id, "Sixth"))
+				.isInstanceOf(IllegalArgumentException.class);
+		org.assertj.core.api.Assertions
+				.assertThat(chatService.getConversationDetail(bob.getUsername(), id).limitedMessagesRemaining())
+				.isEqualTo(5);
+		for (int index = 0; index < 5; index++)
+			chatService.sendMessageFromWebSocket(bob.getUsername(), id, "Bob " + index);
+		org.assertj.core.api.Assertions.assertThat(messageRepository.countByConversationId(id)).isEqualTo(10);
+		org.assertj.core.api.Assertions
+				.assertThatThrownBy(
+						() -> chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Bob sixth")))
+				.isInstanceOf(IllegalArgumentException.class);
+		markFriends(alice, bob);
+		org.assertj.core.api.Assertions
+				.assertThat(chatService.getConversationDetail(alice.getUsername(), id).limitedMessagesRemaining())
+				.isNull();
+		chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Now friends"));
+		org.assertj.core.api.Assertions.assertThat(messageRepository.countByConversationId(id)).isEqualTo(11);
+		org.assertj.core.api.Assertions
+				.assertThat(conversationRepository.findById(id).orElseThrow().isContextualLimited()).isFalse();
+	}
 
-    @Test
-    void directUnreadStateIsIndependentPersistentAndExcludesOwnMessages() throws Exception {
-        User alice = createUser("read-alice", "Alice");
-        User bob = createUser("read-bob", "Bob");
-        markFriends(alice, bob);
-        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
-        org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isZero();
-        var first = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("First"));
-        var own = chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("Reply"));
-        var second = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Second"));
-        org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isEqualTo(2);
-        org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isEqualTo(1);
-        mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(alice)))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + first.messageId() + "}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.unreadCount").value(1));
-        var state = chatService.markConversationRead(alice.getUsername(), id, second.messageId());
-        org.assertj.core.api.Assertions.assertThat(state.unreadCount()).isZero();
-        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, second.messageId())).isEqualTo(state);
-        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, first.messageId())).isEqualTo(state);
-        org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isEqualTo(1);
-        chatService.markConversationRead(bob.getUsername(), id, own.messageId());
-        org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isZero();
-        chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("New after read"));
-        mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].unreadCount").value(1))
-                .andExpect(jsonPath("$.data.items[0].participant.displayName").value("Bob"))
-                .andExpect(jsonPath("$.data.items[0].lastMessage").value("New after read"));
-    }
+	@Test
+	void directUnreadStateIsIndependentPersistentAndExcludesOwnMessages() throws Exception {
+		User alice = createUser("read-alice", "Alice");
+		User bob = createUser("read-bob", "Bob");
+		markFriends(alice, bob);
+		Long id = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isZero();
+		var first = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("First"));
+		var own = chatService.sendMessage(alice.getUsername(), id, new SendMessageRequest("Reply"));
+		var second = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Second"));
+		org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isEqualTo(2);
+		org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isEqualTo(1);
+		mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(alice)))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + first.messageId() + "}"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.unreadCount").value(1));
+		var state = chatService.markConversationRead(alice.getUsername(), id, second.messageId());
+		org.assertj.core.api.Assertions.assertThat(state.unreadCount()).isZero();
+		org.assertj.core.api.Assertions
+				.assertThat(chatService.markConversationRead(alice.getUsername(), id, second.messageId()))
+				.isEqualTo(state);
+		org.assertj.core.api.Assertions
+				.assertThat(chatService.markConversationRead(alice.getUsername(), id, first.messageId()))
+				.isEqualTo(state);
+		org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isEqualTo(1);
+		chatService.markConversationRead(bob.getUsername(), id, own.messageId());
+		org.assertj.core.api.Assertions.assertThat(unreadFor(bob, id)).isZero();
+		chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("New after read"));
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(tokenFor(alice))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].unreadCount").value(1))
+				.andExpect(jsonPath("$.data.items[0].participant.displayName").value("Bob"))
+				.andExpect(jsonPath("$.data.items[0].lastMessage").value("New after read"));
+	}
 
-    @Test
-    void readCursorsUseTimestampAndIdTiesRatherThanIdAloneAndRespectPaginationBoundary() {
-        User alice = createUser("read-order-alice", "Alice");
-        User bob = createUser("read-order-bob", "Bob");
-        markFriends(alice, bob);
-        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
-        var messages = new java.util.ArrayList<com.geochat.chat.entity.Message>();
-        for (int index = 0; index < 25; index++) {
-            var message = new com.geochat.chat.entity.Message();
-            message.setConversationId(id); message.setSenderId(bob.getId()); message.setContent("History " + index);
-            message.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z").plusSeconds(index / 2));
-            messages.add(messageRepository.save(message));
-        }
-        var olderPage = chatService.listMessages(alice.getUsername(), id, 20, 1);
-        org.assertj.core.api.Assertions.assertThat(olderPage.items()).hasSize(5);
-        var boundary = olderPage.items().getLast();
-        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, boundary.messageId()).unreadCount()).isEqualTo(20);
-        var tied = messages.get(5);
-        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, tied.getId()).unreadCount()).isEqualTo(19);
-        // A higher ID inserted with an older timestamp cannot move the cursor backward.
-        var lateOldMessage = new com.geochat.chat.entity.Message();
-        lateOldMessage.setConversationId(id); lateOldMessage.setSenderId(bob.getId()); lateOldMessage.setContent("Older timestamp, higher ID");
-        lateOldMessage.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
-        lateOldMessage = messageRepository.save(lateOldMessage);
-        var before = chatService.markConversationRead(alice.getUsername(), id, tied.getId());
-        org.assertj.core.api.Assertions.assertThat(chatService.markConversationRead(alice.getUsername(), id, lateOldMessage.getId())).isEqualTo(before);
-    }
+	@Test
+	void readCursorsUseTimestampAndIdTiesRatherThanIdAloneAndRespectPaginationBoundary() {
+		User alice = createUser("read-order-alice", "Alice");
+		User bob = createUser("read-order-bob", "Bob");
+		markFriends(alice, bob);
+		Long id = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		var messages = new java.util.ArrayList<com.geochat.chat.entity.Message>();
+		for (int index = 0; index < 25; index++) {
+			var message = new com.geochat.chat.entity.Message();
+			message.setConversationId(id);
+			message.setSenderId(bob.getId());
+			message.setContent("History " + index);
+			message.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z").plusSeconds(index / 2));
+			messages.add(messageRepository.save(message));
+		}
+		var olderPage = chatService.listMessages(alice.getUsername(), id, 20, 1);
+		org.assertj.core.api.Assertions.assertThat(olderPage.items()).hasSize(5);
+		var boundary = olderPage.items().getLast();
+		org.assertj.core.api.Assertions
+				.assertThat(
+						chatService.markConversationRead(alice.getUsername(), id, boundary.messageId()).unreadCount())
+				.isEqualTo(20);
+		var tied = messages.get(5);
+		org.assertj.core.api.Assertions
+				.assertThat(chatService.markConversationRead(alice.getUsername(), id, tied.getId()).unreadCount())
+				.isEqualTo(19);
+		// A higher ID inserted with an older timestamp cannot move the cursor backward.
+		var lateOldMessage = new com.geochat.chat.entity.Message();
+		lateOldMessage.setConversationId(id);
+		lateOldMessage.setSenderId(bob.getId());
+		lateOldMessage.setContent("Older timestamp, higher ID");
+		lateOldMessage.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
+		lateOldMessage = messageRepository.save(lateOldMessage);
+		var before = chatService.markConversationRead(alice.getUsername(), id, tied.getId());
+		org.assertj.core.api.Assertions
+				.assertThat(chatService.markConversationRead(alice.getUsername(), id, lateOldMessage.getId()))
+				.isEqualTo(before);
+	}
 
-    @Test
-    void markReadRejectsUnauthorizedUnrelatedMissingAndInvalidCursors() throws Exception {
-        User alice = createUser("read-denied-alice", "Alice");
-        User bob = createUser("read-denied-bob", "Bob");
-        User carol = createUser("read-denied-carol", "Carol");
-        markFriends(alice, bob);
-        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
-        var message = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Private"));
-        mockMvc.perform(post("/api/v1/chats/{id}/read", id).contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(carol)))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
-                .andExpect(status().isForbidden());
-        Long other = groupService.createGroup(alice.getUsername(), new CreateGroupRequest("Other", java.util.List.of())).groupId();
-        mockMvc.perform(post("/api/v1/chats/{id}/read", other).header("Authorization", bearer(tokenFor(alice)))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
-                .andExpect(status().isBadRequest());
-        for (String body : java.util.List.of("{}", "{\"messageId\":-1}", "{\"messageId\":9223372036854775807}")) {
-            mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(alice)))
-                    .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
-        }
-        org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isEqualTo(1);
-        org.assertj.core.api.Assertions.assertThat(chatService.listConversations(carol.getUsername()).items()).isEmpty();
-    }
+	@Test
+	void cursorPaginationDoesNotShiftWhenANewMessageArrives() {
+		User alice = createUser("cursor-alice", "Alice");
+		User bob = createUser("cursor-bob", "Bob");
+		markFriends(alice, bob);
+		Long id = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		Instant tiedTime = Instant.parse("2026-01-01T00:00:00Z");
+		for (int index = 0; index < 25; index++) {
+			var message = new com.geochat.chat.entity.Message();
+			message.setConversationId(id);
+			message.setSenderId(bob.getId());
+			message.setContent("History " + index);
+			message.setCreatedAt(tiedTime.plusSeconds(index / 3));
+			messageRepository.save(message);
+		}
+		var first = chatService.listMessages(alice.getUsername(), id, 20, 0, null, null);
+		chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Realtime arrival"));
+		var older = chatService.listMessages(alice.getUsername(), id, 20, 1, first.nextBeforeCreatedAt(),
+				first.nextBeforeId());
+		var firstIds = first.items().stream().map(item -> item.messageId())
+				.collect(java.util.stream.Collectors.toSet());
+		org.assertj.core.api.Assertions.assertThat(first.items()).hasSize(20);
+		org.assertj.core.api.Assertions.assertThat(older.items()).hasSize(5);
+		org.assertj.core.api.Assertions.assertThat(older.items()).extracting(item -> item.messageId())
+				.doesNotContainAnyElementsOf(firstIds);
+		org.assertj.core.api.Assertions.assertThat(older.hasMore()).isFalse();
+	}
 
-    @Test
-    void groupReadStateSurvivesRefreshAndRevokesRemovedAndDeletedMembership() {
-        User owner = createUser("read-group-owner", "Owner");
-        User member = createUser("read-group-member", "Member");
-        markFriends(owner, member);
-        Long id = groupService.createGroup(owner.getUsername(), new CreateGroupRequest("Unread group", java.util.List.of(member.getId()))).groupId();
-        var message = chatService.sendMessage(member.getUsername(), id, new SendMessageRequest("Group message"));
-        org.assertj.core.api.Assertions.assertThat(unreadFor(owner, id)).isEqualTo(1);
-        org.assertj.core.api.Assertions.assertThat(unreadFor(member, id)).isZero();
-        chatService.markConversationRead(owner.getUsername(), id, message.messageId());
-        org.assertj.core.api.Assertions.assertThat(unreadFor(owner, id)).isZero();
-        var reply = chatService.sendMessage(owner.getUsername(), id, new SendMessageRequest("Reply"));
-        org.assertj.core.api.Assertions.assertThat(unreadFor(member, id)).isEqualTo(1);
-        groupService.removeMember(owner.getUsername(), id, member.getId());
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> chatService.markConversationRead(member.getUsername(), id, reply.messageId()))
-                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
-        org.assertj.core.api.Assertions.assertThat(chatService.listConversations(member.getUsername()).items()).isEmpty();
-        groupService.deleteGroup(owner.getUsername(), id);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> chatService.markConversationRead(owner.getUsername(), id, reply.messageId()))
-                .isInstanceOf(jakarta.persistence.EntityNotFoundException.class);
-    }
+	@Test
+	void markReadRejectsUnauthorizedUnrelatedMissingAndInvalidCursors() throws Exception {
+		User alice = createUser("read-denied-alice", "Alice");
+		User bob = createUser("read-denied-bob", "Bob");
+		User carol = createUser("read-denied-carol", "Carol");
+		markFriends(alice, bob);
+		Long id = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		var message = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Private"));
+		mockMvc.perform(post("/api/v1/chats/{id}/read", id).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"messageId\":" + message.messageId() + "}")).andExpect(status().isUnauthorized());
+		mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(carol)))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
+				.andExpect(status().isForbidden());
+		Long other = groupService.createGroup(alice.getUsername(), new CreateGroupRequest("Other", java.util.List.of()))
+				.groupId();
+		mockMvc.perform(post("/api/v1/chats/{id}/read", other).header("Authorization", bearer(tokenFor(alice)))
+				.contentType(MediaType.APPLICATION_JSON).content("{\"messageId\":" + message.messageId() + "}"))
+				.andExpect(status().isBadRequest());
+		for (String body : java.util.List.of("{}", "{\"messageId\":-1}", "{\"messageId\":9223372036854775807}")) {
+			mockMvc.perform(post("/api/v1/chats/{id}/read", id).header("Authorization", bearer(tokenFor(alice)))
+					.contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+		}
+		org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isEqualTo(1);
+		org.assertj.core.api.Assertions.assertThat(chatService.listConversations(carol.getUsername()).items())
+				.isEmpty();
+	}
 
-    @Test
-    void concurrentReadRequestsNeverRegressTheCursor() throws Exception {
-        User alice = createUser("read-race-alice", "Alice");
-        User bob = createUser("read-race-bob", "Bob");
-        markFriends(alice, bob);
-        Long id = chatService.openDirectConversation(alice.getUsername(), new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
-        var first = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("First"));
-        var latest = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Latest"));
-        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
-        var start = new java.util.concurrent.CountDownLatch(1);
-        try {
-            var newer = executor.submit(() -> { start.await(); return chatService.markConversationRead(alice.getUsername(), id, latest.messageId()); });
-            var older = executor.submit(() -> { start.await(); return chatService.markConversationRead(alice.getUsername(), id, first.messageId()); });
-            start.countDown();
-            newer.get(10, java.util.concurrent.TimeUnit.SECONDS); older.get(10, java.util.concurrent.TimeUnit.SECONDS);
-            org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isZero();
-            var participant = participantRepository.findByConversationIdAndUserId(id, alice.getId()).orElseThrow();
-            org.assertj.core.api.Assertions.assertThat(participant.getLastReadMessageId()).isEqualTo(latest.messageId());
-        } finally { executor.shutdownNow(); }
-    }
+	@Test
+	void groupReadStateSurvivesRefreshAndRevokesRemovedAndDeletedMembership() {
+		User owner = createUser("read-group-owner", "Owner");
+		User member = createUser("read-group-member", "Member");
+		markFriends(owner, member);
+		Long id = groupService.createGroup(owner.getUsername(),
+				new CreateGroupRequest("Unread group", java.util.List.of(member.getId()))).groupId();
+		var message = chatService.sendMessage(member.getUsername(), id, new SendMessageRequest("Group message"));
+		org.assertj.core.api.Assertions.assertThat(unreadFor(owner, id)).isEqualTo(1);
+		org.assertj.core.api.Assertions.assertThat(unreadFor(member, id)).isZero();
+		chatService.markConversationRead(owner.getUsername(), id, message.messageId());
+		org.assertj.core.api.Assertions.assertThat(unreadFor(owner, id)).isZero();
+		var reply = chatService.sendMessage(owner.getUsername(), id, new SendMessageRequest("Reply"));
+		org.assertj.core.api.Assertions.assertThat(unreadFor(member, id)).isEqualTo(1);
+		groupService.removeMember(owner.getUsername(), id, member.getId());
+		org.assertj.core.api.Assertions
+				.assertThatThrownBy(() -> chatService.markConversationRead(member.getUsername(), id, reply.messageId()))
+				.isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+		org.assertj.core.api.Assertions.assertThat(chatService.listConversations(member.getUsername()).items())
+				.isEmpty();
+		groupService.deleteGroup(owner.getUsername(), id);
+		org.assertj.core.api.Assertions
+				.assertThatThrownBy(() -> chatService.markConversationRead(owner.getUsername(), id, reply.messageId()))
+				.isInstanceOf(jakarta.persistence.EntityNotFoundException.class);
+	}
 
-    private long unreadFor(User user, Long conversationId) {
-        return chatService.listConversations(user.getUsername()).items().stream()
-                .filter(item -> item.conversationId().equals(conversationId)).findFirst().orElseThrow().unreadCount();
-    }
+	@Test
+	void concurrentReadRequestsNeverRegressTheCursor() throws Exception {
+		User alice = createUser("read-race-alice", "Alice");
+		User bob = createUser("read-race-bob", "Bob");
+		markFriends(alice, bob);
+		Long id = chatService.openDirectConversation(alice.getUsername(),
+				new com.geochat.chat.dto.OpenDirectChatRequest(bob.getId())).conversationId();
+		var first = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("First"));
+		var latest = chatService.sendMessage(bob.getUsername(), id, new SendMessageRequest("Latest"));
+		var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+		var start = new java.util.concurrent.CountDownLatch(1);
+		try {
+			var newer = executor.submit(() -> {
+				start.await();
+				return chatService.markConversationRead(alice.getUsername(), id, latest.messageId());
+			});
+			var older = executor.submit(() -> {
+				start.await();
+				return chatService.markConversationRead(alice.getUsername(), id, first.messageId());
+			});
+			start.countDown();
+			newer.get(10, java.util.concurrent.TimeUnit.SECONDS);
+			older.get(10, java.util.concurrent.TimeUnit.SECONDS);
+			org.assertj.core.api.Assertions.assertThat(unreadFor(alice, id)).isZero();
+			var participant = participantRepository.findByConversationIdAndUserId(id, alice.getId()).orElseThrow();
+			org.assertj.core.api.Assertions.assertThat(participant.getLastReadMessageId())
+					.isEqualTo(latest.messageId());
+		} finally {
+			executor.shutdownNow();
+		}
+	}
 
-    private void markFriends(User first, User second) {
-        FriendRequest request = new FriendRequest();
-        request.setSenderId(first.getId());
-        request.setReceiverId(second.getId());
-        request.setStatus(FriendRequestStatus.ACCEPTED);
-        request.setCreatedAt(Instant.now());
-        request.setUpdatedAt(Instant.now());
-        friendRequestRepository.save(request);
-    }
+	private long unreadFor(User user, Long conversationId) {
+		return chatService.listConversations(user.getUsername()).items().stream()
+				.filter(item -> item.conversationId().equals(conversationId)).findFirst().orElseThrow().unreadCount();
+	}
 
-    private User createUser(String username, String displayName) {
-        User user = new User();
-        user.setUsername(username);
-        user.setPasswordHash(passwordEncoder.encode("Password123!"));
-        user.setDisplayName(displayName);
-        user.setCreatedAt(Instant.now());
-        user.setUpdatedAt(Instant.now());
-        return userRepository.save(user);
-    }
+	private void markFriends(User first, User second) {
+		FriendRequest request = new FriendRequest();
+		request.setSenderId(first.getId());
+		request.setReceiverId(second.getId());
+		request.setStatus(FriendRequestStatus.ACCEPTED);
+		request.setCreatedAt(Instant.now());
+		request.setUpdatedAt(Instant.now());
+		friendRequestRepository.save(request);
+	}
 
-    private String tokenFor(User user) {
-        return jwtService.generateToken(user.getId(), user.getUsername());
-    }
+	private User createUser(String username, String displayName) {
+		User user = new User();
+		user.setUsername(username);
+		user.setPasswordHash(passwordEncoder.encode("Password123!"));
+		user.setDisplayName(displayName);
+		user.setCreatedAt(Instant.now());
+		user.setUpdatedAt(Instant.now());
+		return userRepository.save(user);
+	}
 
-    private String bearer(String token) {
-        return "Bearer " + token;
-    }
+	private String tokenFor(User user) {
+		return jwtService.generateToken(user.getId(), user.getUsername());
+	}
 
-    private String jsonBody(Long userId) {
-        return "{\"userId\":" + userId + "}";
-    }
+	private String bearer(String token) {
+		return "Bearer " + token;
+	}
 
-        private UserLocation buildLocation(Long userId, Double latitude, Double longitude) {
-                UserLocation location = new UserLocation();
-                userRepository.findById(userId).ifPresent(user -> {user.setNearbyDiscoverable(true);userRepository.save(user);});
-                  location.setUserId(userId);
-                location.setLatitude(latitude);
-                location.setLongitude(longitude);
-                location.setUpdatedAt(Instant.now());
-                return location;
-        }
+	private String jsonBody(Long userId) {
+		return "{\"userId\":" + userId + "}";
+	}
+
+	private UserLocation buildLocation(Long userId, Double latitude, Double longitude) {
+		UserLocation location = new UserLocation();
+		userRepository.findById(userId).ifPresent(user -> {
+			user.setNearbyDiscoverable(true);
+			userRepository.save(user);
+		});
+		location.setUserId(userId);
+		location.setLatitude(latitude);
+		location.setLongitude(longitude);
+		location.setUpdatedAt(Instant.now());
+		return location;
+	}
 }

@@ -26,8 +26,10 @@ export function openDirectConversation(userId: number, token: string) {
   });
 }
 
-export function getMessages(conversationId: number, page: number, limit: number, token: string) {
+export function getMessages(conversationId: number, page: number, limit: number, token: string,
+  cursor?: { beforeCreatedAt: string; beforeId: number }) {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (cursor) { params.set('beforeCreatedAt', cursor.beforeCreatedAt); params.set('beforeId', String(cursor.beforeId)); }
   return apiRequest<MessageListResponse>(`/api/v1/chats/${conversationId}/messages?${params}`, { token });
 }
 

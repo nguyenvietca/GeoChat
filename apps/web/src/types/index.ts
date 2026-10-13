@@ -142,6 +142,9 @@ export type MessageListResponse = {
   total: number;
   page: number;
   size: number;
+  nextBeforeCreatedAt?: string | null;
+  nextBeforeId?: number | null;
+  hasMore?: boolean;
 };
 
 export type SendMessageRequest = { content: string; replyToMessageId?: number };

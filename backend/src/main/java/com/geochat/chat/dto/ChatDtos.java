@@ -4,108 +4,80 @@ import java.time.Instant;
 import java.util.List;
 
 public class ChatDtos {
-    public record OpenDirectChatResponse(
-            Long conversationId,
-            String type,
-            UserSummaryResponse participant,
-            Instant updatedAt
-    ) {}
+	public record OpenDirectChatResponse(Long conversationId, String type, UserSummaryResponse participant,
+			Instant updatedAt) {
+	}
 
-    public record ConversationListResponse(
-            List<ConversationSummaryResponse> items
-    ) {}
+	public record ConversationListResponse(List<ConversationSummaryResponse> items) {
+	}
 
-    public record ConversationSummaryResponse(
-            Long conversationId,
-            String type,
-            UserSummaryResponse participant,
-            Instant updatedAt,
-            String lastMessage,
-            Long lastMessageId,
-            Instant lastMessageAt,
-            String lastMessageSender,
-            String groupName,
-            long unreadCount,
-            long readStateVersion,
-            Instant readStateSince
-    ) {}
+	public record ConversationSummaryResponse(Long conversationId, String type, UserSummaryResponse participant,
+			Instant updatedAt, String lastMessage, Long lastMessageId, Instant lastMessageAt, String lastMessageSender,
+			String groupName, long unreadCount, long readStateVersion, Instant readStateSince) {
+	}
 
-    public record ReadStateResponse(Long conversationId, long unreadCount, long readStateVersion, Instant readStateSince) {}
+	public record ReadStateResponse(Long conversationId, long unreadCount, long readStateVersion,
+			Instant readStateSince) {
+	}
 
-    public record ConversationActivityResponse(MessageResponse message, String senderDisplayName,
-                                               long unreadCount, long readStateVersion, Instant readStateSince) {}
+	public record ConversationActivityResponse(MessageResponse message, String senderDisplayName, long unreadCount,
+			long readStateVersion, Instant readStateSince) {
+	}
 
-    public record TypingRequest(String state, Long activityId) {}
+	public record TypingRequest(String state, Long activityId) {
+	}
 
-    public record TypingEventResponse(Long conversationId, Long senderId, String senderDisplayName, String type,
-                                      String state, long eventId) {}
+	public record TypingEventResponse(Long conversationId, Long senderId, String senderDisplayName, String type,
+			String state, long eventId) {
+	}
 
-    public record ConversationDetailResponse(
-            Long conversationId,
-            String type,
-            List<UserSummaryResponse> participants,
-            Instant createdAt,
-            Instant updatedAt,
-            Integer limitedMessagesRemaining
-    ) {}
+	public record ConversationDetailResponse(Long conversationId, String type, List<UserSummaryResponse> participants,
+			Instant createdAt, Instant updatedAt, Integer limitedMessagesRemaining) {
+	}
 
-    public record MessageResponse(
-            Long messageId,
-            Long conversationId,
-            Long senderId,
-            String content,
-            Instant createdAt,
-            Long replyToMessageId,
-            ReplyPreview replyPreview,
-            List<ReactionSummary> reactions,
-            long reactionVersion,
-            ImageAttachment attachment
-    ) {
-        public MessageResponse(Long messageId, Long conversationId, Long senderId, String content, Instant createdAt) {
-            this(messageId, conversationId, senderId, content, createdAt, null, null, List.of(), 0, null);
-        }
-    }
+	public record MessageResponse(Long messageId, Long conversationId, Long senderId, String content, Instant createdAt,
+			Long replyToMessageId, ReplyPreview replyPreview, List<ReactionSummary> reactions, long reactionVersion,
+			ImageAttachment attachment) {
+		public MessageResponse(Long messageId, Long conversationId, Long senderId, String content, Instant createdAt) {
+			this(messageId, conversationId, senderId, content, createdAt, null, null, List.of(), 0, null);
+		}
+	}
 
-    public record ImageAttachment(Long attachmentId, String contentType, long sizeBytes, int width, int height) {}
+	public record ImageAttachment(Long attachmentId, String contentType, long sizeBytes, int width, int height) {
+	}
 
-    public record ReplyPreview(Long messageId, String senderDisplayName, String excerpt) {}
-    public record ReactionSummary(String emoji, long count, boolean reactedByMe) {}
-    public record MessageReactionState(Long messageId, long version, List<ReactionSummary> reactions) {}
-    public record ReactionStatesResponse(List<MessageReactionState> items) {}
+	public record ReplyPreview(Long messageId, String senderDisplayName, String excerpt) {
+	}
 
-    public record MessageListResponse(
-            List<MessageResponse> items,
-            long total,
-            int page,
-            int size
-    ) {}
+	public record ReactionSummary(String emoji, long count, boolean reactedByMe) {
+	}
 
-    public record UserSummaryResponse(
-            Long userId,
-            String username,
-            String displayName
-    ) {}
+	public record MessageReactionState(Long messageId, long version, List<ReactionSummary> reactions) {
+	}
 
-    public record GroupInfoResponse(
-            Long groupId,
-            String name,
-            UserSummaryResponse owner,
-            int memberCount,
-            Instant createdAt,
-            Instant updatedAt
-    ) {}
+	public record ReactionStatesResponse(List<MessageReactionState> items) {
+	}
 
-    public record GroupMembersResponse(
-            List<GroupMemberResponse> items
-    ) {}
+	public record MessageListResponse(List<MessageResponse> items, long total, int page, int size,
+			Instant nextBeforeCreatedAt, Long nextBeforeId, boolean hasMore) {
+	}
 
-    public record GroupMemberResponse(
-            UserSummaryResponse user,
-            String role,
-            Instant joinedAt
-    ) {}
+	public record UserSummaryResponse(Long userId, String username, String displayName) {
+	}
 
-        public record UserPresenceResponse(Long userId, boolean online) {}
+	public record GroupInfoResponse(Long groupId, String name, UserSummaryResponse owner, int memberCount,
+			Instant createdAt, Instant updatedAt) {
+	}
 
-        public record ConversationPresenceResponse(List<UserPresenceResponse> items) {}
+	public record GroupMembersResponse(List<GroupMemberResponse> items) {
+	}
+
+	public record GroupMemberResponse(UserSummaryResponse user, String role, Instant joinedAt) {
+	}
+
+	public record UserPresenceResponse(Long userId, boolean online) {
+	}
+
+	public record ConversationPresenceResponse(List<UserPresenceResponse> items) {
+	}
 }

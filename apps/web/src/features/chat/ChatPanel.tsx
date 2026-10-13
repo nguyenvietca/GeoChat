@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { sendImage, validateImage } from '../../api/images';
 import { ChatImage } from './ChatImage';
 import { Link } from 'react-router-dom';
@@ -44,6 +44,8 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [olderCursor, setOlderCursor] = useState<{beforeCreatedAt:string;beforeId:number}|null>(null);
+  const [hasOlder, setHasOlder] = useState(false);
   const [limitedMessagesRemaining, setLimitedMessagesRemaining] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -82,6 +84,8 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
   const shouldScrollToBottomRef = useRef(true);
   const smoothScrollRef = useRef(false);
   const pendingOlderScrollRef = useRef<{ height: number; top: number } | null>(null);
+  const loadingOlderRef = useRef(false);
+  const lastScrollTopRef = useRef<number | null>(null);
   const sendingRef = useRef(false);
   const composingRef = useRef(false);
   const draftRef = useRef(draft);
@@ -193,6 +197,8 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       }
       setTotal(Math.max(response.total, response.items.length));
       setPage(response.page);
+      setOlderCursor(response.nextBeforeCreatedAt && response.nextBeforeId ? {beforeCreatedAt:response.nextBeforeCreatedAt,beforeId:response.nextBeforeId}:null);
+      setHasOlder(response.hasMore ?? response.total > (response.page + 1) * PAGE_SIZE);
     }).catch((loadError: unknown) => {
       if (!active) return;
       const denied = loadError instanceof ApiError && (loadError.status === 403 || loadError.status === 404);
@@ -348,15 +354,18 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
     }
   }
 
-  const canLoadOlder = total > (page + 1) * PAGE_SIZE;
+  const canLoadOlder = hasOlder;
 
   const loadOlder = async () => {
-    if (!token || loadingOlder || !canLoadOlder) return;
+    if (!token || loadingOlderRef.current || !canLoadOlder) return;
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
     setError('');
     try {
       const nextPage = page + 1;
-      const response = await getMessages(conversationId, nextPage, PAGE_SIZE, token);
+      const response = olderCursor
+        ? await getMessages(conversationId, nextPage, PAGE_SIZE, token, olderCursor)
+        : await getMessages(conversationId, nextPage, PAGE_SIZE, token);
       const area = messageAreaRef.current;
       if (area) pendingOlderScrollRef.current = { height: area.scrollHeight, top: area.scrollTop };
       for (const message of response.items) knownMessageIds.current.add(message.messageId);
@@ -366,10 +375,13 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       }
       setTotal(response.total);
       setPage(response.page);
+      setOlderCursor(response.nextBeforeCreatedAt && response.nextBeforeId ? {beforeCreatedAt:response.nextBeforeCreatedAt,beforeId:response.nextBeforeId}:null);
+      setHasOlder(response.hasMore ?? response.total > (response.page + 1) * PAGE_SIZE);
     } catch (loadError) {
       pendingOlderScrollRef.current = null;
       setError(loadError instanceof ApiError ? loadError.message : 'Unable to load older messages.');
     } finally {
+      loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
   };
@@ -524,6 +536,29 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
     : participantOnline === null ? presenceLoading ? 'Checking…' : 'Unavailable'
       : participantOnline ? 'Online' : 'Offline';
 
+  const renderedMessages = useMemo(() => messages.map((message) => {
+    const outgoing = message.senderId === user?.id;
+    const sender = isGroup && !outgoing
+      ? conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member' : null;
+    return <div className={outgoing ? 'chat-message-row outgoing' : 'chat-message-row incoming'} key={message.messageId} data-message-id={message.messageId} tabIndex={-1}>
+      <article className={outgoing ? 'chat-bubble outgoing-bubble' : 'chat-bubble incoming-bubble'}>
+        {sender ? <strong className="chat-sender">{sender}</strong> : null}
+        {message.replyToMessageId ? <button type="button" className="message-quote" onClick={() => {
+          const original = messageAreaRef.current?.querySelector<HTMLElement>(`[data-message-id="${message.replyToMessageId}"]`);
+          if (!original) { setActionFeedback('The original message is not loaded. Load older messages to find it.'); return; }
+          original.scrollIntoView?.({ block: 'center', behavior: 'auto' }); original.focus({ preventScroll: true });
+        }}><strong>{message.replyPreview?.senderDisplayName ?? 'Original message'}</strong><span>{message.replyPreview?.excerpt ?? 'Preview unavailable'}</span></button> : null}
+        {message.attachment && token ? <ChatImage attachment={message.attachment} token={token} /> : null}
+        {message.content ? <p>{message.content}</p> : null}<time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
+        <MessageReactionBadges message={message} busy={reactionBusy.has(message.messageId)} onReact={(key, add) => void toggleReaction(message.messageId, key, add)} />
+      </article>
+      <MessageActions showReactions={false} message={message} busy={reactionBusy.has(message.messageId)} onReact={(key, add) => void toggleReaction(message.messageId, key, add)} onReply={() => {
+        setReplyTarget({messageId:message.messageId,senderDisplayName:conversation?.participants.find(item=>item.userId===message.senderId)?.displayName??'Member',excerpt:[...(message.content||(message.attachment?'Photo':''))].slice(0,160).join('')});
+        requestAnimationFrame(() => composerRef.current?.focus());
+      }}/>
+    </div>;
+  }), [messages, user?.id, isGroup, conversation?.participants, reactionBusy, token]);
+
   return (
     <section className="chat-page" aria-label="Conversation">
       <header className="chat-header">
@@ -556,47 +591,16 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
           <div className="chat-message-area" ref={messageAreaRef} onScroll={(event) => {
             const area = event.currentTarget;
             nearBottomRef.current = area.scrollHeight - area.scrollTop - area.clientHeight < 100;
+            const previousTop = lastScrollTopRef.current;
+            lastScrollTopRef.current = area.scrollTop;
+            if (previousTop !== null && area.scrollTop < previousTop && area.scrollTop < 120 && canLoadOlder && !loadingOlderRef.current) void loadOlder();
             if (nearBottomRef.current) setHasNewMessages(false);
           }}>
             {loading ? <div className="result-state" role="status"><span className="spinner" />Loading messages…</div> : null}
             {!loading && error ? <div className="inline-error" role="alert">{error}<button type="button" onClick={() => void loadOlder()}>Try again</button></div> : null}
             {!loading && canLoadOlder ? <button className="load-older-button" type="button" onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older messages…' : 'Load older messages'}</button> : null}
             {!loading && messages.length === 0 ? <div className="chat-empty-state">No messages yet. Start the conversation.</div> : null}
-            {messages.map((message) => {
-              const outgoing = message.senderId === user?.id;
-              const sender = isGroup && !outgoing
-                ? conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member'
-                : null;
-              return (
-                <div className={outgoing ? 'chat-message-row outgoing' : 'chat-message-row incoming'} key={message.messageId} data-message-id={message.messageId} tabIndex={-1}>
-                  <article className={outgoing ? 'chat-bubble outgoing-bubble' : 'chat-bubble incoming-bubble'}>
-                    {sender ? <strong className="chat-sender">{sender}</strong> : null}
-                    {message.replyToMessageId ? <button type="button" className="message-quote" onClick={() => {
-                      const original = messageAreaRef.current?.querySelector<HTMLElement>(`[data-message-id="${message.replyToMessageId}"]`);
-                      if (!original) { setActionFeedback('The original message is not loaded. Load older messages to find it.'); return; }
-                      original.scrollIntoView?.({ block: 'center', behavior: 'auto' });
-                      original.focus({ preventScroll: true });
-                    }}>
-                      <strong>{message.replyPreview?.senderDisplayName ?? 'Original message'}</strong>
-                      <span>{message.replyPreview?.excerpt ?? 'Preview unavailable'}</span>
-                    </button> : null}
-                    {message.attachment && token ? <ChatImage attachment={message.attachment} token={token} /> : null}
-                    {message.content ? <p>{message.content}</p> : null}
-                    <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
-                    <MessageReactionBadges message={message} busy={reactionBusy.has(message.messageId)} onReact={(key, add) => void toggleReaction(message.messageId, key, add)} />
-                  </article>
-                    <MessageActions showReactions={false} message={message} busy={reactionBusy.has(message.messageId)}
-                      onReact={(key, add) => void toggleReaction(message.messageId, key, add)}
-                      onReply={() => {
-                        setReplyTarget({ messageId: message.messageId,
-                          senderDisplayName: conversation?.participants.find((item) => item.userId === message.senderId)?.displayName ?? 'Member',
-                          excerpt: [...(message.content || (message.attachment ? 'Photo' : ''))].slice(0, 160).join('') });
-                        requestAnimationFrame(() => composerRef.current?.focus());
-                      }} />
-
-                </div>
-              );
-            })}
+            {renderedMessages}
           </div>
           {hasNewMessages ? <button className="jump-latest-button" type="button" onClick={() => {
             messageAreaRef.current?.scrollTo({ top: messageAreaRef.current.scrollHeight, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });

@@ -62,7 +62,7 @@
 }
 .message-action-popover { position: absolute; bottom: 40px; right: 0; z-index: 20; display: flex; flex-direction: column; min-width: 132px; max-width: min(220px, 70vw); padding: 6px; gap: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }
 .message-action-popover[aria-label="Choose reaction"] { display: grid; grid-template-columns: repeat(3, 1fr); }
-.incoming-bubble .message-action-popover { left: 0; right: auto; }
+.chat-message-row.incoming > .message-actions .message-action-popover { left: 0; right: auto; }
 .message-action-popover.below { top: 100%; bottom: auto; }
 .message-action-popover button { min-height: 44px; min-width: 44px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; padding: 8px; cursor: pointer; }
 .message-action-popover button:hover, .message-action-popover button[aria-checked="true"] { background: var(--active-surface); }
@@ -3404,8 +3404,9 @@ select {
 .typing-people { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .typing-action { flex-shrink: 0; }
 
-/* Keep quick actions beside the bubble for both incoming and outgoing messages. */
+/* Incoming actions follow the bubble; outgoing actions sit before it like common chat UIs. */
 .chat-message-row { gap: 8px; }
+.chat-message-row.outgoing { flex-direction: row-reverse; justify-content: flex-start; }
 .chat-message-row > .chat-bubble { min-width: 0; max-width: min(560px, calc(100% - 124px)); }
 .chat-message-row > .message-actions { flex: 0 0 116px; width: 116px; align-self: center; padding-top: 0; color: var(--muted); }
 .chat-message-row > .message-actions .message-action-feedback { max-width: 100%; }
