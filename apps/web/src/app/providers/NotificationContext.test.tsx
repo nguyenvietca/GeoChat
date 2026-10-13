@@ -27,6 +27,8 @@ vi.mock('../../api/notifications', () => ({
   getUnreadNotificationCount: vi.fn(),
   markAllNotificationsRead: vi.fn(),
   markNotificationRead: vi.fn(),
+  getNotificationPreferences: vi.fn().mockResolvedValue({ directAlerts: true, groupAlerts: true, friendRequestAlerts: true, friendAcceptanceAlerts: true }),
+  updateNotificationPreferences: vi.fn(),
 }));
 
 const notification: AppNotification = {

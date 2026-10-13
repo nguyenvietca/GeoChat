@@ -203,6 +203,12 @@ export type NotificationListResponse = {
 };
 
 export type UnreadNotificationCount = { unreadCount: number };
+export type NotificationPreferences = {
+  directAlerts: boolean;
+  groupAlerts: boolean;
+  friendRequestAlerts: boolean;
+  friendAcceptanceAlerts: boolean;
+};
 
 export type NearbyArea = { key: string; centerLatitude: number; centerLongitude: number; cellDegrees: number };
 export type NearbyUser = {

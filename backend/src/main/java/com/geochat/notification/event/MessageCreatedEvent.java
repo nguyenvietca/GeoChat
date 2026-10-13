@@ -5,5 +5,7 @@ public record MessageCreatedEvent(
         Long conversationId,
         Long recipientId,
         Long senderId,
-        String senderDisplayName
+        String senderDisplayName,
+        String conversationType,
+        String conversationName
 ) {}

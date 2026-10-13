@@ -33,6 +33,8 @@ vi.mock('../../api/notifications', () => ({
   getUnreadNotificationCount: vi.fn().mockResolvedValue({ unreadCount: 0 }),
   markNotificationRead: vi.fn(),
   markAllNotificationsRead: vi.fn(),
+  getNotificationPreferences: vi.fn().mockResolvedValue({ directAlerts: true, groupAlerts: true, friendRequestAlerts: true, friendAcceptanceAlerts: true }),
+  updateNotificationPreferences: vi.fn(),
 }));
 vi.mock('../../api/friends', () => ({ getFriends: vi.fn(), sendFriendRequest: vi.fn(), acceptFriendRequest: vi.fn(),
   getIncomingFriendRequests: vi.fn().mockResolvedValue({ items: [] }), getOutgoingFriendRequests: vi.fn().mockResolvedValue({ items: [] }) }));

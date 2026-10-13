@@ -38,6 +38,7 @@ public class NotificationEventListener {
                 event.senderDisplayName()
         );
         sendRealtime(notification);
+        if (notificationService.getPreferences(notification.recipientId()).friendRequestAlerts())
         pushNotificationService.send(notification.recipientId(), notification.title(), notification.message(), Map.of(
                 "type", notification.type().name(),
                 "notificationId", notification.id(),
@@ -53,6 +54,7 @@ public class NotificationEventListener {
                 event.accepterDisplayName()
         );
         sendRealtime(notification);
+        if (notificationService.getPreferences(notification.recipientId()).friendAcceptanceAlerts())
         pushNotificationService.send(notification.recipientId(), notification.title(), notification.message(), Map.of(
                 "type", notification.type().name(),
                 "notificationId", notification.id(),
@@ -66,9 +68,12 @@ public class NotificationEventListener {
                 event.recipientId(),
                 event.messageId(),
                 event.conversationId(),
-                event.senderDisplayName()
+                event.senderDisplayName(),
+                event.conversationType(),
+                event.conversationName()
         );
         sendRealtime(notification);
+        if (notificationService.getPreferences(notification.recipientId()).alertsEnabledForMessage(event.conversationType()))
         pushNotificationService.send(notification.recipientId(), notification.title(), notification.message(), Map.of(
                 "type", notification.type().name(),
                 "notificationId", notification.id(),

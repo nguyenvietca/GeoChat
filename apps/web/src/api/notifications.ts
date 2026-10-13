@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import { AppNotification, NotificationListResponse, UnreadNotificationCount } from '../types';
+import { AppNotification, NotificationListResponse, NotificationPreferences, UnreadNotificationCount } from '../types';
 
 export function getNotifications(token: string, limit = 20, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
@@ -21,5 +21,15 @@ export function markAllNotificationsRead(token: string) {
   return apiRequest<NotificationListResponse>('/api/v1/notifications/read-all', {
     method: 'POST',
     token,
+  });
+}
+
+export function getNotificationPreferences(token: string) {
+  return apiRequest<NotificationPreferences>('/api/v1/notifications/preferences', { token });
+}
+
+export function updateNotificationPreferences(preferences: NotificationPreferences, token: string) {
+  return apiRequest<NotificationPreferences>('/api/v1/notifications/preferences', {
+    method: 'PUT', token, body: preferences,
   });
 }

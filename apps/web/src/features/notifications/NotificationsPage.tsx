@@ -95,6 +95,7 @@ export function NotificationsPage() {
                   disabled={busyId === notification.id || markingAll}
                   aria-label={`${notification.read ? 'Read' : 'Unread'} notification: ${notification.title}`}>
                   <span className="notification-indicator" aria-hidden="true" />
+                  <span className="notification-item-icon" aria-hidden="true">{notification.type === 'NEW_MESSAGE' ? '✉' : notification.type === 'FRIEND_REQUEST_RECEIVED' ? '+' : '✓'}</span>
                   <span className="notification-copy">
                     <strong>{notification.title}</strong>
                     <span>{notification.message}</span>

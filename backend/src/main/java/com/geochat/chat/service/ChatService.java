@@ -463,15 +463,10 @@ public class ChatService {
 		conversation.setUpdatedAt(Instant.now());
 		conversationRepository.save(conversation);
 
-		if ("DIRECT".equals(conversation.getType())) {
-			Long recipientId = conversationParticipantRepository
-					.findOtherParticipants(conversation.getId(), currentUser.getId()).stream().findFirst()
-					.map(participant -> participant.getId().getUserId()).orElse(null);
-			if (recipientId != null) {
+		conversationParticipantRepository.findOtherParticipants(conversation.getId(), currentUser.getId()).forEach(participant ->
 				applicationEventPublisher.publishEvent(new MessageCreatedEvent(saved.getId(), saved.getConversationId(),
-						recipientId, currentUser.getId(), currentUser.getDisplayName()));
-			}
-		}
+						participant.getId().getUserId(), currentUser.getId(), currentUser.getDisplayName(),
+						conversation.getType(), conversation.getGroupName())));
 
 		MessageResponse response = presentMessages(List.of(saved), currentUser.getId()).getFirst();
 		// Version every activity so delayed unread snapshots can be ignored by clients.

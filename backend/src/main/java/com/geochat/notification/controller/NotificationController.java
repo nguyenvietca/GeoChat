@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import com.geochat.notification.dto.NotificationPreferencesResponse;
+import com.geochat.notification.dto.UpdateNotificationPreferencesRequest;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -47,6 +50,17 @@ public class NotificationController {
     @GetMapping("/notifications/unread-count")
     public ApiResponse<UnreadCountResponse> getUnreadCount(@AuthenticationPrincipal UserDetails principal) {
         return ApiResponse.ok(notificationService.getUnreadCount(principal.getUsername()));
+    }
+
+    @GetMapping("/notifications/preferences")
+    public ApiResponse<NotificationPreferencesResponse> getPreferences(@AuthenticationPrincipal UserDetails principal) {
+        return ApiResponse.ok(notificationService.getPreferences(principal.getUsername()));
+    }
+
+    @PutMapping("/notifications/preferences")
+    public ApiResponse<NotificationPreferencesResponse> updatePreferences(@AuthenticationPrincipal UserDetails principal,
+            @Valid @RequestBody UpdateNotificationPreferencesRequest request) {
+        return ApiResponse.ok(notificationService.updatePreferences(principal.getUsername(), request));
     }
 
     @PostMapping("/notifications/{notificationId}/read")

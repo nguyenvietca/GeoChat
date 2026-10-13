@@ -10,10 +10,14 @@ import org.springframework.transaction.annotation.Transactional;
 import com.geochat.notification.dto.NotificationListResponse;
 import com.geochat.notification.dto.NotificationResponse;
 import com.geochat.notification.dto.UnreadCountResponse;
+import com.geochat.notification.dto.NotificationPreferencesResponse;
+import com.geochat.notification.dto.UpdateNotificationPreferencesRequest;
 import com.geochat.notification.entity.Notification;
+import com.geochat.notification.entity.NotificationPreference;
 import com.geochat.notification.enumtype.NotificationReferenceType;
 import com.geochat.notification.enumtype.NotificationType;
 import com.geochat.notification.repository.NotificationRepository;
+import com.geochat.notification.repository.NotificationPreferenceRepository;
 import com.geochat.user.entity.User;
 import com.geochat.user.repository.UserRepository;
 
@@ -25,10 +29,47 @@ public class NotificationService {
 
 	private final NotificationRepository notificationRepository;
 	private final UserRepository userRepository;
+	private final NotificationPreferenceRepository preferenceRepository;
 
-	public NotificationService(NotificationRepository notificationRepository, UserRepository userRepository) {
+	public NotificationService(NotificationRepository notificationRepository, UserRepository userRepository,
+			NotificationPreferenceRepository preferenceRepository) {
 		this.notificationRepository = notificationRepository;
 		this.userRepository = userRepository;
+		this.preferenceRepository = preferenceRepository;
+	}
+
+	@Transactional(readOnly = true)
+	public NotificationPreferencesResponse getPreferences(String username) {
+		return getPreferences(requireUser(username).getId());
+	}
+
+	@Transactional(readOnly = true)
+	public NotificationPreferencesResponse getPreferences(Long userId) {
+		return preferenceRepository.findById(userId).map(this::toPreferences)
+				.orElse(new NotificationPreferencesResponse(true, true, true, true));
+	}
+
+	@Transactional
+	public NotificationPreferencesResponse updatePreferences(String username, UpdateNotificationPreferencesRequest request) {
+		Long userId = requireUser(username).getId();
+		NotificationPreference preferences = preferenceRepository.findById(userId).orElseGet(() -> {
+			NotificationPreference value = new NotificationPreference(); value.setUserId(userId); return value;
+		});
+		preferences.setDirectAlerts(request.directAlerts());
+		preferences.setGroupAlerts(request.groupAlerts());
+		preferences.setFriendRequestAlerts(request.friendRequestAlerts());
+		preferences.setFriendAcceptanceAlerts(request.friendAcceptanceAlerts());
+		return toPreferences(preferenceRepository.save(preferences));
+	}
+
+	private User requireUser(String username) {
+		return userRepository.findByUsernameIgnoreCase(username)
+				.orElseThrow(() -> new EntityNotFoundException("User not found"));
+	}
+
+	private NotificationPreferencesResponse toPreferences(NotificationPreference value) {
+		return new NotificationPreferencesResponse(value.isDirectAlerts(), value.isGroupAlerts(),
+				value.isFriendRequestAlerts(), value.isFriendAcceptanceAlerts());
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -49,9 +90,10 @@ public class NotificationService {
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public NotificationResponse createNewMessage(Long recipientId, Long messageId, Long conversationId,
-			String senderDisplayName) {
+			String senderDisplayName, String conversationType, String conversationName) {
 		return toResponse(createNotification(recipientId, NotificationType.NEW_MESSAGE,
-				NotificationReferenceType.MESSAGE, messageId, conversationId, "New message",
+				NotificationReferenceType.MESSAGE, messageId, conversationId,
+				"GROUP".equals(conversationType) ? (conversationName == null ? "New group message" : conversationName) : "New message",
 				buildNewMessageMessage(senderDisplayName)));
 	}
 
@@ -109,6 +151,8 @@ public class NotificationService {
 
 	private Notification createNotification(Long recipientId, NotificationType type,
 			NotificationReferenceType referenceType, Long referenceId, Long conversationId, String title, String message) {
+		var existing = notificationRepository.findByRecipientIdAndTypeAndReferenceId(recipientId, type, referenceId);
+		if (existing.isPresent()) return existing.get();
 		Notification notification = new Notification();
 		notification.setRecipientId(recipientId);
 		notification.setType(type);

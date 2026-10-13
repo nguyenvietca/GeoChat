@@ -13,6 +13,7 @@ import { useNotifications } from './app/providers/NotificationContext';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { UserAvatar } from './features/profile/UserAvatar';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { NotificationBell, NotificationBellIcon } from './features/notifications/NotificationBell';
 
 function LoadingScreen() {
   return <main className="state-page"><span className="spinner" /><p>Restoring your GeoChat session…</p></main>;
@@ -61,7 +62,7 @@ function AppShell() {
             <span className="nav-icon" aria-hidden="true">▤</span> Messages
           </NavLink>
           <NavLink to="/app/notifications" className="nav-link notifications-nav-link">
-            <span className="nav-icon" aria-hidden="true">♧</span> Notifications
+            <span className="nav-icon" aria-hidden="true"><NotificationBellIcon /></span> Notifications
             {unreadCount > 0 ? <span className="notification-count" aria-label={`${unreadCount} unread notifications`}>
               {unreadCount > 99 ? '99+' : unreadCount}
             </span> : null}
@@ -87,6 +88,7 @@ function AppShell() {
       <div className="workspace">
         <header className="topbar">
           <span className="mobile-brand"><span className="brand-mark">G</span> GeoChat</span>
+          <NotificationBell />
           <span className="topbar-user">Signed in as <strong>{user?.username}</strong></span>
           <nav className="mobile-account-nav" aria-label="Account navigation">
             <NavLink to="/app/profile" aria-label="Profile" title="Profile">◉</NavLink>

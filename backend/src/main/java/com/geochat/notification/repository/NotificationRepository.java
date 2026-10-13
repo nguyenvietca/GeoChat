@@ -31,4 +31,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
         int markAllAsRead(@Param("recipientId") Long recipientId, @Param("readAt") java.time.Instant readAt);
 
     Optional<Notification> findByIdAndRecipientId(Long id, Long recipientId);
+
+    Optional<Notification> findByRecipientIdAndTypeAndReferenceId(Long recipientId,
+        com.geochat.notification.enumtype.NotificationType type, Long referenceId);
 }

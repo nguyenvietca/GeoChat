@@ -8,8 +8,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { getNotifications, getUnreadNotificationCount, markAllNotificationsRead, markNotificationRead } from '../../api/notifications';
-import { AppNotification, NotificationListResponse } from '../../types';
+import { getNotificationPreferences, getNotifications, getUnreadNotificationCount, markAllNotificationsRead, markNotificationRead, updateNotificationPreferences } from '../../api/notifications';
+import { AppNotification, NotificationListResponse, NotificationPreferences } from '../../types';
 import { useAuth } from './AuthContext';
 import { ChatConnectionState, subscribeToNotifications } from '../../services/chatWebSocket';
 
@@ -29,6 +29,8 @@ type NotificationContextValue = {
   refreshUnreadCount: () => Promise<void>;
   markAsRead: (notificationId: number) => Promise<void>;
   markAllAsRead: () => Promise<void>;
+  preferences: NotificationPreferences;
+  updatePreferences: (preferences: NotificationPreferences) => Promise<void>;
 };
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
@@ -43,6 +45,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState('');
   const [connectionState, setConnectionState] = useState<ChatConnectionState>('connecting');
+  const [preferences, setPreferences] = useState<NotificationPreferences>(DEFAULT_PREFERENCES);
+  const preferencesRef = useRef<NotificationPreferences>(DEFAULT_PREFERENCES);
+  const [toasts, setToasts] = useState<AppNotification[]>([]);
   const notificationsRef = useRef<AppNotification[]>([]);
   const unreadCountRef = useRef(0);
   const loadedRef = useRef(false);
@@ -50,6 +55,15 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const notificationChangeVersionRef = useRef(0);
   const markingIdsRef = useRef(new Set<number>());
   const markingAllRef = useRef(false);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+
+  const updatePreferences = useCallback(async (next: NotificationPreferences) => {
+    if (!token) return;
+    const saved = await updateNotificationPreferences(next, token);
+    preferencesRef.current = saved;
+    setPreferences(saved);
+    channelRef.current?.postMessage({ type: 'changed' });
+  }, [token]);
 
   const replaceNotifications = useCallback((items: AppNotification[]) => {
     notificationsRef.current = items;
@@ -78,8 +92,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     const changeVersion = notificationChangeVersionRef.current;
     try {
       const response = await getNotifications(token, PAGE_SIZE, 0);
-      replaceNotifications(mergeNotifications(notificationsRef.current, response.items));
-      nextOffsetRef.current = Math.max(nextOffsetRef.current, response.items.length);
+      replaceNotifications(refresh ? response.items : mergeNotifications(notificationsRef.current, response.items));
+      nextOffsetRef.current = response.items.length;
       loadedRef.current = true;
       setHasMore(response.hasMore);
       if (changeVersion === notificationChangeVersionRef.current) {
@@ -122,6 +136,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       if (!current.read && updated.read) {
         notificationChangeVersionRef.current += 1;
         replaceUnreadCount(unreadCountRef.current - 1);
+        channelRef.current?.postMessage({ type: 'changed' });
       }
     } finally {
       markingIdsRef.current.delete(notificationId);
@@ -150,6 +165,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       } else {
         await refreshUnreadCount();
       }
+      channelRef.current?.postMessage({ type: 'changed' });
     } finally {
       markingAllRef.current = false;
       setMarkingAll(false);
@@ -173,6 +189,15 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     let active = true;
     let previousConnectionState: ChatConnectionState = 'connecting';
     void refreshUnreadCount().catch(() => undefined);
+    void getNotificationPreferences(token).then((value) => { preferencesRef.current = value; setPreferences(value); })
+      .catch(() => { preferencesRef.current = DEFAULT_PREFERENCES; setPreferences(DEFAULT_PREFERENCES); });
+    const reconcile = () => { void loadNotifications(true); void refreshUnreadCount().catch(() => undefined); };
+    const onVisibility = () => { if (document.visibilityState === 'visible') reconcile(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    if ('BroadcastChannel' in window) {
+      channelRef.current = new BroadcastChannel(`geochat-notifications-${user.id}`);
+      channelRef.current.onmessage = reconcile;
+    }
     const cleanup = subscribeToNotifications(token, {
       onNotification: (notification) => {
         if (!active || notification.recipientId !== user.id) return;
@@ -183,6 +208,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         if (!existing && !notification.read) {
           replaceUnreadCount(unreadCountRef.current + 1);
           void refreshUnreadCount().catch(() => undefined);
+          channelRef.current?.postMessage({ type: 'changed' });
+          const activeConversation = window.location.pathname.match(/^\/app\/chat\/(\d+)$/)?.[1];
+          const messageAlert = notification.type === 'NEW_MESSAGE';
+          const groupAlert = messageAlert && notification.title !== 'New message';
+          const currentPreferences = preferencesRef.current;
+          const alertEnabled = messageAlert ? (groupAlert ? currentPreferences.groupAlerts : currentPreferences.directAlerts)
+            : notification.type === 'FRIEND_REQUEST_RECEIVED' ? currentPreferences.friendRequestAlerts : currentPreferences.friendAcceptanceAlerts;
+          if (alertEnabled && (!messageAlert || String(notification.conversationId) !== activeConversation)) {
+            setToasts((current) => [...current.filter((item) => item.id !== notification.id), notification].slice(-3));
+            window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== notification.id)), 5000);
+          }
         } else if (existing && !existing.read && notification.read) {
           replaceUnreadCount(unreadCountRef.current - 1);
         }
@@ -191,7 +227,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         setConnectionState(state);
         if (state === 'connected' && previousConnectionState === 'reconnecting') {
-          void refreshUnreadCount().catch(() => undefined);
+          reconcile();
         }
         previousConnectionState = state;
       },
@@ -199,9 +235,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     return () => {
       active = false;
+      document.removeEventListener('visibilitychange', onVisibility);
+      channelRef.current?.close(); channelRef.current = null;
       cleanup();
     };
-  }, [authLoading, refreshUnreadCount, replaceNotifications, replaceUnreadCount, token, user]);
+  }, [authLoading, loadNotifications, refreshUnreadCount, replaceNotifications, replaceUnreadCount, token, user]);
 
   const value = useMemo<NotificationContextValue>(() => ({
     notifications,
@@ -217,6 +255,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     refreshUnreadCount,
     markAsRead,
     markAllAsRead,
+    preferences,
+    updatePreferences,
   }), [
     notifications,
     unreadCount,
@@ -231,10 +271,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     refreshUnreadCount,
     markAsRead,
     markAllAsRead,
+    preferences,
+    updatePreferences,
   ]);
 
-  return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
+  return <NotificationContext.Provider value={value}>{children}<div className="notification-toasts" aria-live="polite" aria-label="New notifications">
+    {toasts.map((toast) => <div className="notification-toast" key={toast.id}><strong>{toast.title}</strong><span>{toast.message}</span></div>)}
+  </div></NotificationContext.Provider>;
 }
+
+const DEFAULT_PREFERENCES: NotificationPreferences = {
+  directAlerts: true, groupAlerts: true, friendRequestAlerts: true, friendAcceptanceAlerts: true,
+};
 
 export function useNotifications() {
   const context = useContext(NotificationContext);

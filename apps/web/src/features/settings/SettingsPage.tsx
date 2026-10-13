@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthContext';
 import { ThemePreference, useTheme } from '../../app/providers/ThemeContext';
+import { useNotifications } from '../../app/providers/NotificationContext';
 
 export function SettingsPage() {
   const { logout } = useAuth();
   const { preference, setPreference } = useTheme();
+  const { preferences, updatePreferences } = useNotifications();
 
   return (
     <section className="page-content settings-page">
@@ -26,6 +28,20 @@ export function SettingsPage() {
           ))}
         </fieldset>
         <p className="theme-help" id="theme-help">System follows your device. Changes apply immediately and are saved in this browser.</p>
+      </section>
+
+      <section className="settings-section" aria-labelledby="notification-settings-heading">
+        <div className="section-heading"><div><h2 id="notification-settings-heading">Notification alerts</h2>
+          <p>Notifications remain in your notification center. Choose which ones also show an alert.</p></div></div>
+        <div className="notification-preferences">
+          {([
+            ['directAlerts', 'Direct messages'], ['groupAlerts', 'Group messages'],
+            ['friendRequestAlerts', 'Friend requests'], ['friendAcceptanceAlerts', 'Accepted requests'],
+          ] as const).map(([key, label]) => <label className="settings-row" key={key}>
+            <span><strong>{label}</strong></span><input type="checkbox" checked={preferences[key]}
+              onChange={(event) => void updatePreferences({ ...preferences, [key]: event.target.checked })} />
+          </label>)}
+        </div>
       </section>
 
       <section className="settings-section" aria-labelledby="account-settings-heading">
