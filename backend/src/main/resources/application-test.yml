@@ -18,6 +18,10 @@ spring:
 jwt:
   secret: test-only-key-not-a-real-secret-32-bytes-min
   expiration-ms: 3600000
+app:
+  security:
+    rate-limit:
+      enabled: false
 
 geochat:
   upload:

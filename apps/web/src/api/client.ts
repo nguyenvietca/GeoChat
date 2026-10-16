@@ -64,6 +64,12 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
         ? payload.message
         : response.status === 401
           ? 'Your session has expired. Please sign in again.'
+          : response.status === 403
+            ? 'You do not have permission to perform this action.'
+            : response.status === 413
+              ? 'The selected file is too large.'
+              : response.status === 429
+                ? 'Too many requests. Please wait and try again.'
           : 'The request could not be completed. Please try again.',
       response.status,
     );

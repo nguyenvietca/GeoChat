@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletResponse;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -31,7 +32,9 @@ public class AuthController {
 	}
 
 	@PostMapping("/login")
-	public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+	public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
+		response.setHeader("Cache-Control", "no-store");
+		response.setHeader("Pragma", "no-cache");
 		return ApiResponse.ok(authService.login(request));
 	}
 }

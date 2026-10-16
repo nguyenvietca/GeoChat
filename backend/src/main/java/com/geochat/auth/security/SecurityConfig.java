@@ -16,6 +16,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import com.geochat.common.security.AbuseRateLimitFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.beans.factory.annotation.Value;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -34,7 +36,7 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+	public SecurityFilterChain securityFilterChain(HttpSecurity http, AbuseRateLimitFilter abuseRateLimitFilter) throws Exception {
 		http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
 				.csrf(AbstractHttpConfigurer::disable)
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -44,11 +46,34 @@ public class SecurityConfig {
 								.requestMatchers(HttpMethod.GET, "/api/health").permitAll()
 								.requestMatchers(HttpMethod.GET, "/api/v1/users/me").authenticated().anyRequest()
 								.authenticated())
-				.exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> response
-						.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")))
-				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+				.exceptionHandling(ex -> ex
+						.authenticationEntryPoint((request, response, authException) -> writeSecurityError(response,
+								HttpServletResponse.SC_UNAUTHORIZED, "Authentication required"))
+						.accessDeniedHandler((request, response, denied) -> writeSecurityError(response,
+								HttpServletResponse.SC_FORBIDDEN, "Access denied")))
+				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+				.addFilterAfter(abuseRateLimitFilter, JwtAuthenticationFilter.class);
 
 		return http.build();
+	}
+
+	private void writeSecurityError(HttpServletResponse response, int status, String message) throws java.io.IOException {
+		response.setStatus(status);
+		response.setContentType("application/json");
+		response.setCharacterEncoding("UTF-8");
+		response.getWriter().write("{\"success\":false,\"data\":null,\"message\":\"" + message + "\"}");
+	}
+
+	@Bean
+	public AbuseRateLimitFilter abuseRateLimitFilter(@Value("${app.security.rate-limit.enabled:true}") boolean enabled) {
+		return new AbuseRateLimitFilter(enabled);
+	}
+
+	@Bean
+	public FilterRegistrationBean<AbuseRateLimitFilter> disableContainerRegistration(AbuseRateLimitFilter filter) {
+		FilterRegistrationBean<AbuseRateLimitFilter> registration = new FilterRegistrationBean<>(filter);
+		registration.setEnabled(false);
+		return registration;
 	}
 
 	@Bean

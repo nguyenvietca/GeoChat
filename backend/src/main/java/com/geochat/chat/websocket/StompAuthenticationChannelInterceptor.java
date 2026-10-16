@@ -24,15 +24,18 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
     private final UserDetailsService userDetailsService;
     private final ChatService chatService;
     private final WebSocketSessionRegistry webSocketSessionRegistry;
+    private final RealtimeRequestGuard realtimeRequestGuard;
 
     public StompAuthenticationChannelInterceptor(JwtService jwtService,
                                                 UserDetailsService userDetailsService,
                                                 ChatService chatService,
-                                                WebSocketSessionRegistry webSocketSessionRegistry) {
+                                                WebSocketSessionRegistry webSocketSessionRegistry,
+                                                RealtimeRequestGuard realtimeRequestGuard) {
         this.jwtService = jwtService;
         this.userDetailsService = userDetailsService;
         this.chatService = chatService;
         this.webSocketSessionRegistry = webSocketSessionRegistry;
+        this.realtimeRequestGuard = realtimeRequestGuard;
     }
 
     @Override
@@ -66,8 +69,8 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
             if (sessionAttributes == null) {
                 sessionAttributes = new java.util.HashMap<>();
             }
-            sessionAttributes.put("jwtToken", token);
             sessionAttributes.put("username", username);
+            sessionAttributes.put("jwtExpiresAt", jwtService.getExpiration(token).toEpochMilli());
             accessor.setSessionAttributes(sessionAttributes);
             webSocketSessionRegistry.registerUsername(accessor.getSessionId(), username, jwtService.getUserId(token));
             webSocketSessionRegistry.scheduleExpiration(accessor.getSessionId(), jwtService.getExpiration(token));
@@ -82,6 +85,10 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
         if (StompCommand.SUBSCRIBE.equals(accessor.getCommand()) || StompCommand.SEND.equals(accessor.getCommand())) {
             String username = resolveUsername(accessor);
             String destination = accessor.getDestination();
+            realtimeRequestGuard.check(username, StompCommand.SUBSCRIBE.equals(accessor.getCommand()) ? "subscribe"
+                    : destination != null && destination.endsWith("/typing") ? "typing" : "message",
+                    StompCommand.SUBSCRIBE.equals(accessor.getCommand()) ? 100
+                            : destination != null && destination.endsWith("/typing") ? 240 : 120);
             if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
                 if ("/user/queue/notifications".equals(destination)
                         || "/user/queue/group-events".equals(destination)
@@ -117,36 +124,23 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
     }
 
     private String resolveUsername(StompHeaderAccessor accessor) {
-        String token = resolveToken(accessor);
-        if (token == null || !jwtService.isTokenValid(token)) {
-            throw new AccessDeniedException("Authentication required");
-        }
-
-        String username = jwtService.getUsername(token);
-        String sessionUsername = null;
         Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
-        if (sessionAttributes != null && sessionAttributes.get("username") != null) {
-            sessionUsername = sessionAttributes.get("username").toString();
-        }
-        if ((accessor.getUser() != null && !username.equals(accessor.getUser().getName()))
-                || (accessor.getUser() == null && !username.equals(sessionUsername))) {
+        String sessionUsername = sessionAttributes == null || sessionAttributes.get("username") == null ? null
+                : sessionAttributes.get("username").toString();
+        long expiresAt = sessionAttributes != null && sessionAttributes.get("jwtExpiresAt") instanceof Number value
+                ? value.longValue() : 0;
+        String principalUsername = accessor.getUser() == null ? null : accessor.getUser().getName();
+        if (sessionUsername == null || expiresAt <= System.currentTimeMillis()
+                || (principalUsername != null && !sessionUsername.equals(principalUsername))) {
             throw new AccessDeniedException("Authentication required");
         }
-        return username;
+        return sessionUsername;
     }
 
     private String resolveToken(StompHeaderAccessor accessor) {
         String authorization = accessor.getFirstNativeHeader("Authorization");
         if (authorization != null && authorization.startsWith("Bearer ")) {
             return authorization.substring(7).trim();
-        }
-
-        Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
-        if (sessionAttributes != null && sessionAttributes.containsKey("jwtToken")) {
-            Object token = sessionAttributes.get("jwtToken");
-            if (token != null) {
-                return token.toString();
-            }
         }
 
         return null;

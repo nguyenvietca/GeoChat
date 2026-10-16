@@ -44,4 +44,13 @@ describe('web API client', () => {
       .rejects.toMatchObject({ status: 401, message: 'Your session has expired. Please sign in again.' });
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    [403, 'You do not have permission to perform this action.'],
+    [413, 'The selected file is too large.'],
+    [429, 'Too many requests. Please wait and try again.'],
+  ])('provides safe fallback feedback for HTTP %s', async (status, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status, text: async () => '' }));
+    await expect(apiRequest('/api/v1/action', { token: 'token' })).rejects.toMatchObject({ status, message });
+  });
 });
