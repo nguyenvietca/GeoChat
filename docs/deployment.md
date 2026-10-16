@@ -40,8 +40,17 @@ Web production dùng same-origin nên `VITE_API_BASE_URL` để trống trong im
 ```powershell
 docker compose --env-file .env config --quiet
 docker compose --env-file .env build
+#-d là chạy ngầm sau chỉ cần docker compose down
 docker compose --env-file .env up -d
 docker compose ps
+```
+## Dừng và xóa hẳn các container, network
+    docker compose down
+## Chỉ tạm dừng các container
+    docker compose stop/start
+## Xóa sạch cả dữ liệu cũ (database MySQL/Postgres)
+    docker compose down -v
+
 ```
 
 Mở `http://localhost:8081`. Kiểm tra Web và API:
