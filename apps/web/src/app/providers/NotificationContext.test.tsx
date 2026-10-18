@@ -12,11 +12,16 @@ import { NotificationProvider, useNotifications } from './NotificationContext';
 const harness = vi.hoisted(() => ({
   auth: null as unknown,
   handlers: null as unknown,
+  onRead: null as (() => void) | null,
   cleanup: vi.fn(),
 }));
 
 vi.mock('./AuthContext', () => ({ useAuth: () => harness.auth }));
 vi.mock('../../services/chatWebSocket', () => ({
+  subscribeToConversationRead: vi.fn((_token: string, onRead: () => void) => {
+    harness.onRead = onRead;
+    return vi.fn();
+  }),
   subscribeToNotifications: vi.fn((_token: string, handlers: unknown) => {
     harness.handlers = handlers;
     return harness.cleanup;
@@ -77,6 +82,33 @@ function renderProvider() {
 }
 
 describe('notification provider', () => {
+  it('refreshes the shared badge and list when chat is read, including unloaded notifications', async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    getUnreadNotificationCount.mockResolvedValue({ unreadCount: 1 });
+    getNotifications.mockResolvedValue({ items: [{ ...notification, read: true }], unreadCount: 1,
+      total: 1, limit: 20, offset: 0, hasMore: false });
+    await act(async () => harness.onRead?.());
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
+    expect(screen.getByTestId('ids').textContent).toBe('3:true');
+  });
+
+  it('does not count a delayed notification for an already read message', async () => {
+    getUnreadNotificationCount.mockResolvedValue({ unreadCount: 0 });
+    renderProvider();
+    await waitFor(() => expect(harness.handlers).not.toBeNull());
+    await act(async () => (harness.handlers as NotificationHandlers).onNotification({ ...notification, read: true }));
+    expect(screen.getByTestId('count').textContent).toBe('0');
+  });
+
+  it('refreshes after a successful local read even without a realtime event', async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    getUnreadNotificationCount.mockResolvedValue({ unreadCount: 0 });
+    getNotifications.mockResolvedValue({ items: [], unreadCount: 0, total: 0, limit: 20, offset: 0, hasMore: false });
+    act(() => window.dispatchEvent(new Event('geochat:conversation-read')));
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'));
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     setAuthenticated();
@@ -150,6 +182,7 @@ describe('notification provider', () => {
       items: [notification], unreadCount: 1, total: 1, limit: 20, offset: 0, hasMore: false,
     }));
     expect(screen.getByTestId('count').textContent).toBe('0');
+    expect(screen.getByTestId('ids').textContent).toBe('3:true');
   });
 
   it('clears the prior user state and subscription on logout', async () => {

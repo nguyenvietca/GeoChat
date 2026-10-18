@@ -108,6 +108,13 @@ export function subscribeToNotifications(token: string, handlers: NotificationWe
   });
 }
 
+export function subscribeToConversationRead(token: string, onRead: () => void) {
+  return subscribeToStompDestination(token, '/user/queue/conversation-read', {
+    onStateChange: () => {},
+    onFrame: (body) => { if (parseConversationReadState(body)) onRead(); },
+  });
+}
+
 export function parseNotification(body: string): AppNotification | null {
   try {
     const value: unknown = JSON.parse(body);

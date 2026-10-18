@@ -45,6 +45,7 @@ export function useConversationRead(conversationId: number, token: string | null
       const cursor = boundary;
       pending.current = cursor;
       void markConversationRead(conversationId, cursor.messageId, token).then((state) => {
+        window.dispatchEvent(new Event('geochat:conversation-read'));
         if (!active.current) return;
         acknowledged.current = cursor;
         values.current.onReadState?.(state);

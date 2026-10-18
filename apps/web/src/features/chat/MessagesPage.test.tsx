@@ -77,6 +77,7 @@ vi.mock('../../services/chatWebSocket', () => ({
     return vi.fn();
   }),
   subscribeToNotifications: vi.fn(() => vi.fn()),
+  subscribeToConversationRead: vi.fn(() => vi.fn()),
   disconnectAllChatWebSockets: vi.fn(),
 }));
 

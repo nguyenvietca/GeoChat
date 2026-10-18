@@ -65,6 +65,7 @@ vi.mock('./services/chatWebSocket', () => ({
   subscribeToConversationActivity: vi.fn(() => vi.fn()),
   subscribeToGroupEvents: vi.fn(() => vi.fn()),
   subscribeToNotifications: vi.fn(() => vi.fn()),
+  subscribeToConversationRead: vi.fn(() => vi.fn()),
   disconnectAllChatWebSockets: vi.fn(),
 }));
 vi.mock('./api/notifications', () => ({
@@ -267,7 +268,7 @@ describe('web authentication and protected routes', () => {
 
     expect((await screen.findByRole('status')).textContent).toBe('Profile updated.');
     expect(mockUpdateMyProfile).toHaveBeenCalledWith({ displayName: 'Mira Updated', email: null, phoneNumber: null }, 'session-token');
-    expect(screen.getByText('Mira Updated')).toBeTruthy();
+    expect(screen.getAllByText('Mira Updated').length).toBeGreaterThan(0);
   });
 
   it('validates supported profile fields and presents backend errors', async () => {

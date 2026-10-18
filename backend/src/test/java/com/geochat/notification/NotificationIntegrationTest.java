@@ -238,6 +238,40 @@ class NotificationIntegrationTest {
 	}
 
 	@Test
+	void readingChatClearsOnlyViewedMessageNotificationsAndPersistsTheBadge() throws Exception {
+		User sender = createUser("read-alert-sender");
+		User reader = createUser("read-alert-reader");
+		User other = createUser("read-alert-other");
+		for (User friend : java.util.List.of(sender, other)) {
+			FriendRequest accepted = new FriendRequest();
+			accepted.setSenderId(reader.getId()); accepted.setReceiverId(friend.getId());
+			accepted.setStatus(FriendRequestStatus.ACCEPTED); friendRequestRepository.save(accepted);
+		}
+		Long chat = chatService.openDirectConversation(sender.getUsername(), new OpenDirectChatRequest(reader.getId())).conversationId();
+		Long otherChat = chatService.openDirectConversation(other.getUsername(), new OpenDirectChatRequest(reader.getId())).conversationId();
+		var first = chatService.sendMessage(sender.getUsername(), chat, new SendMessageRequest("first"));
+		var second = chatService.sendMessage(sender.getUsername(), chat, new SendMessageRequest("second"));
+		chatService.sendMessage(other.getUsername(), otherChat, new SendMessageRequest("other conversation"));
+		var service = webApplicationContext.getBean(com.geochat.notification.service.NotificationService.class);
+		service.createFriendRequestReceived(reader.getId(), 9999L, "Another user");
+		chatService.markConversationRead(reader.getUsername(), chat, first.messageId());
+		org.assertj.core.api.Assertions.assertThat(notificationRepository.countByRecipientIdAndReadFalse(reader.getId())).isEqualTo(3);
+		chatService.markConversationRead(reader.getUsername(), chat, second.messageId());
+		chatService.markConversationRead(reader.getUsername(), chat, first.messageId());
+		mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", bearer(tokenFor(reader))))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.data.unreadCount").value(2));
+		verify(messagingTemplate, org.mockito.Mockito.atLeastOnce()).convertAndSendToUser(eq(reader.getUsername()), eq("/queue/conversation-read"), org.mockito.ArgumentMatchers.any());
+		// Re-delivery/late creation must not reintroduce unread or transfer ownership.
+		notificationRepository.delete(notificationRepository.findByRecipientIdAndTypeAndReferenceId(
+				reader.getId(), NotificationType.NEW_MESSAGE, first.messageId()).orElseThrow());
+		var delayed = service.createNewMessage(reader.getId(), first.messageId(), chat, "Sender", "DIRECT", null);
+		org.assertj.core.api.Assertions.assertThat(delayed.read()).isTrue();
+		org.assertj.core.api.Assertions.assertThat(notificationRepository.countByRecipientIdAndReadFalse(reader.getId())).isEqualTo(2);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> chatService.markConversationRead(other.getUsername(), chat, second.messageId()))
+				.isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+	}
+
+	@Test
 	void providerFailureDoesNotFailFriendRequestOrNotificationCreation() throws Exception {
 		User alice = createUser("alice-push-failure");
 		User bob = createUser("bob-push-failure");

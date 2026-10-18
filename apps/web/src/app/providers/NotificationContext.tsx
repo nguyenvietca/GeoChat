@@ -11,7 +11,7 @@ import {
 import { getNotificationPreferences, getNotifications, getUnreadNotificationCount, markAllNotificationsRead, markNotificationRead, updateNotificationPreferences } from '../../api/notifications';
 import { AppNotification, NotificationListResponse, NotificationPreferences } from '../../types';
 import { useAuth } from './AuthContext';
-import { ChatConnectionState, subscribeToNotifications } from '../../services/chatWebSocket';
+import { ChatConnectionState, subscribeToConversationRead, subscribeToNotifications } from '../../services/chatWebSocket';
 
 const PAGE_SIZE = 20;
 
@@ -92,7 +92,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     const changeVersion = notificationChangeVersionRef.current;
     try {
       const response = await getNotifications(token, PAGE_SIZE, 0);
-      replaceNotifications(refresh ? response.items : mergeNotifications(notificationsRef.current, response.items));
+      replaceNotifications(refresh && changeVersion === notificationChangeVersionRef.current
+        ? response.items : mergeNotifications(notificationsRef.current, response.items));
       nextOffsetRef.current = response.items.length;
       loadedRef.current = true;
       setHasMore(response.hasMore);
@@ -192,6 +193,19 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     void getNotificationPreferences(token).then((value) => { preferencesRef.current = value; setPreferences(value); })
       .catch(() => { preferencesRef.current = DEFAULT_PREFERENCES; setPreferences(DEFAULT_PREFERENCES); });
     const reconcile = () => { void loadNotifications(true); void refreshUnreadCount().catch(() => undefined); };
+    let readRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const onConversationRead = () => {
+      if (!active) return;
+      notificationChangeVersionRef.current += 1;
+      clearTimeout(readRefreshTimer);
+      readRefreshTimer = setTimeout(() => {
+        if (!active) return;
+        reconcile();
+        channelRef.current?.postMessage({ type: 'changed' });
+      }, 100);
+    };
+    const cleanupRead = subscribeToConversationRead(token, onConversationRead);
+    window.addEventListener('geochat:conversation-read', onConversationRead);
     const onVisibility = () => { if (document.visibilityState === 'visible') reconcile(); };
     document.addEventListener('visibilitychange', onVisibility);
     if ('BroadcastChannel' in window) {
@@ -222,6 +236,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         } else if (existing && !existing.read && notification.read) {
           replaceUnreadCount(unreadCountRef.current - 1);
         }
+        if (notification.read) {
+          setToasts(current => current.filter(item => item.id !== notification.id));
+          void refreshUnreadCount().catch(() => undefined);
+        }
       },
       onStateChange: (state) => {
         if (!active) return;
@@ -238,6 +256,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVisibility);
       channelRef.current?.close(); channelRef.current = null;
       cleanup();
+      cleanupRead();
+      clearTimeout(readRefreshTimer);
+      window.removeEventListener('geochat:conversation-read', onConversationRead);
     };
   }, [authLoading, loadNotifications, refreshUnreadCount, replaceNotifications, replaceUnreadCount, token, user]);
 

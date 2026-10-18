@@ -69,6 +69,7 @@ public class ChatService {
 	private final LocationService locationService;
 	private final WebSocketSessionRegistry webSocketSessionRegistry;
 	private final com.geochat.common.security.MessageSendGuard messageSendGuard;
+	private final com.geochat.notification.service.NotificationService notifications;
 	private static final int CONTEXTUAL_MESSAGE_LIMIT = 5;
 
 	public ChatService(ConversationRepository conversationRepository,
@@ -77,7 +78,9 @@ public class ChatService {
 			ApplicationEventPublisher applicationEventPublisher, LocationService locationService,
 			WebSocketSessionRegistry webSocketSessionRegistry, MessageReactionRepository reactionRepository,
 			com.geochat.chat.repository.MessageAttachmentRepository attachmentRepository, ImageStorage imageStorage,
-			com.geochat.common.security.MessageSendGuard messageSendGuard) {
+			com.geochat.common.security.MessageSendGuard messageSendGuard,
+			com.geochat.notification.service.NotificationService notifications) {
+		this.notifications = notifications;
 		this.messageSendGuard = messageSendGuard;
 		this.conversationRepository = conversationRepository;
 		this.conversationParticipantRepository = conversationParticipantRepository;
@@ -666,7 +669,9 @@ public class ChatService {
 				.getFirst();
 		var response = new ReadStateResponse(conversationId, state.getUnreadCount(), state.getReadStateVersion(),
 				state.getReadStateSince());
-		if (advanced)
+		int readNotifications = notifications.markMessagesRead(user.getId(), conversationId,
+				participant.getLastReadMessageAt(), participant.getLastReadMessageId());
+		if (advanced || readNotifications > 0)
 			applicationEventPublisher.publishEvent(new ConversationReadEvent(username, response));
 		return response;
 	}

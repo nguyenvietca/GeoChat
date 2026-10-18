@@ -30,9 +30,18 @@ public class NotificationService {
 	private final NotificationRepository notificationRepository;
 	private final UserRepository userRepository;
 	private final NotificationPreferenceRepository preferenceRepository;
+	private final com.geochat.chat.repository.ConversationRepository conversations;
+	private final com.geochat.chat.repository.ConversationParticipantRepository participants;
+	private final com.geochat.chat.repository.MessageRepository messages;
 
 	public NotificationService(NotificationRepository notificationRepository, UserRepository userRepository,
-			NotificationPreferenceRepository preferenceRepository) {
+			NotificationPreferenceRepository preferenceRepository,
+			com.geochat.chat.repository.ConversationRepository conversations,
+			com.geochat.chat.repository.ConversationParticipantRepository participants,
+			com.geochat.chat.repository.MessageRepository messages) {
+		this.conversations = conversations;
+		this.participants = participants;
+		this.messages = messages;
 		this.notificationRepository = notificationRepository;
 		this.userRepository = userRepository;
 		this.preferenceRepository = preferenceRepository;
@@ -91,10 +100,31 @@ public class NotificationService {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public NotificationResponse createNewMessage(Long recipientId, Long messageId, Long conversationId,
 			String senderDisplayName, String conversationType, String conversationName) {
-		return toResponse(createNotification(recipientId, NotificationType.NEW_MESSAGE,
+		// Serialize with read-cursor updates, including notification creation delayed
+		// until after the message transaction has committed.
+		conversations.findByIdForUpdate(conversationId).orElseThrow();
+		var notification = createNotification(recipientId, NotificationType.NEW_MESSAGE,
 				NotificationReferenceType.MESSAGE, messageId, conversationId,
 				"GROUP".equals(conversationType) ? (conversationName == null ? "New group message" : conversationName) : "New message",
-				buildNewMessageMessage(senderDisplayName)));
+				buildNewMessageMessage(senderDisplayName));
+		var participant = participants.findByConversationIdAndUserId(conversationId, recipientId);
+		var message = messages.findById(messageId);
+		if (!notification.isRead() && participant.isPresent() && message.isPresent() && participant.get().getLastReadMessageAt() != null) {
+			var cursor = participant.get();
+			var item = message.get();
+			if (item.getCreatedAt().isBefore(cursor.getLastReadMessageAt())
+					|| (item.getCreatedAt().equals(cursor.getLastReadMessageAt()) && item.getId() <= cursor.getLastReadMessageId())) {
+				notification.setRead(true);
+				notification.setReadAt(Instant.now());
+			}
+		}
+		return toResponse(notification);
+	}
+
+	@Transactional
+	public int markMessagesRead(Long recipientId, Long conversationId, Instant cursorTime, Long cursorId) {
+		return notificationRepository.markMessagesRead(recipientId, conversationId, cursorTime, cursorId, Instant.now(),
+				NotificationType.NEW_MESSAGE, NotificationReferenceType.MESSAGE);
 	}
 
 	@Transactional(readOnly = true)

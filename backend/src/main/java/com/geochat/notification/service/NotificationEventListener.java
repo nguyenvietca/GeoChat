@@ -73,7 +73,7 @@ public class NotificationEventListener {
                 event.conversationName()
         );
         sendRealtime(notification);
-        if (notificationService.getPreferences(notification.recipientId()).alertsEnabledForMessage(event.conversationType()))
+        if (!notification.read() && notificationService.getPreferences(notification.recipientId()).alertsEnabledForMessage(event.conversationType()))
         pushNotificationService.send(notification.recipientId(), notification.title(), notification.message(), Map.of(
                 "type", notification.type().name(),
                 "notificationId", notification.id(),

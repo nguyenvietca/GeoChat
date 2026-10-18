@@ -25,6 +25,17 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     long countByRecipientId(Long recipientId);
 
+    @Modifying
+    @Query("UPDATE Notification n SET n.read = true, n.readAt = :readAt WHERE n.recipientId = :recipientId "
+        + "AND n.conversationId = :conversationId AND n.read = false AND n.type = :type AND n.referenceType = :referenceType "
+        + "AND n.referenceId IN (SELECT m.id FROM Message m WHERE m.conversationId = :conversationId "
+        + "AND (m.createdAt < :cursorTime OR (m.createdAt = :cursorTime AND m.id <= :cursorId)))")
+    int markMessagesRead(@Param("recipientId") Long recipientId, @Param("conversationId") Long conversationId,
+        @Param("cursorTime") java.time.Instant cursorTime, @Param("cursorId") Long cursorId,
+        @Param("readAt") java.time.Instant readAt,
+        @Param("type") com.geochat.notification.enumtype.NotificationType type,
+        @Param("referenceType") com.geochat.notification.enumtype.NotificationReferenceType referenceType);
+
         @Modifying(clearAutomatically = true)
         @Query("UPDATE Notification n SET n.read = true, n.readAt = :readAt "
             + "WHERE n.recipientId = :recipientId AND n.read = false")
