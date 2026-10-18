@@ -1,3 +1,4 @@
+import { useLocale, translate as t } from './i18n';
 import { ReactNode } from 'react';
 import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AppProviders } from './app/providers/AppProviders';
@@ -17,16 +18,19 @@ import { SettingsPage } from './features/settings/SettingsPage';
 import { NotificationBell, NotificationBellIcon } from './features/notifications/NotificationBell';
 
 function LoadingScreen() {
-  return <main className="state-page"><span className="spinner" /><p>Restoring your GeoChat session…</p></main>;
+  useLocale();
+  return <main className="state-page"><span className="spinner" /><p>{t('auth.restoring')}</p></main>;
 }
 
 function PublicOnly({ children }: { children: ReactNode }) {
+  useLocale();
   const { isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
   return isAuthenticated ? <Navigate to="/app/home" replace /> : children;
 }
 
 function ProtectedArea() {
+  useLocale();
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
   if (isLoading) return <LoadingScreen />;
@@ -35,6 +39,7 @@ function ProtectedArea() {
 }
 
 function AppShell() {
+  useLocale();
   const { user, token, logout } = useAuth();
   const { unreadCount } = useNotifications();
   return (
@@ -48,23 +53,23 @@ function AppShell() {
         <p className="nav-caption">DISCOVER</p>
         <nav className="side-nav" aria-label="Main navigation">
           <NavLink to="/app/home" className="nav-link">
-            <span className="nav-icon" aria-hidden="true">⌂</span> Home
+            <span className="nav-icon" aria-hidden="true">⌂</span> {t('common.home')}
           </NavLink>
           <NavLink to="/app/search" className="nav-link">
-            <span className="nav-icon" aria-hidden="true">⌕</span> Search
+            <span className="nav-icon" aria-hidden="true">⌕</span> {t('common.search')}
           </NavLink>
           <NavLink to="/app/nearby" className="nav-link">
-            <span className="nav-icon" aria-hidden="true">◎</span> Nearby
+            <span className="nav-icon" aria-hidden="true">◎</span> {t('common.nearby')}
           </NavLink>
           <NavLink to="/app/friends" className="nav-link">
-            <span className="nav-icon" aria-hidden="true">♧</span> Friends
+            <span className="nav-icon" aria-hidden="true">♧</span> {t('common.friends')}
           </NavLink>
           <NavLink to="/app/chat" className="nav-link">
-            <span className="nav-icon" aria-hidden="true">▤</span> Messages
+            <span className="nav-icon" aria-hidden="true">▤</span> {t('common.messages')}
           </NavLink>
           <NavLink to="/app/notifications" className="nav-link notifications-nav-link">
-            <span className="nav-icon" aria-hidden="true"><NotificationBellIcon /></span> Notifications
-            {unreadCount > 0 ? <span className="notification-count" aria-label={`${unreadCount} unread notifications`}>
+            <span className="nav-icon" aria-hidden="true"><NotificationBellIcon /></span> {t('common.notifications')}
+            {unreadCount > 0 ? <span className="notification-count" aria-label={t('notifications.unreadLabel', { count: unreadCount })}>
               {unreadCount > 99 ? '99+' : unreadCount}
             </span> : null}
           </NavLink>
@@ -72,10 +77,10 @@ function AppShell() {
         <p className="nav-caption account-nav-caption">ACCOUNT</p>
         <nav className="side-nav account-side-nav" aria-label="Account navigation">
           <NavLink to="/app/profile" className="nav-link account-nav-link">
-            <span className="nav-icon" aria-hidden="true">◉</span> Profile
+            <span className="nav-icon" aria-hidden="true">◉</span> {t('common.profile')}
           </NavLink>
           <NavLink to="/app/settings" className="nav-link account-nav-link">
-            <span className="nav-icon" aria-hidden="true">⚙</span> Settings
+            <span className="nav-icon" aria-hidden="true">⚙</span> {t('common.settings')}
           </NavLink>
         </nav>
         <div className="sidebar-bottom">
@@ -83,7 +88,7 @@ function AppShell() {
             {user ? <UserAvatar userId={user.id} displayName={user.displayName} avatarUpdatedAt={user.avatarUpdatedAt} token={token} className="avatar-initial" /> : <span className="avatar-initial">?</span>}
             <span className="user-meta"><strong>{user?.displayName}</strong><small>@{user?.username}</small></span>
           </div>
-          <button className="quiet-button logout-button" type="button" onClick={logout}>Sign out</button>
+          <button className="quiet-button logout-button" type="button" onClick={logout}>{t('common.signOut')}</button>
         </div>
       </aside>
       <div className="workspace">
@@ -92,8 +97,8 @@ function AppShell() {
           <NotificationBell />
           <span className="topbar-user">Signed in as <strong>{user?.displayName}</strong></span>
           <nav className="mobile-account-nav" aria-label="Account navigation">
-            <NavLink to="/app/profile" aria-label="Profile" title="Profile">◉</NavLink>
-            <NavLink to="/app/settings" aria-label="Settings" title="Settings">⚙</NavLink>
+            <NavLink to="/app/profile" aria-label={t('common.profile')} title={t('common.profile')}>◉</NavLink>
+            <NavLink to="/app/settings" aria-label={t('common.settings')} title={t('common.settings')}>⚙</NavLink>
           </nav>
         </header>
         <main className="content-area" id="main-content" tabIndex={-1}><Outlet /></main>
@@ -103,11 +108,12 @@ function AppShell() {
 }
 
 function HomePage() {
+  useLocale();
   const { user } = useAuth();
   return (
     <section className="page-content">
       <div className="page-heading">
-        <div><p className="eyebrow">YOUR SPACE</p><h1>Welcome, {user?.displayName}</h1></div>
+        <div><p className="eyebrow">YOUR SPACE</p><h1>{t('home.welcome', { name: user?.displayName ?? '' })}</h1></div>
         <span className="status-chip"><span /> Account active</span>
       </div>
       <p className="page-intro">Find people to connect with, nearby or across GeoChat.</p>
@@ -122,7 +128,7 @@ function HomePage() {
           <span className="panel-symbol friends-symbol">♧</span><span><strong>Your friends</strong><small>Manage your circle and requests</small></span><b>→</b>
         </Link>
         <Link to="/app/chat" className="action-panel">
-          <span className="panel-symbol messages-symbol">▤</span><span><strong>Messages</strong><small>Continue a direct conversation</small></span><b>→</b>
+          <span className="panel-symbol messages-symbol">▤</span><span><strong>{t('common.messages')}</strong><small>Continue a direct conversation</small></span><b>→</b>
         </Link>
       </div>
       <section className="account-summary" aria-label="Public profile details">
@@ -134,6 +140,7 @@ function HomePage() {
 }
 
 export default function App() {
+  useLocale();
   return (
     <AppProviders>
       <BrowserRouter>

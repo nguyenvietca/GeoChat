@@ -20,6 +20,10 @@ import java.util.Optional;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(com.geochat.user.exception.EmailAlreadyUsedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleEmailAlreadyUsed(com.geochat.user.exception.EmailAlreadyUsedException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
+    }
     @ExceptionHandler(com.geochat.common.security.RequestLimitException.class)
     public ResponseEntity<ApiResponse<Void>> handleRequestLimit(com.geochat.common.security.RequestLimitException ex) {
         return ResponseEntity.status(429).header("Retry-After", Long.toString(ex.retryAfter()))

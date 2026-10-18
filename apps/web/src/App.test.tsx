@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { setLanguage } from './i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { ApiError } from './api/client';
@@ -269,6 +270,43 @@ describe('web authentication and protected routes', () => {
     expect((await screen.findByRole('status')).textContent).toBe('Profile updated.');
     expect(mockUpdateMyProfile).toHaveBeenCalledWith({ displayName: 'Mira Updated', email: null, phoneNumber: null }, 'session-token');
     expect(screen.getAllByText('Mira Updated').length).toBeGreaterThan(0);
+  });
+
+  it('shows duplicate email beside the input, focuses it and preserves the draft', async () => {
+    mockUpdateMyProfile.mockRejectedValue(new ApiError('This email is already in use. Please choose a different email address.', 409));
+    await renderSignedInAt('/app/profile', 'Profile');
+    const email = screen.getByLabelText('Email') as HTMLInputElement;
+    fireEvent.change(email, { target: { value: 'taken@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('This email is already in use.');
+    await waitFor(() => expect(document.activeElement).toBe(email));
+    expect(email.getAttribute('aria-invalid')).toBe('true');
+    expect(email.getAttribute('aria-describedby')).toBe('profile-email-error');
+    expect(email.value).toBe('taken@example.com');
+    fireEvent.change(email, { target: { value: 'different@example.com' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(email.getAttribute('aria-invalid')).toBe('false');
+  });
+
+  it('switches the sign-in action and validation message to Vietnamese', async () => {
+    setPath('/login'); render(<App />);
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'vi' } });
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Vui lòng nhập tên đăng nhập và mật khẩu.');
+  });
+
+  it('updates an existing profile error on language change without losing the email draft', async () => {
+    mockUpdateMyProfile.mockRejectedValue(new ApiError('This email is already in use. Please choose a different email address.', 409));
+    await renderSignedInAt('/app/profile', 'Profile');
+    const email = screen.getByLabelText('Email') as HTMLInputElement;
+    fireEvent.change(email, { target: { value: 'taken@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await screen.findByRole('alert');
+    act(() => setLanguage('vi'));
+    expect(screen.getByRole('alert').textContent).toContain('Email này đã được sử dụng.');
+    expect(email.value).toBe('taken@example.com');
+    expect(screen.getByRole('button', { name: 'Lưu thay đổi' })).toBeTruthy();
   });
 
   it('validates supported profile fields and presents backend errors', async () => {

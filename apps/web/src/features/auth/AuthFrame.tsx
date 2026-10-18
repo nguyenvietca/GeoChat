@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { LanguageSelector } from '../../i18n/LanguageSelector';
 
 export function AuthFrame({ children, mode }: { children: ReactNode; mode: 'login' | 'register' }) {
   return (
@@ -16,6 +17,7 @@ export function AuthFrame({ children, mode }: { children: ReactNode; mode: 'logi
       </section>
       <section className="auth-main">
         <div className="auth-card">
+          <LanguageSelector />
           <div className="auth-mobile-brand"><span className="brand-mark">G</span> GeoChat</div>
           <p className="eyebrow">{mode === 'login' ? 'WELCOME BACK' : 'CREATE YOUR ACCOUNT'}</p>
           {children}

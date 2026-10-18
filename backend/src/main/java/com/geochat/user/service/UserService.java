@@ -82,13 +82,27 @@ public class UserService {
 	public UserResponse updateCurrentUser(String username, UpdateMyProfileRequest request) {
 		User user = userRepository.findByUsernameIgnoreCase(username)
 				.orElseThrow(() -> new IllegalArgumentException("User not found"));
+		String email = normalizeOptional(request.email());
+		if (email != null && userRepository.existsByEmailIgnoreCaseAndIdNot(email, user.getId()))
+			throw new com.geochat.user.exception.EmailAlreadyUsedException();
 		user.setDisplayName(request.displayName().trim());
 		if (request.email() != null)
-			user.setEmail(normalizeOptional(request.email()));
+			user.setEmail(email);
 		if (request.phoneNumber() != null)
 			user.setPhoneNumber(normalizePhone(request.phoneNumber()));
 		user.setUpdatedAt(Instant.now());
-		return UserResponse.from(userRepository.save(user));
+		try {
+			return UserResponse.from(userRepository.saveAndFlush(user));
+		} catch (org.springframework.dao.DataIntegrityViolationException conflict) {
+			// The database uniqueness constraint also protects simultaneous updates.
+			for (Throwable cause = conflict; cause != null; cause = cause.getCause()) {
+				if (cause instanceof org.hibernate.exception.ConstraintViolationException constraint
+						&& constraint.getConstraintName() != null
+						&& constraint.getConstraintName().toLowerCase(java.util.Locale.ROOT).contains("uq_users_email_ci"))
+					throw new com.geochat.user.exception.EmailAlreadyUsedException();
+			}
+			throw conflict;
+		}
 	}
 
 	@Transactional

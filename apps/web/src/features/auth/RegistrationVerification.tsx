@@ -1,3 +1,4 @@
+import { useLocale, translate as t, translateText as text } from '../../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { registrationConfig } from '../../api/auth';
 
@@ -29,6 +30,7 @@ export type RegistrationProof = { pending: boolean; enabled: boolean; token: str
 export function RegistrationVerification({ onChange, resetKey }: {
   onChange: (proof: RegistrationProof) => void; resetKey: number;
 }) {
+  useLocale();
   const container = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -51,15 +53,15 @@ export function RegistrationVerification({ onChange, resetKey }: {
         sitekey: config.siteKey, action: 'register', theme: 'auto', size: container.current.clientWidth < 300 ? 'compact' : 'flexible',
         callback: (token: string) => { if (active) { setError(''); onChange({ pending: false, enabled: true, token }); } },
         'expired-callback': () => { if (active) onChange({ pending: false, enabled: true, token: '' }); },
-        'error-callback': () => { if (active) { onChange({ pending: false, enabled: true, token: '' }); setError('Verification could not load. Please retry.'); } },
+        'error-callback': () => { if (active) { onChange({ pending: false, enabled: true, token: '' }); setError(t('verification.loadFailed')); } },
       });
       setLoading(false);
-    }).catch(() => { if (active) { setLoading(false); setError('Registration verification is unavailable. Please retry.'); } });
+    }).catch(() => { if (active) { setLoading(false); setError(t('verification.unavailable')); } });
     return () => { active = false; if (widget !== undefined) api?.remove(widget); };
   }, [onChange, resetKey, retry]);
   return <div className="registration-verification">
-    {loading ? <p role="status">Loading registration verification…</p> : null}
+    {loading ? <p role="status">{t('verification.loading')}</p> : null}
     <div ref={container} />
-    {error ? <><p role="alert">{error}</p><button type="button" className="quiet-light-button" onClick={() => setRetry(value => value + 1)}>Retry verification</button></> : null}
+    {error ? <><p role="alert">{text(error)}</p><button type="button" className="quiet-light-button" onClick={() => setRetry(value => value + 1)}>{t('verification.retry')}</button></> : null}
   </div>;
 }

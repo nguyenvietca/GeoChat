@@ -145,6 +145,31 @@ class UserSearchIntegrationTest {
         return userRepository.save(user);
     }
 
+    @Test
+    void duplicateEmailShowsConflictAndDoesNotChangeTheProfile() throws Exception {
+        User owner = createUser("email-owner", "Owner");
+        owner.setEmail("taken@example.com"); userRepository.saveAndFlush(owner);
+        User editor = createUser("email-editor", "Original name");
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/users/me")
+                .header("Authorization", bearer(tokenFor(editor))).contentType("application/json")
+                .content("{\"displayName\":\"New name\",\"email\":\"TAKEN@example.com\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("This email is already in use. Please choose a different email address."));
+        User unchanged = userRepository.findById(editor.getId()).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(unchanged.getDisplayName()).isEqualTo("Original name");
+        org.assertj.core.api.Assertions.assertThat(unchanged.getEmail()).isNull();
+    }
+
+    @Test
+    void keepingOwnEmailWithDifferentCaseIsAllowed() throws Exception {
+        User editor = createUser("same-email-editor", "Original name");
+        editor.setEmail("mine@example.com"); userRepository.saveAndFlush(editor);
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/users/me")
+                .header("Authorization", bearer(tokenFor(editor))).contentType("application/json")
+                .content("{\"displayName\":\"New name\",\"email\":\"MINE@example.com\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.displayName").value("New name"));
+    }
+
     private String tokenFor(User user) {
         return jwtService.generateToken(user.getId(), user.getUsername());
     }

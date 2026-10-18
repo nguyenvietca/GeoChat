@@ -1,3 +1,4 @@
+import { useLocale, translate as t, translateText as text } from '../../i18n';
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../api/client';
@@ -7,6 +8,7 @@ import { GoogleButton } from './GoogleButton';
 import { RegistrationVerification, RegistrationProof } from './RegistrationVerification';
 
 export function RegisterPage() {
+  useLocale();
   const { register } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -24,19 +26,19 @@ export function RegisterPage() {
     const cleanUsername = username.trim();
     const cleanDisplayName = displayName.trim();
     if (cleanUsername.length < 3 || cleanUsername.length > 50) {
-      setError('Username must be between 3 and 50 characters.');
+      setError(t('auth.usernameLength'));
       return;
     }
     if (cleanDisplayName.length < 2 || cleanDisplayName.length > 100) {
-      setError('Display name must be between 2 and 100 characters.');
+      setError(t('auth.nameLength'));
       return;
     }
     if (password.length < 8 || password.length > 128) {
-      setError('Password must be between 8 and 128 characters.');
+      setError(t('auth.passwordLength'));
       return;
     }
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+      setError(t('auth.passwordMismatch'));
       return;
     }
 
@@ -48,7 +50,7 @@ export function RegisterPage() {
       navigate('/login', { replace: true, state: { registered: true } });
     } catch (registerError) {
       if (proof.enabled) setVerificationReset(value => value + 1);
-      setError(registerError instanceof ApiError ? registerError.message : 'Unable to create your account right now.');
+      setError(registerError instanceof ApiError ? registerError.message : t('auth.registerFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -56,23 +58,23 @@ export function RegisterPage() {
 
   return (
     <AuthFrame mode="register">
-      <h2>Create account</h2>
+      <h2>{t('auth.createAccount')}</h2>
       <GoogleButton />
       <p className="auth-description">Set up your GeoChat account to get started.</p>
-      {error ? <p className="error-message" role="alert">{error}</p> : null}
+      {error ? <p className="error-message" role="alert">{text(error)}</p> : null}
       <form className="form-stack" onSubmit={(event) => void submit(event)}>
-        <label className="field-label" htmlFor="register-display-name">Display name</label>
+        <label className="field-label" htmlFor="register-display-name">{t('auth.displayName')}</label>
         <input id="register-display-name" autoComplete="name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
-        <label className="field-label" htmlFor="register-username">Username</label>
+        <label className="field-label" htmlFor="register-username">{t('auth.username')}</label>
         <input id="register-username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
-        <label className="field-label" htmlFor="register-password">Password</label>
+        <label className="field-label" htmlFor="register-password">{t('auth.password')}</label>
         <input id="register-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
-        <label className="field-label" htmlFor="register-confirm-password">Confirm password</label>
+        <label className="field-label" htmlFor="register-confirm-password">{t('auth.confirmPassword')}</label>
         <input id="register-confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
         <RegistrationVerification onChange={setProof} resetKey={verificationReset} />
-        <button className="primary-button" type="submit" disabled={submitting || proof.pending || (proof.enabled && !proof.token)}>{submitting ? 'Creating account…' : 'Create account'}</button>
+        <button className="primary-button" type="submit" disabled={submitting || proof.pending || (proof.enabled && !proof.token)}>{submitting ? t('auth.creatingAccount') : t('auth.createAccount')}</button>
       </form>
-      <p className="auth-switch">Already have an account? <Link to="/login">Sign in</Link></p>
+      <p className="auth-switch">Already have an account? <Link to="/login">{t('auth.signIn')}</Link></p>
     </AuthFrame>
   );
 }

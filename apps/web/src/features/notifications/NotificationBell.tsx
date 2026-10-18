@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocale, translate as t } from '../../i18n';
 import { Link, useNavigate } from 'react-router-dom';
 import { useNotifications } from '../../app/providers/NotificationContext';
 import { getNotificationDestination } from './NotificationsPage';
@@ -12,6 +13,7 @@ export function NotificationBellIcon({ className = '' }: { className?: string })
 }
 
 export function NotificationBell() {
+  useLocale();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -27,16 +29,16 @@ export function NotificationBell() {
   }, []);
 
   return <div className="notification-bell-wrap" ref={root}>
-    <button type="button" className="notification-bell" aria-label={`Notifications, ${unreadCount} unread`}
+    <button type="button" className="notification-bell" aria-label={t('notifications.bellLabel', { count: unreadCount })}
       aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((value) => !value)}>
       <NotificationBellIcon />{unreadCount > 0 ? <b>{unreadCount > 99 ? '99+' : unreadCount}</b> : null}
     </button>
-    {open ? <section className="notification-panel" role="dialog" aria-label="Notifications">
-      <header><strong>Notifications</strong><button type="button" disabled={markingAll || unreadCount === 0}
-        onClick={() => void markAllAsRead()}>Mark all read</button></header>
-      {loading && notifications.length === 0 ? <p role="status">Loading…</p> : null}
-      {error && notifications.length === 0 ? <p role="alert">Unable to load notifications.</p> : null}
-      {!loading && !error && notifications.length === 0 ? <p>You're all caught up.</p> : null}
+    {open ? <section className="notification-panel" role="dialog" aria-label={t('common.notifications')}>
+      <header><strong>{t('common.notifications')}</strong><button type="button" disabled={markingAll || unreadCount === 0}
+        onClick={() => void markAllAsRead()}>{t('notifications.markAll')}</button></header>
+      {loading && notifications.length === 0 ? <p role="status">{t('notifications.loading')}</p> : null}
+      {error && notifications.length === 0 ? <p role="alert">{t('notifications.loadFailed')}</p> : null}
+      {!loading && !error && notifications.length === 0 ? <p>{t('notifications.caughtUp')}</p> : null}
       <div className="notification-panel-list">
         {notifications.slice(0, 6).map((item) => <button type="button" key={item.id} className={item.read ? 'is-read' : 'is-unread'}
           onClick={async () => { if (!item.read) await markAsRead(item.id); setOpen(false); navigate(getNotificationDestination(item) ?? '/app/notifications'); }}>
@@ -44,7 +46,7 @@ export function NotificationBell() {
           <span><strong>{item.title}</strong><small>{item.message}</small></span>
         </button>)}
       </div>
-      <Link to="/app/notifications" onClick={() => setOpen(false)}>View all notifications</Link>
+      <Link to="/app/notifications" onClick={() => setOpen(false)}>{t('notifications.viewAll')}</Link>
     </section> : null}
   </div>;
 }

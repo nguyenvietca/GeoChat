@@ -1,3 +1,4 @@
+import { useLocale, translate as t, translateText as text } from '../../i18n';
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { sendImage, validateImage } from '../../api/images';
 import { ChatImage } from './ChatImage';
@@ -37,6 +38,7 @@ type ChatPanelProps = {
 
 // Rendered with key={conversationId} so switching conversations resets all state and subscriptions.
 export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeftGroup, onGroupChanged, onOpenConversation, onMessage, onReadState }: ChatPanelProps) {
+  useLocale();
   const { token, user } = useAuth();
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [group, setGroup] = useState<GroupInfo | null>(null);
@@ -170,7 +172,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
       return undefined;
     }
     if (!token) {
-      setError('Your session has expired. Please sign in again.');
+      setError(t('auth.sessionExpired'));
       setLoading(false);
       return undefined;
     }
@@ -585,7 +587,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
           onGroupChanged={(updated) => { setGroup(updated); onGroupChanged(updated); }} />
       ) : null}
       {error && !conversation ? (
-        <div className="chat-load-error" role="alert">{error}<Link to="/app/chat">Back to Messages</Link></div>
+        <div className="chat-load-error" role="alert">{text(error)}<Link to="/app/chat">Back to Messages</Link></div>
       ) : (
         <>
           <div className="chat-message-area" ref={messageAreaRef} onScroll={(event) => {
@@ -597,7 +599,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
             if (nearBottomRef.current) setHasNewMessages(false);
           }}>
             {loading ? <div className="result-state" role="status"><span className="spinner" />Loading messages…</div> : null}
-            {!loading && error ? <div className="inline-error" role="alert">{error}<button type="button" onClick={() => void loadOlder()}>Try again</button></div> : null}
+            {!loading && error ? <div className="inline-error" role="alert">{text(error)}<button type="button" onClick={() => void loadOlder()}>Try again</button></div> : null}
             {!loading && canLoadOlder ? <button className="load-older-button" type="button" onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older messages…' : 'Load older messages'}</button> : null}
             {!loading && messages.length === 0 ? <div className="chat-empty-state">No messages yet. Start the conversation.</div> : null}
             {renderedMessages}
@@ -608,7 +610,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
             setHasNewMessages(false);
           }}>Jump to latest</button> : null}
           {sendError ? <div className="chat-send-error">
-            <p role="alert">{sendError}</p>
+            <p role="alert">{text(sendError)}</p>
             <button className="quiet-light-button compact-button" type="button" disabled={checkingRecent} onClick={async () => {
               if (!token || checkingRecent) return;
               setCheckingRecent(true);
@@ -617,7 +619,7 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
                 for (const message of response.items) addMessage(message);
                 setTotal(response.total);
               } catch {
-                setSendError('Unable to check recent messages. Your draft is saved. Check the connection before sending again.');
+                setSendError(t('chat.checkFailed'));
               } finally { setCheckingRecent(false); }
             }}>{checkingRecent ? 'Checking recent messages...' : 'Check recent messages'}</button>
           </div> : null}
@@ -641,16 +643,16 @@ export function ChatPanel({ conversationId, groupInfo, titleHint, onBack, onLeft
             <button className="image-attach-button" type="button" aria-label="Attach image" title="Attach image" disabled={sending||loading||!conversation||limitedMessagesRemaining===0} onClick={()=>imageInputRef.current?.click()}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>
             </button>
-            <label className="visually-hidden" htmlFor="chat-message">Message</label>
+            <label className="visually-hidden" htmlFor="chat-message">{t('common.message')}</label>
             <textarea ref={composerRef} id="chat-message" value={draft} onChange={(event) => {
               setDraft(event.target.value);
               updateTypingFromDraft(event.target.value);
             }} onKeyDown={handleComposerKeyDown}
               onBlur={stopTyping}
               onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }}
-              placeholder={limitedMessagesRemaining === 0 ? 'Message limit reached' : 'Write a message…'} maxLength={MAX_MESSAGE_LENGTH} rows={1}
+              placeholder={limitedMessagesRemaining === 0 ? t('chat.limit') : t('chat.write')} maxLength={MAX_MESSAGE_LENGTH} rows={1}
               disabled={loading || !conversation || limitedMessagesRemaining === 0} />
-            <button className="primary-button" type="submit" disabled={sending || loading || !conversation || (!draft.trim()&&!selectedImage) || limitedMessagesRemaining === 0}>{sending ? 'Sending…' : 'Send'}</button>
+            <button className="primary-button" type="submit" disabled={sending || loading || !conversation || (!draft.trim()&&!selectedImage) || limitedMessagesRemaining === 0}>{sending ? t('chat.sending') : t('chat.send')}</button>
           </form>
           {limitedMessagesRemaining !== null ? <div className="limited-chat-notice">
             <p role="status">{limitedMessagesRemaining > 0 ? `${limitedMessagesRemaining} of 5 messages remaining.` : 'Message limit reached.'}</p>

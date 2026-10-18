@@ -1,9 +1,11 @@
+import { useLocale, translate as t, translateText as text } from '../../i18n';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../app/providers/AuthContext';
 import { Connections, googleConfig, googleConnections, startGoogle, unlinkGoogle } from '../../api/google';
 import { ApiError } from '../../api/client';
 
 export function ConnectedAccounts() {
+  useLocale();
   const { token } = useAuth();
   const [connections, setConnections] = useState<Connections | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -15,7 +17,7 @@ export function ConnectedAccounts() {
     let active = true;
     void Promise.all([googleConfig(), googleConnections(token)]).then(([config, current]) => {
       if (active) { setEnabled(config.enabled); setConnections(current); }
-    }).catch(() => { if (active) setNotice('Connected accounts could not be loaded. Try again after refreshing.'); });
+    }).catch(() => { if (active) setNotice(t('google.loadFailed')); });
     return () => { active = false; };
   }, [token]);
   const change = async () => {
@@ -24,24 +26,24 @@ export function ConnectedAccounts() {
     try {
       if (connections.googleConnected) {
         await unlinkGoogle(token, password); setPassword('');
-        setConnections(await googleConnections(token)); setNotice('Google disconnected. Your password still works.');
+        setConnections(await googleConnections(token)); setNotice(t('google.disconnected'));
       } else { await startGoogle(token, password); }
-    } catch (e) { setNotice(e instanceof ApiError ? e.message : 'Google could not be connected. Please try again.'); }
+    } catch (e) { setNotice(e instanceof ApiError ? e.message : t('google.connectFailed')); }
     finally { setBusy(false); }
   };
   return <section className="settings-section" aria-labelledby="connected-accounts-heading">
-    <h2 id="connected-accounts-heading">Connected Accounts</h2>
-    {notice ? <p role="status">{notice}</p> : null}
-    {!connections ? (notice ? null : <p role="status">Loading connected accounts…</p>) : <>
-      <p><strong>Google</strong> — {connections.googleConnected ? 'Connected' : 'Not connected'}</p>
+    <h2 id="connected-accounts-heading">{t('google.connectedAccounts')}</h2>
+    {notice ? <p role="status">{text(notice)}</p> : null}
+    {!connections ? (notice ? null : <p role="status">{t('google.loadingAccounts')}</p>) : <>
+      <p><strong>Google</strong> — {connections.googleConnected ? t('google.connected') : t('google.notConnected')}</p>
       {connections.email ? <p className="connected-email">{connections.email}</p> : null}
-      {!connections.passwordAvailable ? <p>Google is your only sign-in method and cannot be disconnected.</p> : (connections.googleConnected || enabled) ? <div className="form-stack connected-account-form">
-        <label htmlFor="google-password">Confirm your current password</label>
+      {!connections.passwordAvailable ? <p>{t('google.onlyMethod')}</p> : (connections.googleConnected || enabled) ? <div className="form-stack connected-account-form">
+        <label htmlFor="google-password">{t('google.confirmPassword')}</label>
         <input id="google-password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} maxLength={128} />
         <button className="quiet-light-button" type="button" disabled={busy || !password} onClick={() => void change()}>
-          {busy ? 'Please wait…' : connections.googleConnected ? 'Disconnect Google' : 'Connect Google'}
+          {busy ? t('common.wait') : connections.googleConnected ? t('google.disconnect') : t('google.connect')}
         </button>
-      </div> : <p>Google sign-in is currently unavailable.</p>}
+      </div> : <p>{t('google.disabled')}</p>}
     </>}
   </section>;
 }
