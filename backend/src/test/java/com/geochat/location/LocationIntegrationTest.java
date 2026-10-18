@@ -256,7 +256,9 @@ class LocationIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items().getFirst()).isEqualTo(first);
         point.setUpdatedAt(Instant.now().minusSeconds(90000));locationRepository.save(point);
         org.assertj.core.api.Assertions.assertThat(locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items()).isEmpty();
-        point.setUpdatedAt(Instant.now());locationRepository.save(point);target.setStatus(UserStatus.INACTIVE);userRepository.save(target);
+        point.setUpdatedAt(Instant.now());locationRepository.save(point);
+        target=userRepository.findById(target.getId()).orElseThrow();
+        target.setStatus(UserStatus.INACTIVE);userRepository.save(target);
         org.assertj.core.api.Assertions.assertThat(locations.getNearbyUsers(viewer.getUsername(),1000.0,20).items()).isEmpty();
         locations.setDiscoverability(target.getUsername(),false);
         org.assertj.core.api.Assertions.assertThat(locations.discoverability(target.getUsername()).discoverable()).isFalse();

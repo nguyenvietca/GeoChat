@@ -1,6 +1,7 @@
 import { useLocale, translate as t } from '../../i18n';
 import { Link } from 'react-router-dom';
 import { ConnectedAccounts } from './ConnectedAccounts';
+import { AccountLifecycleSection } from './AccountLifecycleSection';
 import { LanguageSelector } from '../../i18n/LanguageSelector';
 import { useAuth } from '../../app/providers/AuthContext';
 import { ThemePreference, useTheme } from '../../app/providers/ThemeContext';
@@ -65,6 +66,7 @@ export function SettingsPage() {
       </section>
 
       <ConnectedAccounts />
+      <AccountLifecycleSection />
       <section className="settings-section" aria-labelledby="session-settings-heading">
         <div className="section-heading">
           <div><h2 id="session-settings-heading">{t('settings.session')}</h2><p>{t('settings.sessionHelp')}</p></div>

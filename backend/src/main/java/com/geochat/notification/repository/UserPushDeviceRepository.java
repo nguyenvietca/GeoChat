@@ -13,5 +13,10 @@ public interface UserPushDeviceRepository extends JpaRepository<UserPushDevice, 
 
     Optional<UserPushDevice> findByIdAndUserId(Long id, Long userId);
 
-    List<UserPushDevice> findByUserIdAndActiveTrue(Long userId);
+    @org.springframework.data.jpa.repository.Query("""
+        select d from UserPushDevice d, User u
+        where d.userId = u.id and d.userId = :userId and d.active = true
+          and u.status = com.geochat.user.entity.UserStatus.ACTIVE
+        """)
+    List<UserPushDevice> findByUserIdAndActiveTrue(@org.springframework.data.repository.query.Param("userId") Long userId);
 }

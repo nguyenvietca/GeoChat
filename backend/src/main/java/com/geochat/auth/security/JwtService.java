@@ -28,8 +28,12 @@ public class JwtService {
 	}
 
 	public String generateToken(Long userId, String username) {
+		return generateToken(userId, username, 0);
+	}
+
+	public String generateToken(Long userId, String username, long authVersion) {
 		Instant now = Instant.now();
-		return Jwts.builder().subject(username).claim("userId", userId).issuedAt(Date.from(now))
+		return Jwts.builder().subject(username).claim("userId", userId).claim("authVersion", authVersion).issuedAt(Date.from(now))
 				.expiration(Date.from(now.plusMillis(expirationMs))).signWith(getSigningKey()).compact();
 	}
 
@@ -49,6 +53,11 @@ public class JwtService {
 	public Long getUserId(String token) {
 		Claims claims = parseClaims(token);
 		return claims.get("userId", Number.class).longValue();
+	}
+
+	public long getAuthVersion(String token) {
+		Number version = parseClaims(token).get("authVersion", Number.class);
+		return version == null ? 0 : version.longValue();
 	}
 
 	public Instant getExpiration(String token) {

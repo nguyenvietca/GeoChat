@@ -211,6 +211,10 @@ Mỗi release nên build với `APP_VERSION` bất biến như commit SHA. Rollb
 
 ## CI
 
+Tự vô hiệu hóa tài khoản, kích hoạt lại và quyền admin khóa/mở khóa:
+[account-lifecycle.md](account-lifecycle.md). Backend cần chạy migration V20;
+quyền `ADMIN` phải được người vận hành cấp cho tài khoản đã xác minh.
+
 Giới hạn chống spam, trusted proxy và CAPTCHA đăng ký tùy chọn:
 [abuse-protection.md](abuse-protection.md). CAPTCHA disabled mặc định; đọc lưu ý
 tương thích client trước khi bật. Compose chỉ tin đúng proxy service `web`.

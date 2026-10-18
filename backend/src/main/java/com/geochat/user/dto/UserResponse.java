@@ -6,10 +6,10 @@ import com.geochat.user.entity.User;
 import com.geochat.user.entity.UserStatus;
 
 public record UserResponse(Long id, String username, String displayName, String email, String phoneNumber,
-		Instant avatarUpdatedAt, UserStatus status, Instant createdAt, Instant updatedAt) {
+		Instant avatarUpdatedAt, UserStatus status, Instant createdAt, Instant updatedAt, com.geochat.user.entity.UserRole role) {
 	public static UserResponse from(User user) {
 		return new UserResponse(user.getId(), user.getUsername(), user.getDisplayName(), user.getEmail(),
 				user.getPhoneNumber(), user.getAvatarUpdatedAt(), user.getStatus(), user.getCreatedAt(),
-				user.getUpdatedAt());
+				user.getUpdatedAt(), user.getRole());
 	}
 }

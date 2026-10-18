@@ -2,6 +2,17 @@ import type { MessageKey } from './en';
 
 // Existing server wording is an adapter, not a translation key or UI label.
 export const apiMessages: Record<string, MessageKey> = {
+  'This account is blocked. Contact an administrator.': 'account.blockedHelp',
+  'Activate your account before continuing.': 'account.activationRequired',
+  'This account is already active. Please sign in.': 'account.alreadyActive',
+  'Transfer the admin role before deactivating this account.': 'account.adminTransfer',
+  'Use the Google account connected to this account.': 'account.wrongGoogle',
+  'Enter a reason between 1 and 500 characters.': 'admin.reasonInvalid',
+  'Admin accounts cannot be blocked here.': 'admin.protected',
+  'This account is already blocked.': 'admin.alreadyBlocked',
+  'This account is not blocked.': 'admin.notBlocked',
+  'Current password is incorrect.': 'account.wrongPassword',
+  'Account changed. Please refresh and try again.': 'account.changed',
   'Internal server error': 'errors.server',
   'Invalid username or password': 'auth.invalidCredentials',
   'Invalid username or password.': 'auth.invalidCredentials',

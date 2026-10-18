@@ -44,6 +44,7 @@ public class GoogleFlows implements AuthorizationRequestRepository<OAuth2Authori
 	}
 
 	static final class Flow {
+		String purpose = "LOGIN";
 		final Long userId;
 		final String sessionHash;
 		Instant expires;
@@ -99,12 +100,19 @@ public class GoogleFlows implements AuthorizationRequestRepository<OAuth2Authori
 
 	public synchronized void begin(HttpServletRequest request, HttpServletResponse response, Long userId,
 			String token) {
+		begin(request, response, userId, token, userId == null ? "LOGIN" : "LINK");
+	}
+
+	public synchronized void begin(HttpServletRequest request, HttpServletResponse response, Long userId,
+			String token, String purpose) {
 		prune();
 		flows.remove(cookie(request));
 		if (flows.size() >= 1000)
 			throw new IllegalArgumentException("Google login is busy. Please try again.");
 		String key = random();
-		flows.put(key, new Flow(userId, userId == null ? null : fingerprint(token), clock.instant().plusSeconds(300)));
+		Flow flow = new Flow(userId, userId == null ? null : fingerprint(token), clock.instant().plusSeconds(300));
+		flow.purpose = purpose;
+		flows.put(key, flow);
 		setCookie(response, key, 300);
 	}
 

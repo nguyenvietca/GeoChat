@@ -69,6 +69,16 @@ public class WebSocketSessionRegistry {
         return activeSessionCounts.containsKey(userId);
     }
 
+    @org.springframework.transaction.event.TransactionalEventListener(phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
+    public void accountAccessChanged(com.geochat.user.service.AccountLifecycleService.AccessChanged event) {
+        sessionUserIds.forEach((sessionId, userId) -> {
+            if (userId.equals(event.userId())) {
+                closeSession(sessionId);
+                remove(sessionId);
+            }
+        });
+    }
+
     public synchronized void disconnect(String sessionId) {
         unregisterUsername(sessionId);
         ScheduledFuture<?> task = expirationTasks.remove(sessionId);

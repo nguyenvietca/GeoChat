@@ -112,6 +112,8 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 			return new Policy("google-auth", 10, 60);
 		if ("POST".equals(method) && "/api/v1/auth/login".equals(path))
 			return new Policy("login", 10, 60);
+		if ("POST".equals(method) && (path.startsWith("/api/v1/admin/") || path.endsWith("/deactivate") || path.endsWith("/reactivate")))
+			return new Policy("account-action", 10, 60);
 		if ("POST".equals(method) && "/api/v1/auth/register".equals(path))
 			return new Policy("register", 5, 3600);
 		if ("POST".equals(method) && "/api/v1/friends/requests".equals(path))

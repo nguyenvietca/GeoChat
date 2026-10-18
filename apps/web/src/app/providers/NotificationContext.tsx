@@ -175,7 +175,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (authLoading) return undefined;
-    if (!token || !user) {
+    if (!token || !user || user.status === 'INACTIVE') {
       replaceNotifications([]);
       replaceUnreadCount(0);
       loadedRef.current = false;

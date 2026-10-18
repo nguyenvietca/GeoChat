@@ -7,7 +7,7 @@ import { ApiError } from '../../api/client';
 
 export function GoogleReturnPage() {
   useLocale();
-  const { token, isLoading, acceptGoogleSession } = useAuth();
+  const { token, isLoading, acceptGoogleSession, logout } = useAuth();
   const navigate = useNavigate();
   const started = useRef(false);
   const [error, setError] = useState('');
@@ -18,6 +18,9 @@ export function GoogleReturnPage() {
     window.history.replaceState(window.history.state, '', '/oauth/complete');
     if (failure) { setError(failure === 'cancelled' ? t('google.cancelled') : t('google.expired')); return; }
     void completeGoogle(token ?? undefined).then(async result => {
+      if (result.deactivated) {
+        logout(); navigate('/login', { replace: true, state: { deactivated: true } }); return;
+      }
       if (!result.linked) {
         if (!result.token) throw new Error('Missing session');
         await acceptGoogleSession(result.token);

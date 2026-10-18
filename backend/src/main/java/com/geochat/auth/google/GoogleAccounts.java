@@ -41,8 +41,23 @@ public class GoogleAccounts {
 	}
 
 	public User active(Long id) {
-		return users.findById(id).filter(u -> u.getStatus() == UserStatus.ACTIVE)
+		User user = signIn(id);
+		if (user.getStatus() != UserStatus.ACTIVE)
+			throw new org.springframework.security.access.AccessDeniedException("Activate your account before continuing.");
+		return user;
+	}
+
+	private User signIn(Long id) {
+		User user = users.findById(id).orElseThrow(() -> new BadCredentialsException("Account unavailable."));
+		if (user.getStatus() == UserStatus.LOCKED)
+			throw new org.springframework.security.access.AccessDeniedException("This account is blocked. Contact an administrator.");
+		return user;
+	}
+
+	public User existingIdentity(Claims claims) {
+		var identity = identities.findByProviderAndSubject("GOOGLE", claims.subject())
 				.orElseThrow(() -> new BadCredentialsException("Account unavailable."));
+		return users.findById(identity.userId).orElseThrow(() -> new BadCredentialsException("Account unavailable."));
 	}
 
 	public User reauthenticate(String username, String password) {
@@ -71,7 +86,7 @@ public class GoogleAccounts {
 			return transactions.execute(status -> {
 				var existing = identities.findByProviderAndSubject("GOOGLE", claims.subject());
 				if (existing.isPresent() && (linkUser == null || existing.get().userId.equals(linkUser)))
-					return active(existing.get().userId);
+					return linkUser == null ? signIn(existing.get().userId) : active(existing.get().userId);
 				throw new IllegalArgumentException(
 						"Sign in using your existing method, then connect Google in Settings.");
 			});
@@ -89,7 +104,7 @@ public class GoogleAccounts {
 			existing.get().email = claims.email();
 			existing.get().updatedAt = java.time.Instant.now();
 			identities.save(existing.get());
-			return active(existing.get().userId);
+			return linkUser == null ? signIn(existing.get().userId) : active(existing.get().userId);
 		}
 		if (target != null && identities.findByUserIdAndProvider(target.getId(), "GOOGLE").isPresent())
 			throw new IllegalArgumentException("A different Google account is already connected.");

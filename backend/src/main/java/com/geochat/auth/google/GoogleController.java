@@ -22,12 +22,15 @@ public class GoogleController {
 	private final GoogleFlows flows;
 	private final GoogleAccounts accounts;
 	private final JwtService jwt;
+	private final com.geochat.user.service.AccountLifecycleService lifecycle;
 
-	public GoogleController(GoogleSettings settings, GoogleFlows flows, GoogleAccounts accounts, JwtService jwt) {
+	public GoogleController(GoogleSettings settings, GoogleFlows flows, GoogleAccounts accounts, JwtService jwt,
+			com.geochat.user.service.AccountLifecycleService lifecycle) {
 		this.settings = settings;
 		this.flows = flows;
 		this.accounts = accounts;
 		this.jwt = jwt;
+		this.lifecycle = lifecycle;
 	}
 
 	@GetMapping("/config")
@@ -72,7 +75,15 @@ public class GoogleController {
 		return ApiResponse.ok(Map.of("url", "/api/oauth2/authorization/google"));
 	}
 
-	public record Completion(String token, String tokenType, boolean linked) {
+	@PostMapping("/deactivate")
+	public ApiResponse<Map<String, String>> deactivate(Authentication auth, HttpServletRequest request, HttpServletResponse response) {
+		origin(request); enabled();
+		var user = accounts.active(jwt.getUserId(token(request)));
+		flows.begin(request, response, user.getId(), token(request), "DEACTIVATE");
+		return ApiResponse.ok(Map.of("url", "/api/oauth2/authorization/google"));
+	}
+
+	public record Completion(String token, String tokenType, boolean linked, boolean deactivated) {
 	}
 
 	@PostMapping("/complete")
@@ -84,11 +95,23 @@ public class GoogleController {
 				&& (!jwt.isTokenValid(token(request)) || !flow.userId.equals(jwt.getUserId(token(request)))))
 			throw new org.springframework.security.authentication.BadCredentialsException(
 					"Sign in and connect Google again.");
+		if (flow.userId != null) {
+			var current = accounts.active(flow.userId);
+			if (current.getAuthVersion() != jwt.getAuthVersion(token(request)))
+				throw new org.springframework.security.access.AccessDeniedException("Sign in again.");
+		}
+		if ("DEACTIVATE".equals(flow.purpose)) {
+			var user = accounts.existingIdentity(flow.claims);
+			if (!user.getId().equals(flow.userId))
+				throw new org.springframework.security.access.AccessDeniedException("Use the Google account connected to this account.");
+			lifecycle.deactivateGoogle(user.getId(), jwt.getAuthVersion(token(request)));
+			return ApiResponse.ok(new Completion(null, "Bearer", false, true));
+		}
 		var user = accounts.resolve(flow.claims, flow.userId);
 		response.setHeader("Cache-Control", "no-store");
 		return ApiResponse
-				.ok(new Completion(flow.userId == null ? jwt.generateToken(user.getId(), user.getUsername()) : null,
-						"Bearer", flow.userId != null));
+				.ok(new Completion(flow.userId == null ? jwt.generateToken(user.getId(), user.getUsername(), user.getAuthVersion()) : null,
+						"Bearer", flow.userId != null, false));
 	}
 
 	@PostMapping("/cancel")

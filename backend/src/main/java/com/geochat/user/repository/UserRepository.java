@@ -13,7 +13,11 @@ import com.geochat.user.entity.User;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
+	@Query("select u from User u where lower(u.username) like lower(concat('%', :query, '%')) or lower(u.displayName) like lower(concat('%', :query, '%')) order by u.id desc")
+	Page<User> adminSearch(@Param("query") String query, Pageable pageable);
+
 	boolean existsByEmailIgnoreCase(String email);
+
 	boolean existsByEmailIgnoreCaseAndIdNot(String email, Long id);
 
 	@org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)

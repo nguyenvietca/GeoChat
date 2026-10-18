@@ -15,6 +15,29 @@ import jakarta.persistence.Table;
 @Table(name = "users")
 public class User {
 
+	@jakarta.persistence.Version
+	@Column(name = "row_version", nullable = false)
+	private long rowVersion;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
+	private UserRole role = UserRole.USER;
+	@Column(name = "auth_version", nullable = false)
+	private long authVersion;
+	@Column(name = "self_deactivated_at")
+	private Instant selfDeactivatedAt;
+	@Column(name = "block_reason", length = 500)
+	private String blockReason;
+
+	public UserRole getRole() { return role; }
+	public void setRole(UserRole role) { this.role = role; }
+	public long getAuthVersion() { return authVersion; }
+	public void setAuthVersion(long version) { authVersion = version; }
+	public Instant getSelfDeactivatedAt() { return selfDeactivatedAt; }
+	public void setSelfDeactivatedAt(Instant value) { selfDeactivatedAt = value; }
+	public String getBlockReason() { return blockReason; }
+	public void setBlockReason(String reason) { blockReason = reason; }
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;

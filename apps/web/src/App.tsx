@@ -15,6 +15,8 @@ import { useNotifications } from './app/providers/NotificationContext';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { UserAvatar } from './features/profile/UserAvatar';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { AdminUsersPage } from './features/settings/AdminUsersPage';
+import { ReactivateAccountPage } from './features/settings/ReactivateAccountPage';
 import { NotificationBell, NotificationBellIcon } from './features/notifications/NotificationBell';
 
 function LoadingScreen() {
@@ -31,10 +33,11 @@ function PublicOnly({ children }: { children: ReactNode }) {
 
 function ProtectedArea() {
   useLocale();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (user?.status === 'INACTIVE') return <ReactivateAccountPage />;
   return <AppShell />;
 }
 
@@ -76,6 +79,7 @@ function AppShell() {
         </nav>
         <p className="nav-caption account-nav-caption">ACCOUNT</p>
         <nav className="side-nav account-side-nav" aria-label="Account navigation">
+          {user?.role === 'ADMIN' ? <NavLink to="/app/admin/users" className="nav-link account-nav-link">{t('admin.title')}</NavLink> : null}
           <NavLink to="/app/profile" className="nav-link account-nav-link">
             <span className="nav-icon" aria-hidden="true">◉</span> {t('common.profile')}
           </NavLink>
@@ -161,6 +165,7 @@ export default function App() {
             <Route path="profile" element={<ProfilePage />} />
             <Route path="profile/:userId" element={<ProfilePage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="admin/users" element={<AdminUsersPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

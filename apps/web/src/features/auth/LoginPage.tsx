@@ -6,7 +6,7 @@ import { useAuth } from '../../app/providers/AuthContext';
 import { AuthFrame } from './AuthFrame';
 import { GoogleButton } from './GoogleButton';
 
-type LoginLocationState = { from?: string; registered?: boolean };
+type LoginLocationState = { from?: string; registered?: boolean; deactivated?: boolean };
 
 export function LoginPage() {
   useLocale();
@@ -19,7 +19,6 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [retryingSession, setRetryingSession] = useState(false);
-
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!username.trim() || !password) {
@@ -61,6 +60,7 @@ export function LoginPage() {
         </div>
       ) : null}
       {locationState?.registered ? <p className="success-message" role="status">{t('auth.registered')}</p> : null}
+      {locationState?.deactivated ? <p className="success-message" role="status">{t('account.deactivated')}</p> : null}
       {error ? <p className="error-message" role="alert">{text(error)}</p> : null}
       <form className="form-stack" onSubmit={(event) => void submit(event)}>
         <label className="field-label" htmlFor="login-username">{t('auth.username')}</label>

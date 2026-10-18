@@ -180,7 +180,11 @@ class GoogleAuthIntegrationTest {
 	}
 
 	Started start(String token, String password) throws Exception {
-		var request = post("/api/v1/auth/google/" + (token == null ? "start" : "link")).header("Origin", ORIGIN)
+		return startAction(token == null ? "start" : "link", token, password);
+	}
+
+	Started startAction(String action, String token, String password) throws Exception {
+		var request = post("/api/v1/auth/google/" + action).header("Origin", ORIGIN)
 				.contentType("application/json")
 				.content(json.writeValueAsString(Map.of("password", password == null ? "" : password)));
 		if (token != null)
@@ -313,7 +317,7 @@ class GoogleAuthIntegrationTest {
 		returned = callback(start(token, "Password123!"));
 		alice.setStatus(UserStatus.LOCKED);
 		users.saveAndFlush(alice);
-		assertThat(complete(returned, token).getResponse().getStatus()).isEqualTo(401);
+		assertThat(complete(returned, token).getResponse().getStatus()).isEqualTo(403);
 		assertThat(identities.count()).isZero();
 	}
 
@@ -334,8 +338,7 @@ class GoogleAuthIntegrationTest {
 				.isInstanceOf(IllegalArgumentException.class);
 		created.setStatus(UserStatus.INACTIVE);
 		users.saveAndFlush(created);
-		assertThatThrownBy(() -> accounts.resolve(claims("subject", "first@example.com"), null))
-				.isInstanceOf(org.springframework.security.authentication.BadCredentialsException.class);
+		assertThat(accounts.resolve(claims("subject", "first@example.com"), null).getStatus()).isEqualTo(UserStatus.INACTIVE);
 	}
 
 	@Test
@@ -401,7 +404,53 @@ class GoogleAuthIntegrationTest {
 		user.setStatus(UserStatus.LOCKED);
 		users.saveAndFlush(user);
 		assertThatThrownBy(() -> accounts.reauthenticate(user.getUsername(), "Password123!"))
-				.isInstanceOf(org.springframework.security.authentication.BadCredentialsException.class);
+				.isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+	}
+
+	@Test
+	void googleOnlyDeactivationAndExplicitReactivationKeepOldJwtRevoked() throws Exception {
+		var first = complete(callback(start(null, null)), null);
+		String old = json.readTree(first.getResponse().getContentAsString()).path("data").path("token").asText();
+		var disabled = complete(callback(startAction("deactivate", old, null)), old);
+		assertThat(disabled.getResponse().getStatus()).isEqualTo(200);
+		assertThat(json.readTree(disabled.getResponse().getContentAsString()).path("data").path("deactivated").asBoolean()).isTrue();
+		User user = users.findAll().getFirst();
+		assertThat(user.getStatus()).isEqualTo(UserStatus.INACTIVE);
+		assertThat(user.isPasswordLoginEnabled()).isFalse();
+		var restricted = complete(callback(start(null, null)), null);
+		assertThat(restricted.getResponse().getStatus()).isEqualTo(200);
+		String inactiveToken = json.readTree(restricted.getResponse().getContentAsString()).path("data").path("token").asText();
+		assertThat(users.findById(user.getId()).orElseThrow().getStatus()).isEqualTo(UserStatus.INACTIVE);
+		mvc.perform(get("/api/v1/users/search").param("q", "test").header("Authorization", "Bearer " + inactiveToken)).andExpect(status().isForbidden());
+		var restored = mvc.perform(post("/api/v1/users/me/reactivate").header("Authorization", "Bearer " + inactiveToken)).andReturn();
+		assertThat(restored.getResponse().getStatus()).isEqualTo(200);
+		String fresh = json.readTree(restored.getResponse().getContentAsString()).path("data").path("token").asText();
+		mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + fresh)).andExpect(status().isOk());
+		mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + old)).andExpect(status().isUnauthorized());
+		mvc.perform(post("/api/v1/users/me/reactivate").header("Authorization", "Bearer " + inactiveToken)).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void googleSignInCannotBypassAdminBlock() throws Exception {
+		complete(callback(start(null, null)), null);
+		User user = users.findAll().getFirst();
+		User admin = passwordUser("moderator"); admin.setRole(UserRole.ADMIN); users.saveAndFlush(admin);
+		context.getBean(com.geochat.user.service.AccountLifecycleService.class).moderate("moderator", user.getId(), true, "Spam");
+		assertThat(complete(callback(start(null, null)), null).getResponse().getStatus()).isEqualTo(403);
+		assertThat(users.findById(user.getId()).orElseThrow().getStatus()).isEqualTo(UserStatus.LOCKED);
+	}
+
+	@Test
+	void googleDeactivationRequiresConnectedSubjectAndOriginalSession() throws Exception {
+		User user = passwordUser("owner");
+		accounts.resolve(claims("other-subject", "other@example.com"), user.getId());
+		String token = jwt.generateToken(user.getId(), user.getUsername());
+		var wrongIdentity = complete(callback(startAction("deactivate", token, null)), token);
+		assertThat(wrongIdentity.getResponse().getStatus()).isEqualTo(401);
+		assertThat(users.findById(user.getId()).orElseThrow().getStatus()).isEqualTo(UserStatus.ACTIVE);
+		var returned = callback(startAction("deactivate", token, null));
+		assertThat(complete(returned, null).getResponse().getStatus()).isEqualTo(401);
+		assertThat(users.findById(user.getId()).orElseThrow().getStatus()).isEqualTo(UserStatus.ACTIVE);
 	}
 
 	@Test

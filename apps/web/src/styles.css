@@ -1,11 +1,38 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
 
 /* Shared and desktop styles. Responsive overrides live in styles/mobile.css. */
-.language-selector { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.language-selector label { color: var(--muted); font-size: 14px; }
-.language-selector select { min-height: 44px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--control-border); border-radius: 8px; color: var(--ink); background: var(--paper); font: inherit; }
-.language-selector select:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
-.auth-card > .language-selector { justify-content: flex-end; margin-bottom: 24px; }
+.language-selector {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.language-selector label {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.language-selector select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+}
+
+.language-selector select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.auth-card>.language-selector {
+  justify-content: flex-end;
+  margin-bottom: 24px;
+}
 
 .discovery-setting {
   padding: 14px;
@@ -978,8 +1005,8 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 28px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .account-summary>div {
@@ -988,8 +1015,11 @@ h2 {
   padding: 19px 20px 19px 0;
 }
 
-.account-summary>div+div {
+.account-summary>div {
   padding-left: 22px;
+}
+
+.account-summary>div+div {
   border-left: 1px solid var(--line);
 }
 
@@ -1193,7 +1223,8 @@ h2 {
 }
 
 .form-stack input,
-.search-form input {
+.search-form input,
+.account-search input {
   width: 100%;
   min-width: 0;
   height: 46px;
@@ -1207,7 +1238,8 @@ h2 {
 }
 
 .form-stack input:focus,
-.search-form input:focus {
+.search-form input:focus,
+.account-search input:focus {
   border-color: var(--teal);
   outline: 3px solid rgba(18, 107, 98, 0.13);
 }
@@ -3616,3 +3648,77 @@ select {
   outline: 2px solid var(--gold);
   outline-offset: 4px;
 }
+
+.account-action-form {
+  max-width: 620px;
+}
+
+.account-action-form textarea {
+  min-height: 100px;
+  padding: 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--paper);
+  resize: vertical;
+}
+
+.account-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.account-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.account-confirm input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  flex: 0 0 auto;
+  margin: 4px 0 0;
+}
+
+.account-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 24px 0;
+}
+
+.account-search input {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+}
+
+.admin-user-list {
+  list-style: none;
+  padding: 0;
+}
+
+.admin-user-list>li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-user-list p {
+  overflow-wrap: anywhere;
+}
+
+.admin-user-list .settings-section {
+  margin-bottom: 12px;
+}
+
+.moderation-dialog { gap: 14px; }
+.moderation-dialog h2 { overflow-wrap: anywhere; }
+.moderation-dialog .primary-button { width: auto; margin-top: 0; }

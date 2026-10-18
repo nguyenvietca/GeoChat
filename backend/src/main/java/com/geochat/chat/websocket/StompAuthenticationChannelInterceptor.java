@@ -61,6 +61,12 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
             } catch (UsernameNotFoundException exception) {
                 throw new AccessDeniedException("Missing or invalid JWT token");
             }
+            if (!userDetails.isEnabled() || !userDetails.isAccountNonLocked()
+                    || (userDetails instanceof com.geochat.auth.security.AccountPrincipal p
+                        && p.account().getStatus() != com.geochat.user.entity.UserStatus.ACTIVE)
+                    || (userDetails instanceof com.geochat.auth.security.AccountPrincipal principal
+                        && !principal.accepts(jwtService, token)))
+                throw new AccessDeniedException("Authentication required");
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
             accessor.setUser(authentication);
@@ -70,6 +76,7 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
                 sessionAttributes = new java.util.HashMap<>();
             }
             sessionAttributes.put("username", username);
+            sessionAttributes.put("authVersion", jwtService.getAuthVersion(token));
             sessionAttributes.put("jwtExpiresAt", jwtService.getExpiration(token).toEpochMilli());
             accessor.setSessionAttributes(sessionAttributes);
             webSocketSessionRegistry.registerUsername(accessor.getSessionId(), username, jwtService.getUserId(token));
@@ -134,6 +141,16 @@ public class StompAuthenticationChannelInterceptor implements ChannelInterceptor
                 || (principalUsername != null && !sessionUsername.equals(principalUsername))) {
             throw new AccessDeniedException("Authentication required");
         }
+        UserDetails current;
+        try { current = userDetailsService.loadUserByUsername(sessionUsername); }
+        catch (UsernameNotFoundException ex) { throw new AccessDeniedException("Authentication required"); }
+        long version = sessionAttributes.get("authVersion") instanceof Number value ? value.longValue() : 0;
+        if (!current.isEnabled() || !current.isAccountNonLocked()
+                || (current instanceof com.geochat.auth.security.AccountPrincipal p
+                    && p.account().getStatus() != com.geochat.user.entity.UserStatus.ACTIVE)
+                || (current instanceof com.geochat.auth.security.AccountPrincipal principal
+                    && principal.account().getAuthVersion() != version))
+            throw new AccessDeniedException("Authentication required");
         return sessionUsername;
     }
 

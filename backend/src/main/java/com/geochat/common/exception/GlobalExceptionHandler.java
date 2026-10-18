@@ -20,6 +20,11 @@ import java.util.Optional;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConcurrentAccountUpdate(Exception ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error("Account changed. Please refresh and try again."));
+    }
     @ExceptionHandler(com.geochat.user.exception.EmailAlreadyUsedException.class)
     public ResponseEntity<ApiResponse<Void>> handleEmailAlreadyUsed(com.geochat.user.exception.EmailAlreadyUsedException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));

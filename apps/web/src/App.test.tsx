@@ -149,6 +149,15 @@ describe('web authentication and protected routes', () => {
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy();
   });
 
+  it.each(['/app/home', '/app/chat', '/app/settings', '/app/admin/users'])('gates inactive sessions at %s until activation', async path => {
+    localStorage.setItem('geochat.web.accessToken', 'restricted-session');
+    mockGetCurrentUser.mockResolvedValue({ ...currentUser, status: 'INACTIVE' });
+    setPath(path); render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Reactivate account' })).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Deactivated your account? Reactivate' })).toBeNull();
+  });
+
   it('restores a stored session and renders the authenticated home', async () => {
     await renderSignedIn('/app/home');
 

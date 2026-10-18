@@ -3,6 +3,9 @@
  * Native Mobile application styles are maintained separately. */
 
 @media (max-width: 680px) {
+  .admin-user-list > li { align-items: flex-start; flex-direction: column; }
+  .account-search { align-items: stretch; flex-direction: column; }
+  .account-action-buttons > button { flex: 1 1 140px; }
   .nearby-workspace {
     grid-template-columns: minmax(0, 1fr);
   }
