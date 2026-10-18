@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/root/.m2 chmod +x mvnw && ./mvnw -B -DskipTests p
 
 FROM eclipse-temurin:21-jre-jammy AS runtime
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y curl \
+    && apt-get install --no-install-recommends -y curl libssl3 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system geochat \
     && useradd --system --gid geochat --home-dir /app --create-home geochat

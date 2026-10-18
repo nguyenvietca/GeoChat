@@ -26,6 +26,10 @@ import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
+import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
@@ -75,6 +79,9 @@ class ChatWebSocketIntegrationTest {
 
 	@Autowired
 	private SimpUserRegistry simpUserRegistry;
+
+	@Autowired
+	private SimpleBrokerMessageHandler simpleBroker;
 
 	@Value("${jwt.secret}")
 	private String jwtSecret;
@@ -291,6 +298,7 @@ class ChatWebSocketIntegrationTest {
 		ownerSession.subscribe("/topic/chat/" + groupId, frameHandler(ownerMessages));
 		memberSession.subscribe("/topic/chat/" + groupId, frameHandler(memberMessages));
 		memberSession.subscribe("/user/queue/group-events", frameHandler(memberEvents));
+		awaitGroupEventSubscription(member.getUsername());
 
 		groupService.removeMember(owner.getUsername(), groupId, member.getId());
 
@@ -647,6 +655,23 @@ class ChatWebSocketIntegrationTest {
         }
         groupService.deleteGroup(owner.getUsername(),group);
     }
+
+	private void awaitGroupEventSubscription(String username) throws InterruptedException {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (System.nanoTime() < deadline) {
+			var user = simpUserRegistry.getUser(username);
+			if (user != null) {
+				for (var session : user.getSessions()) {
+					var headers = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+					headers.setDestination("/queue/group-events-user" + session.getId());
+					var probe = MessageBuilder.createMessage(new byte[0], headers.getMessageHeaders());
+					if (!simpleBroker.getSubscriptionRegistry().findSubscriptions(probe).isEmpty()) return;
+				}
+			}
+			Thread.sleep(10);
+		}
+		throw new AssertionError("Group event subscription was not registered before removal");
+	}
 
 	private Long openConversation(User alice, User bob) {
 		return chatService.openDirectConversation(alice.getUsername(), new OpenDirectChatRequest(bob.getId()))

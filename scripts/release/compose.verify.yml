@@ -1,0 +1,72 @@
+# Disposable only. No host ports, .env, bind data, or application volumes.
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: verify042
+      POSTGRES_USER: verify042
+      POSTGRES_PASSWORD: disposable-only
+      # Writable container layer survives stop/start; removed with this container.
+      # tmpfs masks the image's unused default VOLUME; no anonymous volume created.
+      PGDATA: /var/lib/postgresql/verify042
+      POSTGRES_INITDB_ARGS: --no-sync
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U verify042 -d verify042']
+      interval: 2s
+      timeout: 5s
+      retries: 90
+      start_period: 30s
+  backend:
+    image: geochat-backend:verify-042
+    mem_limit: 1g
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: postgres
+      DB_NAME: verify042
+      DB_USERNAME: verify042
+      DB_PASSWORD: disposable-only
+      JWT_SECRET: disposable-only-test-key-at-least-32-bytes
+      CORS_ALLOWED_ORIGINS: http://localhost
+      GEOCHAT_IMAGE_STORAGE: /tmp/chat-images
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, 'http://127.0.0.1:8080/api/health']
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+  web:
+    image: geochat-web:verify-042
+    mem_limit: 128m
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, --quiet, --tries=1, --spider, 'http://127.0.0.1:8080/healthz']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  backend-tests:
+    profiles: [tests]
+    mem_limit: 1536m
+    build:
+      context: ../../backend
+      target: build
+    working_dir: /workspace
+    entrypoint: [./mvnw]
+    command: [-B, '-DargLine=-Xmx768m', test]
+    environment:
+      MAVEN_OPTS: -Xmx384m
+      GEOCHAT_VALIDATE_POSTGRES: 'true'
+      DB_HOST: postgres
+      DB_NAME: verify042
+      DB_USERNAME: verify042
+      DB_PASSWORD: disposable-only
+    depends_on:
+      backend:
+        condition: service_healthy

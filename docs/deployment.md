@@ -26,7 +26,7 @@ Các file chính là `docker-compose.yml`, `backend/Dockerfile`, `apps/web/Docke
 Từ repository root:
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 Sửa `.env`: đặt `DB_NAME`, `DB_USERNAME`, mật khẩu DB riêng, `JWT_SECRET` ngẫu nhiên tối thiểu 32 byte và `CORS_ALLOWED_ORIGINS` đúng origin Web, ví dụ `http://localhost:8081`. `WEB_PORT` là cổng công khai. `APP_VERSION` nên là Git commit hoặc release tag khi triển khai thật.
@@ -40,18 +40,16 @@ Web production dùng same-origin nên `VITE_API_BASE_URL` để trống trong im
 ```powershell
 docker compose --env-file .env config --quiet
 docker compose --env-file .env build
-#-d là chạy ngầm sau chỉ cần docker compose down
 docker compose --env-file .env up -d
 docker compose ps
 ```
 ## Dừng và xóa hẳn các container, network
     docker compose down
 ## Chỉ tạm dừng các container
-    docker compose stop/start
-## Xóa sạch cả dữ liệu cũ (database MySQL/Postgres)
-    docker compose down -v
 
-```
+`docker compose stop` và `docker compose start` giữ container và volume.
+Không xóa volume database hoặc ảnh khi cập nhật, rollback hay kiểm thử.
+`docker compose down -v` xóa tất cả dữ liệu cũ (database MySQL/Postgres)
 
 Mở `http://localhost:8081`. Kiểm tra Web và API:
 
@@ -64,6 +62,14 @@ Invoke-RestMethod http://localhost:8081/api/health
 
 ## Theo dõi và log
 
+PROMPT_042 đã kiểm chứng outage/recovery trên stack riêng bằng dữ liệu tổng hợp.
+Khi user lookup không truy cập được DB, Backend trả HTTP 503 với thông báo chung
+và `Retry-After: 5`; Web giữ phiên đăng nhập để thử lại sau khi DB phục hồi.
+JWT thật sự không hợp lệ vẫn trả 401. `/api/health` là HTTP liveness, có thể vẫn
+200 khi DB offline, không phải database readiness. Trạng thái `unhealthy` không
+tự làm Docker Compose restart container; restart policy xử lý việc tiến trình dừng.
+Xem [báo cáo release](release-verification-042.md) và [checklist](release-checklist.md).
+
 ```powershell
 docker compose ps
 docker inspect --format='{{json .State.Health}}' geochat-backend-1
@@ -72,7 +78,7 @@ docker compose logs --tail 200 web
 docker compose logs --tail 200 postgres
 docker stats
 docker compose restart backend
-docker compose config
+docker compose --env-file .env config --quiet
 docker system df
 ```
 
@@ -80,37 +86,80 @@ Tên container thực tế có prefix theo tên thư mục; lấy tên bằng `d
 
 ## Backup PostgreSQL
 
-Tạo thư mục trên host và dùng `docker compose exec -T`; `pg_dump` custom format là binary nên ghi thẳng bằng `--file` vào thư mục bind tạm, tránh PowerShell redirection làm hỏng stream:
+Tạo thư mục trên host và dùng `docker compose exec -T`; `pg_dump` custom format là binary nên ghi bằng `--file` trong container rồi `docker compose cp`, tránh PowerShell redirection làm hỏng stream:
 
 ```powershell
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $dbUser = 'geochat' # use DB_USERNAME from .env
 $dbName = 'geochat' # use DB_NAME from .env
 New-Item -ItemType Directory -Force .\backups | Out-Null
-$backupPath = (Resolve-Path .\backups).Path
 docker compose exec -T postgres pg_dump -h localhost -U $dbUser -d $dbName -Fc --file "/tmp/geochat-$stamp.dump"
 docker compose cp "postgres:/tmp/geochat-$stamp.dump" ".\backups\geochat-$stamp.dump"
 docker compose exec -T postgres rm "/tmp/geochat-$stamp.dump"
 Get-FileHash ".\backups\geochat-$stamp.dump" -Algorithm SHA256
 ```
 
-Mật khẩu không xuất hiện trong command vì container đã có `POSTGRES_PASSWORD`. Hạn chế quyền đọc thư mục backup và lưu một bản ngoài Docker host.
+Các lệnh trên dùng kết nối localhost bên trong container với cấu hình trust mặc định của image; `POSTGRES_PASSWORD` không tự trở thành `PGPASSWORD`. Nếu đã siết `pg_hba.conf`, dùng `.pgpass` có quyền đọc hạn chế hoặc cơ chế secret phù hợp. Không ghi mật khẩu vào command/history. Hạn chế quyền đọc thư mục backup bằng NTFS ACL và lưu một bản ngoài Docker host; backup chứa dữ liệu cá nhân dù không có secret cấu hình.
 
 ## Kiểm tra restore an toàn
 
-Chỉ restore vào database disposable, không dùng database đang hoạt động:
+Chỉ restore vào container riêng, không dùng service `postgres` của stack đang hoạt động. Ví dụ sau tạo container không có host port, dữ liệu trong writable layer riêng, default volume bị che bằng tmpfs:
 
 ```powershell
-$dbUser = 'geochat' # use DB_USERNAME from .env
-docker compose exec -T postgres createdb -h localhost -U $dbUser geochat_restore_test
-docker compose cp ".\backups\geochat-YYYYMMDD-HHMMSS.dump" postgres:/tmp/restore.dump
-docker compose exec -T postgres pg_restore -h localhost -U $dbUser -d geochat_restore_test --clean --if-exists --exit-on-error /tmp/restore.dump
-docker compose exec -T postgres psql -h localhost -U $dbUser -d geochat_restore_test -c "SELECT count(*) FROM flyway_schema_history;"
-docker compose exec -T postgres psql -h localhost -U $dbUser -d geochat_restore_test -c "SELECT count(*) FROM users;"
-docker compose exec -T postgres rm /tmp/restore.dump
+$restoreName = 'geochat-restore-' + [Guid]::NewGuid().ToString('N').Substring(0, 10)
+docker run -d --name $restoreName --network none --tmpfs /var/lib/postgresql/data -e PGDATA=/var/lib/postgresql/restore-data -e POSTGRES_USER=restore_user -e POSTGRES_DB=restore_db -e POSTGRES_HOST_AUTH_METHOD=trust postgis/postgis:16-3.4
+# Chờ pg_isready thành công trước khi tiếp tục; kiểm tra exit code từng lệnh.
+docker exec $restoreName pg_isready -U restore_user -d restore_db
+docker cp ".\backups\geochat-YYYYMMDD-HHMMSS.dump" "${restoreName}:/tmp/restore.dump"
+docker exec $restoreName pg_restore -U restore_user -d restore_db --no-owner --no-privileges --exit-on-error /tmp/restore.dump
+docker exec $restoreName psql -U restore_user -d restore_db -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM flyway_schema_history; SELECT PostGIS_Version(); SELECT count(*) FROM users; SELECT count(*) FROM messages;"
+# Chỉ sau khi lưu kết quả: xóa đúng container disposable có tên vừa tạo.
+docker rm -f $restoreName
 ```
 
-Phải dùng PostgreSQL/PostGIS tương thích với `16-3.4`. Sau khi xác minh, xóa database test chỉ khi chắc chắn tên là `geochat_restore_test`. Restore schema có Flyway history; không tự chạy Flyway trên bản restore trước khi kiểm tra version. Restore production cần downtime, backup mới, kế hoạch rollback và xác nhận riêng.
+Phải dùng PostgreSQL/PostGIS tương thích với `16-3.4`. Ngoài exit code, đối chiếu Flyway history/checksum, bảng/index không gian, số lượng dữ liệu mong đợi và khóa ngoại; kiểm tra Backend tương ứng có thể kết nối. `--no-owner --no-privileges` phù hợp drill với role riêng, không kiểm chứng việc khôi phục grants/roles production. Không đưa cuộc trò chuyện riêng vào artifact kiểm thử. Drill tự động dùng hoàn toàn dữ liệu tổng hợp: [verify-recovery.ps1](../scripts/release/verify-recovery.ps1). Restore production cần downtime, backup mới, kế hoạch rollback và xác nhận riêng.
+
+## Giới hạn backup và ảnh chat
+
+`pg_dump` tạo snapshot logic nhất quán của database tại thời điểm dump, không
+bao gồm file ảnh, role toàn cluster hoặc WAL/PITR. Chọn lịch/retention theo lượng
+dữ liệu chấp nhận mất (RPO), chẳng hạn 7 bản ngày và 4 bản tuần; đo thời gian
+restore thực tế để ước lượng RTO. Disk hỏng, mất máy hoặc ransomware có thể làm
+mất cả database và backup trên cùng host. Lưu bản ngoài máy, mã hóa bằng công cụ
+backup được quản lý khóa riêng và thử phục hồi định kỳ. Hash phát hiện thay đổi,
+không thay thế mã hóa hoặc kiểm soát truy cập. Giữ phiên bản PostgreSQL/PostGIS
+tương thích và kiểm chứng quyền sở hữu/grants khi phục hồi thật.
+
+Database có thể chứa đường dẫn ảnh trong `chat_images`; dump DB không chứa ảnh.
+Để backup phối hợp, lên lịch maintenance và chủ động dừng Backend để ngừng ghi,
+dump DB theo hướng dẫn trên rồi archive volume ảnh chỉ đọc, cuối cùng bật lại
+Backend. Các lệnh sau dành cho maintenance được chủ động lên lịch, không chạy
+trong kiểm thử release tự động:
+
+```powershell
+$backendId = docker compose ps -q backend
+if ($LASTEXITCODE -ne 0 -or -not $backendId) { throw 'Backend container not found' }
+$imageVolume = docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/var/chat-images"}}{{.Name}}{{end}}{{end}}' $backendId
+if ($LASTEXITCODE -ne 0 -or -not $imageVolume) { throw 'Chat image volume not found' }
+New-Item -ItemType Directory -Force .\backups | Out-Null
+$backupDir = (Resolve-Path .\backups).Path
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+docker compose stop backend
+# Thực hiện pg_dump + docker compose cp ở trên, kiểm tra exit code.
+try {
+    docker run --rm --network none --mount "type=volume,src=$imageVolume,dst=/images,readonly" --mount "type=bind,src=$backupDir,dst=/backup" alpine:3.21 tar -czf "/backup/chat-images-$stamp.tar.gz" -C /images .
+    if ($LASTEXITCODE -ne 0) { throw 'Image archive failed' }
+    Get-FileHash ".\backups\chat-images-$stamp.tar.gz" -Algorithm SHA256
+} finally { docker compose start backend }
+```
+
+Chỉ chạy archive sau khi dump thành công; nếu dump lỗi thì bật lại Backend và
+dừng quy trình. Giữ dump và archive cùng đợt trong manifest (thời gian, hash,
+APP_VERSION/image ID). Bao gồm cả avatar nếu cùng thư mục storage. Kiểm tra tar
+trong container riêng trước; restore vào thư mục/volume mới, kiểm tra owner/quyền
+và đối chiếu attachment storage key rồi cho Backend thử nghiệm truy cập. Không
+giải nén đè volume đang dùng. Chuyển sang bộ DB + ảnh đã khôi phục trong maintenance
+được duyệt; giữ bộ cũ cho rollback. Khôi phục riêng DB có thể tạo link ảnh bị thiếu.
 
 ## Cập nhật
 
@@ -134,7 +183,7 @@ Backup DB trước migration có rủi ro. Không xóa `postgres_data` hoặc `c
 ```powershell
 docker image ls geochat-backend
 docker image ls geochat-web
-docker compose --env-file .env up -d --no-deps backend web
+docker compose --env-file .env up -d --no-build --pull never --no-deps backend web
 docker compose ps
 docker compose logs --tail 200 backend web
 ```
@@ -145,7 +194,7 @@ Mỗi release nên build với `APP_VERSION` bất biến như commit SHA. Rollb
 
 | Hiện tượng | Kiểm tra |
 |---|---|
-| Thiếu JWT/DB/CORS | `docker compose config`; Compose và profile `prod` phải dừng với thông báo biến thiếu |
+| Thiếu JWT/DB/CORS | `docker compose config --quiet`; Compose và profile `prod` phải dừng với thông báo biến thiếu |
 | PostgreSQL chưa ready | `docker compose ps`; `docker compose logs postgres`; kiểm tra disk và credentials |
 | Flyway lỗi | `docker compose logs backend`; kiểm tra migration checksum/version, không sửa lịch sử đã áp dụng |
 | Backend unhealthy | Gọi `/api/health`, xem Backend/Postgres log và network `docker network ls` |

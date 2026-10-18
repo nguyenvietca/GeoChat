@@ -45,6 +45,17 @@ describe('web API client', () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
+  it('keeps the session on 503 and can retry the same token after recovery', async () => {
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => JSON.stringify({ success: false, data: null, message: 'Service temporarily unavailable. Please try again.' }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify({ success: true, data: [] }) }));
+    await expect(apiRequest('/api/v1/chats', { token: 'valid-token' })).rejects.toMatchObject({ status: 503 });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    await expect(apiRequest('/api/v1/chats', { token: 'valid-token' })).resolves.toEqual([]);
+  });
+
   it.each([
     [403, 'You do not have permission to perform this action.'],
     [413, 'The selected file is too large.'],

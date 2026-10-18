@@ -38,3 +38,7 @@ backend/.settings
 # Private chat image storage
 var/chat-images/
 **/var/chat-images/
+
+# Local release evidence, SBOMs and private backups
+/artifacts/
+/backups/

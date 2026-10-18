@@ -9,6 +9,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.TransactionException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import jakarta.servlet.FilterChain;
@@ -44,6 +46,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 					SecurityContextHolder.getContext().setAuthentication(authentication);
 				} catch (UsernameNotFoundException exception) {
 					SecurityContextHolder.clearContext();
+				} catch (DataAccessException | TransactionException exception) {
+					// A failed user lookup during an outage does not invalidate the JWT.
+					SecurityContextHolder.clearContext();
+					response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+					response.setContentType("application/json");
+					response.setCharacterEncoding("UTF-8");
+					response.setHeader("Cache-Control", "no-store");
+					response.setHeader("Retry-After", "5");
+					response.getWriter().write("{\"success\":false,\"data\":null,\"message\":\"Service temporarily unavailable. Please try again.\"}");
+					return;
 				}
 			}
 		}

@@ -11,6 +11,25 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: geochat_ci
+          POSTGRES_USER: geochat_ci
+          POSTGRES_PASSWORD: isolated-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U geochat_ci -d geochat_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      GEOCHAT_VALIDATE_POSTGRES: 'true'
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: geochat_ci
+      DB_USERNAME: geochat_ci
+      DB_PASSWORD: isolated-ci-only
     defaults:
       run:
         working-directory: backend
@@ -23,6 +42,9 @@ jobs:
           cache: maven
           cache-dependency-path: backend/pom.xml
       - run: chmod +x mvnw
+      - run: psql -h localhost -U geochat_ci -d geochat_ci -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+        env:
+          PGPASSWORD: isolated-ci-only
       - run: ./mvnw -B test
 
   web:
