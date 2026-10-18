@@ -11,6 +11,7 @@ import { getCurrentUser, login as loginRequest, register as registerRequest } fr
 import { ApiError, setUnauthorizedHandler } from '../../api/client';
 import { LoginRequest, RegisterRequest, User } from '../../types';
 import { disconnectAllChatWebSockets } from '../../services/chatWebSocket';
+import { cancelGoogle } from '../../api/google';
 
 const TOKEN_STORAGE_KEY = 'geochat.web.accessToken';
 
@@ -26,6 +27,7 @@ type AuthContextValue = {
   logout: () => void;
   refreshUser: () => Promise<void>;
   syncUser: (user: User) => void;
+  acceptGoogleSession: (token: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -113,6 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   const register = useCallback((payload: RegisterRequest) => registerRequest(payload), []);
+  const acceptGoogleSession = useCallback(async (newToken: string) => {
+    // Validate the application JWT via the normal profile endpoint before persistence.
+    const current = await getCurrentUser(newToken);
+    localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
+    setToken(newToken); setUser(current); setSessionNotice('');
+  }, []);
   const retrySessionRestore = useCallback(async () => {
     const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
     if (!storedToken) {
@@ -136,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
   const syncUser = useCallback((updatedUser: User) => setUser(updatedUser), []);
   const logout = useCallback(() => {
+    void cancelGoogle().catch(() => {});
     disconnectAllChatWebSockets();
     clearSession();
   }, [clearSession]);
@@ -152,7 +161,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     refreshUser,
     syncUser,
-  }), [user, token, isLoading, sessionNotice, login, register, retrySessionRestore, logout, refreshUser, syncUser]);
+    acceptGoogleSession,
+  }), [user, token, isLoading, sessionNotice, login, register, retrySessionRestore, logout, refreshUser, syncUser, acceptGoogleSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

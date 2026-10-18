@@ -25,6 +25,17 @@ public class User {
 	@Column(name = "password_hash", nullable = false)
 	private String passwordHash;
 
+	@Column(name = "password_login_enabled", nullable = false)
+	private boolean passwordLoginEnabled = true;
+
+	public boolean isPasswordLoginEnabled() {
+		return passwordLoginEnabled;
+	}
+
+	public void setPasswordLoginEnabled(boolean enabled) {
+		passwordLoginEnabled = enabled;
+	}
+
 	@Column(name = "display_name", nullable = false)
 	private String displayName;
 

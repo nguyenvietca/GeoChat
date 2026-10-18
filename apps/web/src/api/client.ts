@@ -9,6 +9,7 @@ type ApiEnvelope<T> = {
 };
 
 type ApiRequestOptions = {
+  credentials?: RequestCredentials;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   token?: string;
   body?: unknown;
@@ -33,6 +34,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
       method: options.method ?? 'GET',
+      credentials: options.credentials,
       headers: {
         Accept: 'application/json',
         ...(options.body === undefined || options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),

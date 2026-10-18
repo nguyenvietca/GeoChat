@@ -23,6 +23,10 @@ Các file chính là `docker-compose.yml`, `backend/Dockerfile`, `apps/web/Docke
 
 ## Cấu hình
 
+Google Login là tùy chọn, mặc định tắt. Cấu hình consent screen, credentials và
+callback chính xác theo [Google auth](google-auth-043.md). Không đưa client secret
+vào Web/VITE_ hoặc bật OAuth DEBUG/TRACE. JWT/DB/CORS production vẫn bắt buộc như cũ.
+
 Từ repository root:
 
 ```powershell

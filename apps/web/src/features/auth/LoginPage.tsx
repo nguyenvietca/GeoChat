@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
 import { AuthFrame } from './AuthFrame';
+import { GoogleButton } from './GoogleButton';
 
 type LoginLocationState = { from?: string; registered?: boolean };
 
@@ -47,6 +48,7 @@ export function LoginPage() {
   return (
     <AuthFrame mode="login">
       <h2>Sign in</h2>
+      <GoogleButton />
       <p className="auth-description">Pick up where your next conversation begins.</p>
       {sessionNotice ? (
         <div className="error-message" role="status">

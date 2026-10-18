@@ -44,6 +44,8 @@ Stop the local database with `docker compose stop postgres`; this keeps its volu
 
 For a production-like three-container stack, health checks, monitoring commands, backup/restore, updates and rollback, see [docs/deployment.md](docs/deployment.md).
 
+Optional Google Login and secure account linking setup: [docs/google-auth-043.md](docs/google-auth-043.md). Password login works without Google credentials.
+
 ## Validation
 
 From `backend`, run `./mvnw test` (Windows: `.\mvnw.cmd test`). In `apps/web`, run `npm run build` and `npm test`. In `apps/mobile`, run `npm run typecheck` and `npm test -- --runInBand`.

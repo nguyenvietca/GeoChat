@@ -1,10 +1,11 @@
 package com.geochat.auth.security;
 
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -16,12 +17,13 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
 import com.geochat.common.security.AbuseRateLimitFilter;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
-import org.springframework.beans.factory.annotation.Value;
 
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -36,16 +38,18 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	public SecurityFilterChain securityFilterChain(HttpSecurity http, AbuseRateLimitFilter abuseRateLimitFilter) throws Exception {
-		http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
-				.csrf(AbstractHttpConfigurer::disable)
+	public SecurityFilterChain securityFilterChain(HttpSecurity http, AbuseRateLimitFilter abuseRateLimitFilter)
+			throws Exception {
+		http.cors(cors -> cors.configurationSource(corsConfigurationSource())).csrf(AbstractHttpConfigurer::disable)
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-				.authorizeHttpRequests(
-						auth -> auth.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login")
-								.permitAll().requestMatchers("/ws/**", "/ws").permitAll()
-								.requestMatchers(HttpMethod.GET, "/api/health").permitAll()
-								.requestMatchers(HttpMethod.GET, "/api/v1/users/me").authenticated().anyRequest()
-								.authenticated())
+				.authorizeHttpRequests(auth -> auth
+						.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+						.requestMatchers("/api/v1/auth/google/config", "/api/v1/auth/google/start",
+								"/api/v1/auth/google/complete", "/api/v1/auth/google/cancel")
+						.permitAll().requestMatchers("/ws/**", "/ws").permitAll()
+						.requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+						.requestMatchers(HttpMethod.GET, "/api/v1/users/me").authenticated().anyRequest()
+						.authenticated())
 				.exceptionHandling(ex -> ex
 						.authenticationEntryPoint((request, response, authException) -> writeSecurityError(response,
 								HttpServletResponse.SC_UNAUTHORIZED, "Authentication required"))
@@ -57,7 +61,8 @@ public class SecurityConfig {
 		return http.build();
 	}
 
-	private void writeSecurityError(HttpServletResponse response, int status, String message) throws java.io.IOException {
+	private void writeSecurityError(HttpServletResponse response, int status, String message)
+			throws java.io.IOException {
 		response.setStatus(status);
 		response.setContentType("application/json");
 		response.setCharacterEncoding("UTF-8");
@@ -65,7 +70,8 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	public AbuseRateLimitFilter abuseRateLimitFilter(@Value("${app.security.rate-limit.enabled:true}") boolean enabled) {
+	public AbuseRateLimitFilter abuseRateLimitFilter(
+			@Value("${app.security.rate-limit.enabled:true}") boolean enabled) {
 		return new AbuseRateLimitFilter(enabled);
 	}
 
@@ -80,6 +86,7 @@ public class SecurityConfig {
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
 		configuration.setAllowedOrigins(allowedOrigins);
+		configuration.setAllowCredentials(true);
 		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type"));
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

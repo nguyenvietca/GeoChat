@@ -23,6 +23,7 @@ logging:
     org.springframework.messaging: INFO
     org.springframework.security: INFO
     org.springframework.web.socket: INFO
+    org.springframework.security.oauth2: WARN
 
 server:
   shutdown: graceful

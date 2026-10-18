@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
 import { AuthFrame } from './AuthFrame';
+import { GoogleButton } from './GoogleButton';
 
 export function RegisterPage() {
   const { register } = useAuth();
@@ -50,6 +51,7 @@ export function RegisterPage() {
   return (
     <AuthFrame mode="register">
       <h2>Create account</h2>
+      <GoogleButton />
       <p className="auth-description">Set up your GeoChat account to get started.</p>
       {error ? <p className="error-message" role="alert">{error}</p> : null}
       <form className="form-stack" onSubmit={(event) => void submit(event)}>

@@ -3,6 +3,7 @@ import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocat
 import { AppProviders } from './app/providers/AppProviders';
 import { useAuth } from './app/providers/AuthContext';
 import { LoginPage } from './features/auth/LoginPage';
+import { GoogleReturnPage } from './features/auth/GoogleReturnPage';
 import { RegisterPage } from './features/auth/RegisterPage';
 import { FriendsPage } from './features/friends/FriendsPage';
 import { NearbyPage } from './features/nearby/NearbyPage';
@@ -140,6 +141,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/app/home" replace />} />
           <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
           <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
+          <Route path="/oauth/complete" element={<GoogleReturnPage />} />
           <Route path="/app" element={<ProtectedArea />}>
             <Route index element={<Navigate to="home" replace />} />
             <Route path="home" element={<HomePage />} />

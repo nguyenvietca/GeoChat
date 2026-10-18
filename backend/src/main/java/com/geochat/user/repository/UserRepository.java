@@ -13,6 +13,12 @@ import com.geochat.user.entity.User;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
+	boolean existsByEmailIgnoreCase(String email);
+
+	@org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("select u from User u where u.id = :id")
+	Optional<User> lockById(@Param("id") Long id);
+
 	boolean existsByAvatarStorageKey(String avatarStorageKey);
 
 	boolean existsByUsernameIgnoreCase(String username);

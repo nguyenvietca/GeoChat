@@ -3441,3 +3441,10 @@ select {
   .chat-message-row > .chat-bubble { max-width: calc(100% - 148px); }
   .chat-message-row > .message-actions { flex-basis: 140px; width: 140px; }
 }
+/* The Google brand button retains its approved white treatment in both themes. */
+.google-sign-in { margin: 1rem 0; }
+.google-button { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #747775; border-radius: 4px; background: #fff; color: #1f1f1f; font: 500 14px Arial, sans-serif; cursor: pointer; }
+.google-button:focus-visible { outline: 3px solid #4285f4; outline-offset: 3px; }
+.google-button:disabled { opacity: .65; cursor: wait; }
+.connected-account-form { max-width: 26rem; }
+.connected-email { overflow-wrap: anywhere; }

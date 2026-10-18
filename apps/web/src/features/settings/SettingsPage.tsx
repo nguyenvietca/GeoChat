@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { ConnectedAccounts } from './ConnectedAccounts';
 import { useAuth } from '../../app/providers/AuthContext';
 import { ThemePreference, useTheme } from '../../app/providers/ThemeContext';
 import { useNotifications } from '../../app/providers/NotificationContext';
@@ -54,6 +55,7 @@ export function SettingsPage() {
         </Link>
       </section>
 
+      <ConnectedAccounts />
       <section className="settings-section" aria-labelledby="session-settings-heading">
         <div className="section-heading">
           <div><h2 id="session-settings-heading">Session</h2><p>End this session on this device.</p></div>
