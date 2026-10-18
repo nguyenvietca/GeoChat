@@ -37,7 +37,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties = { "google.enabled=true", "google.client-id=test.apps.googleusercontent.com",
-		"google.client-secret=synthetic-client-secret-only" })
+		"google.client-secret=synthetic-client-secret-only", "google.web-origin=http://localhost:8081",
+		"google.redirect-uri=http://localhost:8081/api/login/oauth2/code/google" })
 @ActiveProfiles("test")
 @Import(GoogleAuthIntegrationTest.Provider.class)
 class GoogleAuthIntegrationTest {

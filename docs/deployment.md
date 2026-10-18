@@ -211,4 +211,8 @@ Mỗi release nên build với `APP_VERSION` bất biến như commit SHA. Rollb
 
 ## CI
 
+Giới hạn chống spam, trusted proxy và CAPTCHA đăng ký tùy chọn:
+[abuse-protection.md](abuse-protection.md). CAPTCHA disabled mặc định; đọc lưu ý
+tương thích client trước khi bật. Compose chỉ tin đúng proxy service `web`.
+
 `.github/workflows/ci.yml` chạy trên pull request và push vào `develop`, `main`, `master`. Backend dùng Java 21 và Maven Wrapper; Web dùng Node 22.12, `npm ci`, tests và production build. Job container validate Compose và build cả hai image, không publish và không dùng production credentials. Mobile không nằm trong workflow.

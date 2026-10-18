@@ -56,6 +56,12 @@ describe('Google sign-in and connected accounts',()=>{
     await waitFor(()=>expect(mocks.accept).toHaveBeenCalledWith('geochat-jwt')); expect(completeGoogle).toHaveBeenCalledTimes(1);
     expect(mocks.navigate).toHaveBeenCalledWith('/app/home',{replace:true});
   });
+  it('returns to Settings only after explicitly linking Google',async()=>{
+    vi.mocked(completeGoogle).mockResolvedValue({token:null,linked:true});
+    render(<MemoryRouter><GoogleReturnPage/></MemoryRouter>);
+    await waitFor(()=>expect(mocks.navigate).toHaveBeenCalledWith('/app/settings',{replace:true}));
+    expect(mocks.accept).not.toHaveBeenCalled();
+  });
   it('cleans cancellation parameters and does not redeem',async()=>{
     window.history.replaceState({},'','/oauth/complete?error=cancelled'); render(<MemoryRouter><GoogleReturnPage/></MemoryRouter>);
     expect((await screen.findByRole('alert')).textContent).toContain('cancelled'); expect(window.location.search).toBe(''); expect(completeGoogle).not.toHaveBeenCalled();

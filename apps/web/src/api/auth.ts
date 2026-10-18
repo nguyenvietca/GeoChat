@@ -5,6 +5,10 @@ export function login(payload: LoginRequest) {
   return apiRequest<LoginResponse>('/api/v1/auth/login', { method: 'POST', body: payload });
 }
 
+export function registrationConfig() {
+  return apiRequest<{ enabled: boolean; siteKey: string | null }>('/api/v1/auth/registration-config');
+}
+
 export function register(payload: RegisterRequest) {
   return apiRequest<User>('/api/v1/auth/register', { method: 'POST', body: payload });
 }

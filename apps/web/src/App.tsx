@@ -90,7 +90,7 @@ function AppShell() {
         <header className="topbar">
           <span className="mobile-brand"><span className="brand-mark">G</span> GeoChat</span>
           <NotificationBell />
-          <span className="topbar-user">Signed in as <strong>{user?.username}</strong></span>
+          <span className="topbar-user">Signed in as <strong>{user?.displayName}</strong></span>
           <nav className="mobile-account-nav" aria-label="Account navigation">
             <NavLink to="/app/profile" aria-label="Profile" title="Profile">◉</NavLink>
             <NavLink to="/app/settings" aria-label="Settings" title="Settings">⚙</NavLink>

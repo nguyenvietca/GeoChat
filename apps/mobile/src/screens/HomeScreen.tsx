@@ -28,7 +28,7 @@ export function HomeScreen({
       <View style={styles.card}>
         <Text style={styles.eyebrow}>GeoChat</Text>
         <Text style={styles.title}>Welcome, {user?.displayName ?? user?.username ?? 'friend'}!</Text>
-        <Text style={styles.subtitle}>You are signed in as @{user?.username ?? 'unknown'}.</Text>
+        <Text style={styles.subtitle}>You are signed in as @{user?.displayName ?? 'unknown'}.</Text>
 
         {onSearchUsers ? (
           <Pressable accessibilityRole="button" style={styles.actionButton} onPress={onSearchUsers}>

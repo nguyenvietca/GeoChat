@@ -20,6 +20,15 @@ vi.mock('./api/auth', () => ({
   getCurrentUser: vi.fn(),
   login: vi.fn(),
   register: vi.fn(),
+  registrationConfig: vi.fn().mockResolvedValue({ enabled: false, siteKey: null }),
+}));
+vi.mock('./api/google', () => ({
+  googleConfig: vi.fn().mockResolvedValue({ enabled: false }),
+  googleConnections: vi.fn().mockResolvedValue({ passwordAvailable: true, googleConnected: false, email: null }),
+  cancelGoogle: vi.fn().mockResolvedValue(null),
+  completeGoogle: vi.fn(),
+  startGoogle: vi.fn(),
+  unlinkGoogle: vi.fn(),
 }));
 vi.mock('./features/nearby/NearbyMap',()=>({NearbyMap:({people,onSelect}:{people:{userId:number}[];onSelect:(id:number)=>void})=> <div aria-label="Nearby map">{people[0]?<button onClick={()=>onSelect(people[0].userId)}>Select area</button>:null}</div>}));
 vi.mock('./api/location', () => ({
@@ -205,6 +214,7 @@ describe('web authentication and protected routes', () => {
   it('validates registration locally and does not auto-login after registration', async () => {
     setPath('/register');
     render(<App />);
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Create account' }) as HTMLButtonElement).disabled).toBe(false));
 
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Mira Vale' } });
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'mv' } });
@@ -221,6 +231,7 @@ describe('web authentication and protected routes', () => {
     mockRegister.mockResolvedValue(currentUser);
     setPath('/register');
     render(<App />);
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Create account' }) as HTMLButtonElement).disabled).toBe(false));
 
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Mira Vale' } });
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'mira' } });

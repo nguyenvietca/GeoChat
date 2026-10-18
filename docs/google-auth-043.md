@@ -58,6 +58,12 @@ Google live verification và các blocker release của PROMPT_042 chưa đượ
    đăng ký chính callback8080 này trong Google Cloud. CORS phải gồm origin5173.
    Spring không tự đọc `.env` root khi chạy ngoài Compose. Dùng cùng hostname
    localhost ở mọi bước, không trộn localhost/127.0.0.1 hoặc đổi port giữa flow.
+   Có thể dùng `backend/config/google-local.properties` (gitignored), với các key
+   `google.enabled`, `google.client-id`, `google.client-secret`, `google.redirect-uri`,
+   `google.web-origin`. Backend optional import file này khi chạy từ root hoặc
+   thư mục backend; không đưa file vào image. Vite hiện proxy `/api`/`/ws` tới8080,
+   nên callback qua5173 cũng được hỗ trợ nếu đăng ký đúng URI ấy tại Google Cloud.
+   Npm dev/build chọn rõ vite.config.ts để tránh cấu hình JS được emit trước đó.
 5. Public production: cùng Web origin HTTPS cho callback và completion page;
    HTTP chỉ được chấp nhận cho loopback local. Cookie Secure theo callback scheme.
    Không derive URL từ Host/X-Forwarded-*; URI đã cấu hình là nguồn allowlist.

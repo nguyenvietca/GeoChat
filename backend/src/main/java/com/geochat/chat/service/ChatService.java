@@ -68,6 +68,7 @@ public class ChatService {
 	private final ApplicationEventPublisher applicationEventPublisher;
 	private final LocationService locationService;
 	private final WebSocketSessionRegistry webSocketSessionRegistry;
+	private final com.geochat.common.security.MessageSendGuard messageSendGuard;
 	private static final int CONTEXTUAL_MESSAGE_LIMIT = 5;
 
 	public ChatService(ConversationRepository conversationRepository,
@@ -75,7 +76,9 @@ public class ChatService {
 			UserRepository userRepository, FriendRequestRepository friendRequestRepository,
 			ApplicationEventPublisher applicationEventPublisher, LocationService locationService,
 			WebSocketSessionRegistry webSocketSessionRegistry, MessageReactionRepository reactionRepository,
-			com.geochat.chat.repository.MessageAttachmentRepository attachmentRepository, ImageStorage imageStorage) {
+			com.geochat.chat.repository.MessageAttachmentRepository attachmentRepository, ImageStorage imageStorage,
+			com.geochat.common.security.MessageSendGuard messageSendGuard) {
+		this.messageSendGuard = messageSendGuard;
 		this.conversationRepository = conversationRepository;
 		this.conversationParticipantRepository = conversationParticipantRepository;
 		this.messageRepository = messageRepository;
@@ -326,6 +329,7 @@ public class ChatService {
 
 	@Transactional
 	public MessageResponse sendMessage(String username, Long conversationId, SendMessageRequest request) {
+		messageSendGuard.check(username);
 		String content = normalizeContent(request == null ? null : request.content());
 		return createPersistedMessage(username, conversationId, content,
 				request == null ? null : request.replyToMessageId());
@@ -333,6 +337,7 @@ public class ChatService {
 
 	@Transactional
 	public MessageResponse sendMessageFromWebSocket(String username, Long conversationId, String rawContent) {
+		messageSendGuard.check(username);
 		String content = normalizeContent(rawContent);
 		return createPersistedMessage(username, conversationId, content, null);
 	}
@@ -478,6 +483,7 @@ public class ChatService {
 	@Transactional
 	public MessageResponse sendImage(String username, Long conversationId,
 			org.springframework.web.multipart.MultipartFile file, String caption, Long replyId, String requestId) {
+		messageSendGuard.check(username);
 		// Membership lock serializes duplicate submissions and deletion with image
 		// binding.
 		User user = requireActionUser(username, conversationId);

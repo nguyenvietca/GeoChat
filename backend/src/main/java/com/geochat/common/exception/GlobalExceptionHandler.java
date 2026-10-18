@@ -20,6 +20,11 @@ import java.util.Optional;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(com.geochat.common.security.RequestLimitException.class)
+    public ResponseEntity<ApiResponse<Void>> handleRequestLimit(com.geochat.common.security.RequestLimitException ex) {
+        return ResponseEntity.status(429).header("Retry-After", Long.toString(ex.retryAfter()))
+                .body(ApiResponse.error(ex.getMessage()));
+    }
     @ExceptionHandler(com.geochat.location.service.NearbyRequestGuard.RateLimitException.class)
     public ResponseEntity<ApiResponse<Void>> rateLimit(Exception ex){return ResponseEntity.status(429).body(ApiResponse.error("Too many location requests. Please wait a minute"));}
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)

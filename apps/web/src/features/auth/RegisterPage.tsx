@@ -4,6 +4,7 @@ import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
 import { AuthFrame } from './AuthFrame';
 import { GoogleButton } from './GoogleButton';
+import { RegistrationVerification, RegistrationProof } from './RegistrationVerification';
 
 export function RegisterPage() {
   const { register } = useAuth();
@@ -14,9 +15,12 @@ export function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [proof, setProof] = useState<RegistrationProof>({ pending: true, enabled: false, token: '' });
+  const [verificationReset, setVerificationReset] = useState(0);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting || proof.pending || (proof.enabled && !proof.token)) return;
     const cleanUsername = username.trim();
     const cleanDisplayName = displayName.trim();
     if (cleanUsername.length < 3 || cleanUsername.length > 50) {
@@ -39,9 +43,11 @@ export function RegisterPage() {
     setSubmitting(true);
     setError('');
     try {
-      await register({ username: cleanUsername, displayName: cleanDisplayName, password });
+      await register({ username: cleanUsername, displayName: cleanDisplayName, password,
+        ...(proof.enabled ? { botToken: proof.token } : {}) });
       navigate('/login', { replace: true, state: { registered: true } });
     } catch (registerError) {
+      if (proof.enabled) setVerificationReset(value => value + 1);
       setError(registerError instanceof ApiError ? registerError.message : 'Unable to create your account right now.');
     } finally {
       setSubmitting(false);
@@ -63,7 +69,8 @@ export function RegisterPage() {
         <input id="register-password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
         <label className="field-label" htmlFor="register-confirm-password">Confirm password</label>
         <input id="register-confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
-        <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Creating account…' : 'Create account'}</button>
+        <RegistrationVerification onChange={setProof} resetKey={verificationReset} />
+        <button className="primary-button" type="submit" disabled={submitting || proof.pending || (proof.enabled && !proof.token)}>{submitting ? 'Creating account…' : 'Create account'}</button>
       </form>
       <p className="auth-switch">Already have an account? <Link to="/login">Sign in</Link></p>
     </AuthFrame>

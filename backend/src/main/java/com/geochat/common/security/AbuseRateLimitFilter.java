@@ -24,9 +24,21 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 	private final Map<String, Window> windows = new ConcurrentHashMap<>();
 	private final AtomicLong requests = new AtomicLong();
 	private final boolean enabled;
+	private final ClientAddress addresses;
+	private final SlidingRequestLimits bursts;
 
 	public AbuseRateLimitFilter(boolean enabled) {
+		this(enabled, new ClientAddress(""));
+	}
+
+	public AbuseRateLimitFilter(boolean enabled, ClientAddress addresses) {
+		this(enabled, addresses, new SlidingRequestLimits());
+	}
+
+	AbuseRateLimitFilter(boolean enabled, ClientAddress addresses, SlidingRequestLimits bursts) {
 		this.enabled = enabled;
+		this.addresses = addresses;
+		this.bursts = bursts;
 	}
 
 	@Override
@@ -42,6 +54,17 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 			windows.entrySet().removeIf(entry -> now >= entry.getValue().resetAt());
 		}
 		String identity = identity(request);
+		try {
+			if ("register".equals(policy.name())) bursts.check("register:" + identity, 1, 10_000);
+			if ("login".equals(policy.name())) bursts.check("login:" + identity, 3, 1000);
+			if ("message-ingress".equals(policy.name())) bursts.check("message-ingress:" + identity, 10, 1000);
+		} catch (RequestLimitException ex) {
+			response.setStatus(429);
+			response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+			response.setHeader("Retry-After", Long.toString(ex.retryAfter()));
+			response.getWriter().write("{\"success\":false,\"data\":null,\"message\":\"Too many requests. Please wait and try again.\"}");
+			return;
+		}
 		String key = policy.name() + ':' + identity;
 		Decision decision = new Decision();
 		windows.compute(key, (ignored, current) -> {
@@ -73,12 +96,13 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 	}
 
 	private String identity(HttpServletRequest request) {
+		if (request.getRequestURI().startsWith("/api/v1/auth/")) return "ip:" + addresses.resolve(request);
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.isAuthenticated()
 				&& !"anonymousUser".equals(authentication.getName())) {
 			return "user:" + authentication.getName().toLowerCase(java.util.Locale.ROOT);
 		}
-		return "ip:" + request.getRemoteAddr();
+		return "ip:" + addresses.resolve(request);
 	}
 
 	private Policy policy(HttpServletRequest request) {
@@ -94,8 +118,10 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 			return new Policy("friend-request", 20, 60);
 		if ("GET".equals(method) && "/api/v1/users/search".equals(path))
 			return new Policy("user-search", 60, 60);
+		// Reject excessive HTTP bodies before multipart parsing; the shared send
+		// quota is enforced separately in ChatService for every transport.
 		if ("POST".equals(method) && path.matches("/api/v1/chats/\\d+/(messages|images)"))
-			return new Policy("message", 120, 60);
+			return new Policy("message-ingress", 120, 60);
 		return null;
 	}
 

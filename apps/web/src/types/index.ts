@@ -29,6 +29,7 @@ export type RegisterRequest = {
   username: string;
   password: string;
   displayName: string;
+  botToken?: string;
 };
 
 export type UserSearchResult = {

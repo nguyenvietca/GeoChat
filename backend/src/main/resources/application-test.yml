@@ -1,3 +1,10 @@
+google:
+  enabled: false
+  client-id: ""
+  client-secret: ""
+  redirect-uri: http://localhost:8081/api/login/oauth2/code/google
+  web-origin: http://localhost:8081
+
 spring:
   datasource:
     url: jdbc:h2:mem:geochat_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false

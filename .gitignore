@@ -42,3 +42,6 @@ var/chat-images/
 # Local release evidence, SBOMs and private backups
 /artifacts/
 /backups/
+
+# Private local Google OAuth configuration
+/backend/config/google-local.properties

@@ -10,9 +10,11 @@ import org.springframework.mock.web.MockHttpServletResponse;
 class AbuseRateLimitFilterTest {
     @Test
     void limitsLoginBySocketAddressWithJsonAndRetryAfter() throws Exception {
-        AbuseRateLimitFilter filter = new AbuseRateLimitFilter(true);
+        var clock = new SecurityLimitsTest.Time();
+        AbuseRateLimitFilter filter = new AbuseRateLimitFilter(true, new ClientAddress(""), new SlidingRequestLimits(clock));
         AtomicInteger accepted = new AtomicInteger();
         for (int index = 0; index < 10; index++) {
+            clock.now += 1000;
             MockHttpServletResponse response = invoke(filter, "POST", "/api/v1/auth/login", "192.0.2.1", accepted);
             assertThat(response.getStatus()).isEqualTo(200);
         }

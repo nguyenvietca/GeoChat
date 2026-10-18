@@ -44,6 +44,7 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+						.requestMatchers(HttpMethod.GET, "/api/v1/auth/registration-config").permitAll()
 						.requestMatchers("/api/v1/auth/google/config", "/api/v1/auth/google/start",
 								"/api/v1/auth/google/complete", "/api/v1/auth/google/cancel")
 						.permitAll().requestMatchers("/ws/**", "/ws").permitAll()
@@ -71,8 +72,9 @@ public class SecurityConfig {
 
 	@Bean
 	public AbuseRateLimitFilter abuseRateLimitFilter(
-			@Value("${app.security.rate-limit.enabled:true}") boolean enabled) {
-		return new AbuseRateLimitFilter(enabled);
+			@Value("${app.security.rate-limit.enabled:true}") boolean enabled,
+			com.geochat.common.security.ClientAddress addresses) {
+		return new AbuseRateLimitFilter(enabled, addresses);
 	}
 
 	@Bean

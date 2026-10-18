@@ -6,6 +6,8 @@ google:
   web-origin: ${GOOGLE_WEB_ORIGIN:http://localhost:8081}
 
 spring:
+  config:
+    import: optional:file:./config/google-local.properties,optional:file:./backend/config/google-local.properties
   servlet:
     multipart:
       max-file-size: 5MB
@@ -37,6 +39,12 @@ jwt:
 
 app:
   security:
+    trusted-proxy-hosts: ${TRUSTED_PROXY_HOSTS:}
+    registration-bot-check:
+      enabled: ${REGISTRATION_BOT_CHECK_ENABLED:false}
+      site-key: ${TURNSTILE_SITE_KEY:}
+      secret: ${TURNSTILE_SECRET:}
+      hostnames: ${TURNSTILE_HOSTNAMES:}
     rate-limit:
       enabled: ${RATE_LIMIT_ENABLED:true}
   cors:
@@ -49,6 +57,7 @@ push-notifications:
     access-token: ${EXPO_ACCESS_TOKEN:}
 
 server:
+  forward-headers-strategy: none
   port: ${SERVER_PORT:8080}
 
 geochat:
