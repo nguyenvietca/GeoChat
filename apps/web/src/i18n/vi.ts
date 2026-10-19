@@ -1,6 +1,23 @@
 import type { MessageKey } from './en';
 
 export const vi: Record<MessageKey, string> = {
+  'facebook.continue': "Tiếp tục với Facebook",
+  'facebook.redirecting': "Đang chuyển đến Facebook…",
+  'facebook.unavailable': "Đăng nhập Facebook tạm thời không khả dụng. Vui lòng thử lại.",
+  'facebook.loadFailed': "Không thể tải kết nối Facebook. Vui lòng tải lại Cài đặt.",
+  'facebook.disconnected': "Đã ngắt kết nối Facebook. Các cách đăng nhập khác vẫn hoạt động.",
+  'facebook.updateFailed': "Không thể cập nhật kết nối Facebook. Vui lòng thử lại.",
+  'facebook.confirmPassword': "Xác nhận mật khẩu hiện tại để thay đổi Facebook",
+  'facebook.confirmGoogle': "Xác nhận tài khoản Google đã liên kết trước khi tiếp tục.",
+  'facebook.confirmFacebook': "Xác nhận tài khoản Facebook đã liên kết trước khi tiếp tục.",
+  'facebook.connect': "Kết nối Facebook",
+  'facebook.disconnect': "Ngắt kết nối Facebook",
+  'facebook.disabled': "Đăng nhập Facebook không khả dụng.",
+  'oauth.keepMethod': "Đăng nhập bằng tài khoản đã liên kết để xác nhận thay đổi. Cần giữ ít nhất một cách đăng nhập khả dụng.",
+  'oauth.complete': "Hoàn tất đăng nhập",
+  'oauth.cancelled': "Đã hủy đăng nhập. Bạn có thể thử lại.",
+  'oauth.failed': "Phiên đăng nhập đã hết hạn hoặc không xác minh được. Vui lòng bắt đầu lại.",
+  'oauth.updated': "Đã cập nhật tài khoản liên kết.",
   'common.close': 'Đóng',
   'profile.viewAvatar': 'Xem ảnh đại diện của {name}',
   'profile.avatarOf': 'Ảnh đại diện của {name}',

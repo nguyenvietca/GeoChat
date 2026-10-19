@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../app/providers/AuthContext';
 import { Connections, googleConfig, googleConnections, startGoogle, unlinkGoogle } from '../../api/google';
 import { ApiError } from '../../api/client';
+import { reauthenticateProvider } from '../../api/facebook';
+import { FacebookAccount } from './FacebookAccount';
 
 export function ConnectedAccounts() {
   useLocale();
@@ -11,7 +13,8 @@ export function ConnectedAccounts() {
   const [enabled, setEnabled] = useState(false);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(window.history.state?.usr?.providerUpdated ? t('oauth.updated') : '');
+  const [facebookAvailable, setFacebookAvailable] = useState(false);
   useEffect(() => {
     if (!token) return;
     let active = true;
@@ -24,7 +27,9 @@ export function ConnectedAccounts() {
     if (!token || !connections) return;
     setBusy(true); setNotice('');
     try {
-      if (connections.googleConnected) {
+      if (!connections.passwordAvailable) {
+        await reauthenticateProvider('facebook', connections.googleConnected ? 'unlink' : 'link', token);
+      } else if (connections.googleConnected) {
         await unlinkGoogle(token, password); setPassword('');
         setConnections(await googleConnections(token)); setNotice(t('google.disconnected'));
       } else { await startGoogle(token, password); }
@@ -37,13 +42,14 @@ export function ConnectedAccounts() {
     {!connections ? (notice ? null : <p role="status">{t('google.loadingAccounts')}</p>) : <>
       <p><strong>Google</strong> — {connections.googleConnected ? t('google.connected') : t('google.notConnected')}</p>
       {connections.email ? <p className="connected-email">{connections.email}</p> : null}
-      {!connections.passwordAvailable ? <p>{t('google.onlyMethod')}</p> : (connections.googleConnected || enabled) ? <div className="form-stack connected-account-form">
-        <label htmlFor="google-password">{t('google.confirmPassword')}</label>
-        <input id="google-password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} maxLength={128} />
-        <button className="quiet-light-button" type="button" disabled={busy || !password} onClick={() => void change()}>
+      {!connections.passwordAvailable && !facebookAvailable ? <p>{t('google.onlyMethod')}</p> : (connections.googleConnected || enabled) ? <div className="form-stack connected-account-form">
+        {connections.passwordAvailable ? <><label htmlFor="google-password">{t('google.confirmPassword')}</label>
+        <input id="google-password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} maxLength={128} /></> : <p>{t('facebook.confirmFacebook')}</p>}
+        <button className="quiet-light-button" type="button" disabled={busy || (connections.passwordAvailable && !password)} onClick={() => void change()}>
           {busy ? t('common.wait') : connections.googleConnected ? t('google.disconnect') : t('google.connect')}
         </button>
       </div> : <p>{t('google.disabled')}</p>}
     </>}
+    {token ? <FacebookAccount token={token} googleAvailable={enabled && !!connections?.googleConnected} onAvailable={setFacebookAvailable} /> : null}
   </section>;
 }

@@ -3736,3 +3736,7 @@ select {
 .moderation-dialog { gap: 14px; }
 .moderation-dialog h2 { overflow-wrap: anywhere; }
 .moderation-dialog .primary-button { width: auto; margin-top: 0; }
+.google-button.facebook-button { background: #0866ff; color: #fff; border-color: #0866ff; }
+.google-button.facebook-button:hover { background: #0758db; color: #fff; }
+.google-button.facebook-button:focus-visible { outline: 3px solid #0866ff; outline-offset: 3px; }
+.facebook-account { margin-top: 1.5rem; }

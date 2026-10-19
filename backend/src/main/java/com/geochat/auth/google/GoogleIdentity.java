@@ -24,7 +24,7 @@ public class GoogleIdentity {
 	public String provider = "GOOGLE";
 	@Column(name = "provider_user_id", nullable = false)
 	public String subject;
-	@Column(name = "provider_email", nullable = false, length = 320)
+	@Column(name = "provider_email", length = 320)
 	public String email;
 	@Column(name = "created_at", nullable = false)
 	public Instant createdAt = Instant.now();

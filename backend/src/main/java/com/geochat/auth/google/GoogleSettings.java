@@ -33,7 +33,7 @@ public class GoogleSettings {
 		}
 	}
 
-	private static URI validUrl(String value) {
+	static URI validUrl(String value) {
 		try {
 			URI uri = URI.create(value);
 			if (uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null
@@ -46,7 +46,7 @@ public class GoogleSettings {
 		}
 	}
 
-	private static boolean loopback(URI uri) {
+	static boolean loopback(URI uri) {
 		return "localhost".equals(uri.getHost()) || "127.0.0.1".equals(uri.getHost());
 	}
 
@@ -57,6 +57,6 @@ public class GoogleSettings {
 	}
 
 	public boolean secureCookie() {
-		return redirectUri.startsWith("https://");
+		return webOrigin.startsWith("https://");
 	}
 }

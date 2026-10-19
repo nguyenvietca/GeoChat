@@ -1,5 +1,8 @@
 # Business Rules
 
+- Facebook and Google identities belong to one internal user only and can be combined through explicit authenticated linking. Matching provider email never automatically merges accounts. Facebook email is optional metadata, not a verified GeoChat recovery address; Facebook-only accounts may have no email.
+- Removing a connected provider requires fresh password confirmation or proof of another connected provider, and must leave an enabled, usable sign-in method. Linking and unlinking preserve profile, conversations, friends, groups and Nearby preferences.
+
 - Users with discoverability disabled should not appear in nearby listings.
 - Nearby search combines location, radius, and discoverability filters.
 - First-contact chat limit is capped at five messages per sender before connection is established.

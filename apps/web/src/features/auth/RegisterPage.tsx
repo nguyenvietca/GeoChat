@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
 import { AuthFrame } from './AuthFrame';
+import { FacebookButton } from './FacebookButton';
 import { GoogleButton } from './GoogleButton';
 import { RegistrationVerification, RegistrationProof } from './RegistrationVerification';
 
@@ -59,7 +60,7 @@ export function RegisterPage() {
   return (
     <AuthFrame mode="register">
       <h2>{t('auth.createAccount')}</h2>
-      <GoogleButton />
+      <GoogleButton /><FacebookButton />
       <p className="auth-description">Set up your GeoChat account to get started.</p>
       {error ? <p className="error-message" role="alert">{text(error)}</p> : null}
       <form className="form-stack" onSubmit={(event) => void submit(event)}>

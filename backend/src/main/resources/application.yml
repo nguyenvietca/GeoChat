@@ -1,3 +1,19 @@
+facebook:
+  enabled: ${FACEBOOK_LOGIN_ENABLED:false}
+  app-id: ${FACEBOOK_APP_ID:}
+  app-secret: ${FACEBOOK_APP_SECRET:}
+  redirect-uri: ${FACEBOOK_REDIRECT_URI:http://localhost:8081/api/login/oauth2/code/facebook}
+  graph-version: ${FACEBOOK_GRAPH_VERSION:v25.0}
+
+# OAuth requests carry secrets; keep framework HTTP payload logging disabled
+# even when a local developer enables general Spring Web DEBUG logging.
+logging:
+  level:
+    org.springframework.web.client: WARN
+    org.springframework.web.HttpLogging: WARN
+    org.springframework.security.oauth2: WARN
+    org.springframework.web.servlet.mvc.method.annotation.RequestResponseBodyMethodProcessor: WARN
+
 google:
   enabled: ${GOOGLE_ENABLED:false}
   client-id: ${GOOGLE_CLIENT_ID:}

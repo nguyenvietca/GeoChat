@@ -45,7 +45,7 @@ class GoogleFlowsTest {
 		request.setCookies(cookie(response));
 		var authorization = OAuth2AuthorizationRequest.authorizationCode()
 				.authorizationUri("https://accounts.google.com/auth").clientId("client")
-				.redirectUri(settings.redirectUri).state("state").build();
+				.redirectUri(settings.redirectUri).state("state").attributes(a -> a.put("registration_id", "google")).build();
 		flows.saveAuthorizationRequest(authorization, request, response);
 		request.setParameter("state", "state");
 		assertThat(flows.removeAuthorizationRequest(request, response)).isNotNull();
@@ -89,7 +89,7 @@ class GoogleFlowsTest {
 		request.setCookies(cookie(response));
 		flows.saveAuthorizationRequest(
 				OAuth2AuthorizationRequest.authorizationCode().authorizationUri("https://accounts.google.com/auth")
-						.clientId("client").redirectUri(settings.redirectUri).state("state").build(),
+						.clientId("client").redirectUri(settings.redirectUri).state("state").attributes(a -> a.put("registration_id", "google")).build(),
 				request, response);
 		request.setParameter("state", "state");
 		flows.removeAuthorizationRequest(request, response);

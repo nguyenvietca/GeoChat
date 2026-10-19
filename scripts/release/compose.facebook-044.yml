@@ -1,0 +1,79 @@
+# Isolated verification only: no published ports, real credentials or application volumes.
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: verify044
+      POSTGRES_USER: verify044
+      POSTGRES_PASSWORD: disposable-only
+      PGDATA: /var/lib/postgresql/verify044
+      POSTGRES_INITDB_ARGS: --no-sync
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U verify044 -d verify044']
+      interval: 2s
+      timeout: 5s
+      retries: 60
+  backend:
+    image: geochat-backend:verify-044
+    mem_limit: 1g
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: postgres
+      DB_NAME: verify044
+      DB_USERNAME: verify044
+      DB_PASSWORD: disposable-only
+      JWT_SECRET: disposable-only-test-key-at-least-32-bytes
+      CORS_ALLOWED_ORIGINS: http://localhost
+      GOOGLE_WEB_ORIGIN: http://localhost
+      GOOGLE_ENABLED: 'true'
+      GOOGLE_CLIENT_ID: synthetic.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: synthetic-test-secret-only
+      GOOGLE_REDIRECT_URI: http://localhost/api/login/oauth2/code/google
+      FACEBOOK_LOGIN_ENABLED: 'true'
+      FACEBOOK_APP_ID: '123456789'
+      FACEBOOK_APP_SECRET: '0123456789abcdef0123456789abcdef'
+      FACEBOOK_REDIRECT_URI: http://localhost/api/login/oauth2/code/facebook
+      GEOCHAT_IMAGE_STORAGE: /tmp/chat-images
+      PASSWORD_RESET_ENABLED: 'false'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, 'http://127.0.0.1:8080/api/health']
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+  web:
+    image: geochat-web:verify-044
+    mem_limit: 128m
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, --quiet, --tries=1, --spider, 'http://127.0.0.1:8080/healthz']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  backend-tests:
+    profiles: [tests]
+    mem_limit: 1536m
+    build:
+      context: ../../backend
+      target: build
+    working_dir: /workspace
+    entrypoint: [./mvnw]
+    command: [-B, '-DargLine=-Xmx768m', test]
+    environment:
+      MAVEN_OPTS: -Xmx384m
+      GEOCHAT_VALIDATE_POSTGRES: 'true'
+      DB_HOST: postgres
+      DB_NAME: verify044
+      DB_USERNAME: verify044
+      DB_PASSWORD: disposable-only
+    depends_on:
+      backend:
+        condition: service_healthy

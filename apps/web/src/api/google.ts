@@ -5,7 +5,7 @@ export type Connections = { passwordAvailable: boolean; googleConnected: boolean
 export const googleConfig = () => apiRequest<{ enabled: boolean }>(`${path}/config`);
 export const googleConnections = (token: string) => apiRequest<Connections>(`${path}/connections`, { token });
 export const cancelGoogle = () => apiRequest<null>(`${path}/cancel`, { method: 'POST', credentials: 'include' });
-export const completeGoogle = (token?: string) => apiRequest<{ token: string | null; linked: boolean; deactivated?: boolean }>(`${path}/complete`, { method: 'POST', token, credentials: 'include' });
+export const completeGoogle = (token?: string) => apiRequest<{ token: string | null; linked: boolean; deactivated?: boolean; nextUrl?: string | null }>(`${path}/complete`, { method: 'POST', token, credentials: 'include' });
 export const unlinkGoogle = (token: string, password: string) => apiRequest<null>(`${path}/unlink`, { method: 'POST', token, body: { password }, credentials: 'include' });
 export async function startGoogle(token?: string, password?: string) {
   const result = await apiRequest<{ url: string }>(`${path}/${token ? 'link' : 'start'}`, {

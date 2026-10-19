@@ -55,14 +55,18 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 		}
 		String identity = identity(request);
 		try {
-			if ("register".equals(policy.name())) bursts.check("register:" + identity, 1, 10_000);
-			if ("login".equals(policy.name())) bursts.check("login:" + identity, 3, 1000);
-			if ("message-ingress".equals(policy.name())) bursts.check("message-ingress:" + identity, 10, 1000);
+			if ("register".equals(policy.name()))
+				bursts.check("register:" + identity, 1, 10_000);
+			if ("login".equals(policy.name()))
+				bursts.check("login:" + identity, 3, 1000);
+			if ("message-ingress".equals(policy.name()))
+				bursts.check("message-ingress:" + identity, 10, 1000);
 		} catch (RequestLimitException ex) {
 			response.setStatus(429);
 			response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 			response.setHeader("Retry-After", Long.toString(ex.retryAfter()));
-			response.getWriter().write("{\"success\":false,\"data\":null,\"message\":\"Too many requests. Please wait and try again.\"}");
+			response.getWriter().write(
+					"{\"success\":false,\"data\":null,\"message\":\"Too many requests. Please wait and try again.\"}");
 			return;
 		}
 		String key = policy.name() + ':' + identity;
@@ -96,7 +100,8 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 	}
 
 	private String identity(HttpServletRequest request) {
-		if (request.getRequestURI().startsWith("/api/v1/auth/")) return "ip:" + addresses.resolve(request);
+		if (request.getRequestURI().startsWith("/api/v1/auth/"))
+			return "ip:" + addresses.resolve(request);
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 		if (authentication != null && authentication.isAuthenticated()
 				&& !"anonymousUser".equals(authentication.getName())) {
@@ -112,11 +117,13 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 			return new Policy("forgot-password", 5, 900);
 		if ("POST".equals(method) && "/api/v1/auth/password/reset".equals(path))
 			return new Policy("reset-password", 10, 60);
-		if ("POST".equals(method) && path.startsWith("/api/v1/auth/google/"))
+		if ("POST".equals(method)
+				&& (path.startsWith("/api/v1/auth/google/") || path.startsWith("/api/v1/auth/facebook/")))
 			return new Policy("google-auth", 10, 60);
 		if ("POST".equals(method) && "/api/v1/auth/login".equals(path))
 			return new Policy("login", 10, 60);
-		if ("POST".equals(method) && (path.startsWith("/api/v1/admin/") || path.endsWith("/deactivate") || path.endsWith("/reactivate")))
+		if ("POST".equals(method)
+				&& (path.startsWith("/api/v1/admin/") || path.endsWith("/deactivate") || path.endsWith("/reactivate")))
 			return new Policy("account-action", 10, 60);
 		if ("POST".equals(method) && "/api/v1/auth/register".equals(path))
 			return new Policy("register", 5, 3600);

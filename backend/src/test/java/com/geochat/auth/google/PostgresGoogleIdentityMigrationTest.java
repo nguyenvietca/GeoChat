@@ -35,6 +35,16 @@ class PostgresGoogleIdentityMigrationTest {
 				}
 				sql.execute(
 						"INSERT INTO user_auth_identities(user_id,provider,provider_user_id,provider_email) VALUES(1,'GOOGLE','subject','test@example.com')");
+				try (var resource = getClass().getResourceAsStream("/db/migration/V22__facebook_auth_identities.sql")) {
+					sql.execute(new String(resource.readAllBytes(), StandardCharsets.UTF_8));
+				}
+				sql.execute("INSERT INTO user_auth_identities(user_id,provider,provider_user_id,provider_email) VALUES(1,'FACEBOOK','app-scoped-id',NULL)");
+				reject(db, "INSERT INTO user_auth_identities(user_id,provider,provider_user_id,provider_email) VALUES(2,'FACEBOOK','app-scoped-id',NULL)");
+				reject(db, "INSERT INTO user_auth_identities(user_id,provider,provider_user_id,provider_email) VALUES(1,'FACEBOOK','other-id',NULL)");
+				reject(db, "INSERT INTO user_auth_identities(user_id,provider,provider_user_id,provider_email) VALUES(2,'UNKNOWN','subject',NULL)");
+				try (var row = sql.executeQuery("SELECT count(*) FROM user_auth_identities WHERE user_id=1")) {
+					row.next(); assertThat(row.getLong(1)).isEqualTo(2);
+				}
 				reject(db,
 						"INSERT INTO user_auth_identities(user_id,provider,provider_user_id,provider_email) VALUES(2,'GOOGLE','subject','test@example.com')");
 				reject(db,

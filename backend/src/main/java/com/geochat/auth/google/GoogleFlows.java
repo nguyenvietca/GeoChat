@@ -45,6 +45,7 @@ public class GoogleFlows implements AuthorizationRequestRepository<OAuth2Authori
 
 	static final class Flow {
 		String purpose = "LOGIN";
+		String provider = "google";
 		final Long userId;
 		final String sessionHash;
 		Instant expires;
@@ -103,8 +104,13 @@ public class GoogleFlows implements AuthorizationRequestRepository<OAuth2Authori
 		begin(request, response, userId, token, userId == null ? "LOGIN" : "LINK");
 	}
 
-	public synchronized void begin(HttpServletRequest request, HttpServletResponse response, Long userId,
-			String token, String purpose) {
+	public synchronized void begin(HttpServletRequest request, HttpServletResponse response, Long userId, String token,
+			String purpose) {
+		beginProvider(request, response, userId, token, purpose, "google");
+	}
+
+	public synchronized void beginProvider(HttpServletRequest request, HttpServletResponse response, Long userId,
+			String token, String purpose, String provider) {
 		prune();
 		flows.remove(cookie(request));
 		if (flows.size() >= 1000)
@@ -112,6 +118,7 @@ public class GoogleFlows implements AuthorizationRequestRepository<OAuth2Authori
 		String key = random();
 		Flow flow = new Flow(userId, userId == null ? null : fingerprint(token), clock.instant().plusSeconds(300));
 		flow.purpose = purpose;
+		flow.provider = provider;
 		flows.put(key, flow);
 		setCookie(response, key, 300);
 	}
@@ -135,7 +142,7 @@ public class GoogleFlows implements AuthorizationRequestRepository<OAuth2Authori
 			cancel(request, response);
 			return;
 		}
-		if (flow == null || flow.started)
+		if (flow == null || flow.started || !flow.provider.equals(auth.getAttribute("registration_id")))
 			throw new org.springframework.security.oauth2.core.OAuth2AuthenticationException("invalid_state");
 		flow.started = true;
 		flow.request = auth;
@@ -161,6 +168,8 @@ public class GoogleFlows implements AuthorizationRequestRepository<OAuth2Authori
 			throw new IllegalArgumentException("Google sign-in expired.");
 		flows.remove(cookie(request));
 		String ticket = random();
+		if (!flow.provider.equalsIgnoreCase(claims.provider()))
+			throw new IllegalArgumentException("Provider mismatch.");
 		flow.claims = claims;
 		flow.expires = clock.instant().plusSeconds(30);
 		flows.put(ticket, flow);

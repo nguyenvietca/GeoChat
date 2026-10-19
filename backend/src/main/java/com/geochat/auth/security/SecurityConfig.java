@@ -50,7 +50,9 @@ public class SecurityConfig {
 						.requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
 						.requestMatchers(HttpMethod.GET, "/api/v1/auth/registration-config").permitAll()
 						.requestMatchers("/api/v1/auth/google/config", "/api/v1/auth/google/start",
-								"/api/v1/auth/google/complete", "/api/v1/auth/google/cancel")
+								"/api/v1/auth/google/complete", "/api/v1/auth/google/cancel",
+								"/api/v1/auth/facebook/config", "/api/v1/auth/facebook/start",
+								"/api/v1/auth/facebook/complete", "/api/v1/auth/facebook/cancel")
 						.permitAll().requestMatchers("/ws/**", "/ws").permitAll()
 						.requestMatchers(HttpMethod.GET, "/api/health").permitAll()
 						.requestMatchers(HttpMethod.GET, "/api/v1/users/me").authenticated().anyRequest()
@@ -75,8 +77,7 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	public AbuseRateLimitFilter abuseRateLimitFilter(
-			@Value("${app.security.rate-limit.enabled:true}") boolean enabled,
+	public AbuseRateLimitFilter abuseRateLimitFilter(@Value("${app.security.rate-limit.enabled:true}") boolean enabled,
 			com.geochat.common.security.ClientAddress addresses) {
 		return new AbuseRateLimitFilter(enabled, addresses);
 	}

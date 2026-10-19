@@ -59,7 +59,7 @@ describe('Google sign-in and connected accounts',()=>{
   it('returns to Settings only after explicitly linking Google',async()=>{
     vi.mocked(completeGoogle).mockResolvedValue({token:null,linked:true});
     render(<MemoryRouter><GoogleReturnPage/></MemoryRouter>);
-    await waitFor(()=>expect(mocks.navigate).toHaveBeenCalledWith('/app/settings',{replace:true}));
+    await waitFor(()=>expect(mocks.navigate).toHaveBeenCalledWith('/app/settings',{replace:true,state:{providerUpdated:true}}));
     expect(mocks.accept).not.toHaveBeenCalled();
   });
   it('cleans cancellation parameters and does not redeem',async()=>{

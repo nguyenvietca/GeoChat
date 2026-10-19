@@ -7,7 +7,9 @@ google:
 
 spring:
   datasource:
-    url: jdbc:h2:mem:geochat_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false
+    # Each cached Spring context owns its schema; closing another context must
+    # not drop tables still used by this one.
+    url: jdbc:h2:mem:geochat_test_${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false
     username: sa
     password: 
     driver-class-name: org.h2.Driver
