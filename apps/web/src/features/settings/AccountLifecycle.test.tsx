@@ -8,11 +8,13 @@ import { GoogleReturnPage } from '../auth/GoogleReturnPage';
 import { deactivateAccount, listAdminUsers, moderateAccount, reactivateAccount } from '../../api/accounts';
 import { completeGoogle, googleConfig, googleConnections, startGoogleAccountAction } from '../../api/google';
 import { ApiError } from '../../api/client';
+import { openAdminConversation } from '../../api/admin';
 
 const mocks = vi.hoisted(() => ({ logout: vi.fn(), accept: vi.fn(), navigate: vi.fn(), role: 'USER' }));
 vi.mock('../../app/providers/AuthContext', () => ({ useAuth: () => ({ token: 'session', user: { id: 1, role: mocks.role }, logout: mocks.logout,
   acceptGoogleSession: mocks.accept, isLoading: false, login: vi.fn(), retrySessionRestore: vi.fn(), sessionNotice: '' }) }));
 vi.mock('../../api/accounts', () => ({ deactivateAccount: vi.fn(), listAdminUsers: vi.fn(), moderateAccount: vi.fn(), reactivateAccount: vi.fn() }));
+vi.mock('../../api/admin', () => ({ openAdminConversation: vi.fn() }));
 vi.mock('../../api/google', () => ({ googleConfig: vi.fn(), googleConnections: vi.fn(), startGoogleAccountAction: vi.fn(), completeGoogle: vi.fn() }));
 vi.mock('../auth/GoogleButton', () => ({ GoogleButton: () => null }));
 vi.mock('react-router-dom', async original => ({ ...await original<typeof import('react-router-dom')>(), useNavigate: () => mocks.navigate }));
@@ -73,13 +75,22 @@ describe('Account lifecycle UI', () => {
   it('does not fetch admin data for regular users', () => {
     renderPage(<AdminUsersPage />); expect(listAdminUsers).not.toHaveBeenCalled();
   });
+  it('lets a super administrator open a conversation from user management', async () => {
+    mocks.role = 'SUPER_ADMIN';
+    vi.mocked(listAdminUsers).mockResolvedValue({ items: [{ id: 2, username: 'alice', displayName: 'Alice', status: 'ACTIVE', role: 'USER', blockReason: null }], hasMore: false });
+    vi.mocked(openAdminConversation).mockResolvedValue({ conversationId: 42 });
+    renderPage(<AdminUsersPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Message user' }));
+    await waitFor(() => expect(openAdminConversation).toHaveBeenCalledWith('session', 2));
+    expect(mocks.navigate).toHaveBeenCalledWith('/app/chat/42');
+  });
   it('requires a reason to unblock and refreshes status after success', async () => {
     mocks.role = 'ADMIN';
     vi.mocked(listAdminUsers).mockResolvedValue({ items: [{ id: 2, username: 'alice', displayName: 'Alice', status: 'LOCKED', role: 'USER', blockReason: 'Spam' }], hasMore: false });
     vi.mocked(moderateAccount).mockResolvedValue(null); renderPage(<AdminUsersPage />);
     const trigger = await screen.findByRole('button', { name: 'Unblock account' });
     fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: 'Unblock account @alice' }).getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByRole('dialog', { name: 'Unblock account @Alice' }).getAttribute('aria-modal')).toBe('true');
     expect(document.activeElement).toBe(screen.getByLabelText('Reason'));
     fireEvent.keyDown(screen.getByLabelText('Reason'), { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();

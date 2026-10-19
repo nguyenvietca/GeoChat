@@ -1950,6 +1950,10 @@ h2 {
   object-fit: cover;
 }
 
+.avatar-preview-trigger { padding: 0; border: 0; cursor: zoom-in; }
+.avatar-preview-trigger:focus-visible { outline: 3px solid var(--teal); outline-offset: 4px; }
+.avatar-viewer img { width: min(640px, 85vw); height: auto; }
+
 .profile-avatar-editor {
   display: flex;
   align-items: center;
@@ -3719,6 +3723,16 @@ select {
   margin-bottom: 12px;
 }
 
+.admin-frame { min-height: 100dvh; background: var(--canvas); }
+.admin-header { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 20px 32px; border-bottom: 1px solid var(--line); background: var(--paper); }
+.admin-header .brand-lockup { margin-right: auto; }
+.admin-nav { display: flex; gap: 20px; padding: 16px 32px; border-bottom: 1px solid var(--line); }
+.admin-nav a { padding: 8px 12px; border-radius: 6px; }
+.admin-nav a.active { background: var(--paper); font-weight: 700; }
+.admin-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; }
+.admin-stat-grid .settings-section { margin: 0; }
+.admin-stat-grid dt { color: var(--muted); }
+.admin-stat-grid dd { font-size: 36px; margin: 12px 0 0; font-weight: 700; }
 .moderation-dialog { gap: 14px; }
 .moderation-dialog h2 { overflow-wrap: anywhere; }
 .moderation-dialog .primary-button { width: auto; margin-top: 0; }

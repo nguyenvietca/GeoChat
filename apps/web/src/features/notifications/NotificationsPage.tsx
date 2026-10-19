@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../api/client';
 import { useNotifications } from '../../app/providers/NotificationContext';
 import { AppNotification } from '../../types';
+import { translate as t } from '../../i18n';
 
 export function NotificationsPage() {
   const navigate = useNavigate();
@@ -56,7 +57,7 @@ export function NotificationsPage() {
       <div className="page-heading notification-heading">
         <div>
           <p className="eyebrow">YOUR ACTIVITY</p>
-          <h1>Notifications</h1>
+          <h1>{t('common.notifications')}</h1>
           <p className="notification-summary" aria-live="polite">
             {unreadCount} unread
           </p>
@@ -70,7 +71,8 @@ export function NotificationsPage() {
           </button>
           <button className="primary-button compact-button" type="button" onClick={() => void handleMarkAll()}
             disabled={markingAll || busyId !== null || unreadCount === 0}>
-            {markingAll ? 'Marking...' : 'Mark all as read'}
+            {markingAll ? t('notifications.loading') : t('notifications.markAll')}
+
           </button>
         </div>
       </div>

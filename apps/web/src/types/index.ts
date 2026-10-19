@@ -1,5 +1,5 @@
 export type User = {
-  role?: 'USER' | 'ADMIN';
+  role?: 'USER' | 'ADMIN' | 'SUPER_ADMIN';
   id: number;
   username: string;
   displayName: string;
@@ -44,6 +44,7 @@ export type UserSearchResult = {
 export type FriendRelationship = 'NONE' | 'FRIENDS' | 'PENDING_OUTGOING' | 'PENDING_INCOMING';
 
 export type FriendSummary = {
+  avatarUpdatedAt?: string | null;
   userId: number;
   username: string;
   displayName: string;

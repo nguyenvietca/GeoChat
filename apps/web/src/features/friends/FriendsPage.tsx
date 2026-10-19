@@ -14,6 +14,9 @@ import { ApiError } from '../../api/client';
 import { useAuth } from '../../app/providers/AuthContext';
 import { FriendRequestItem, FriendSummary } from '../../types';
 import { SearchPage } from '../search/SearchPage';
+import { UserAvatar } from '../profile/UserAvatar';
+import { translate as t } from '../../i18n';
+
 
 type FriendsTab = 'friends' | 'incoming' | 'outgoing' | 'find';
 const validTabs: FriendsTab[] = ['friends', 'incoming', 'outgoing', 'find'];
@@ -144,9 +147,9 @@ export function FriendsPage() {
       <p className="page-intro">Keep up with your people and the requests waiting for you.</p>
       <div className="segmented-tabs" role="tablist" aria-label="Friend lists">
         {([
-          ['friends', 'Friends', friends.length],
-          ['incoming', 'Incoming', incoming.length],
-          ['outgoing', 'Sent', outgoing.length],
+          ['friends', t('common.friends'), friends.length],
+          ['incoming', t('common.incoming'), incoming.length],
+          ['outgoing', t('common.outgoing'), outgoing.length],
           ['find', 'Find people', null],
         ] as const).map(([tab, label, count]) => (
           <button
@@ -157,7 +160,7 @@ export function FriendsPage() {
             className={activeTab === tab ? 'segmented-tab selected' : 'segmented-tab'}
             onClick={() => selectTab(tab)}
           >
-            {label}{count !== null ? <span>{count}</span> : null}
+            {label}{count !== null ? <span>({count})</span> : null}
           </button>
         ))}
       </div>
@@ -178,7 +181,7 @@ export function FriendsPage() {
         </div><div className="results-list" aria-label={`${activeTab} list`}>
           {activeTab === 'friends' ? filteredFriends.map((friend) => (
             <article className="person-row friend-row" key={friend.userId}>
-              <span className="person-avatar">{friend.displayName.charAt(0).toUpperCase()}</span>
+              <UserAvatar userId={friend.userId} displayName={friend.displayName} avatarUpdatedAt={friend.avatarUpdatedAt} token={token} />
               <span className="person-details"><strong>{friend.displayName}</strong><small>@{friend.username}</small></span>
               <Link className="quiet-light-button compact-button" to={`/app/profile/${friend.userId}`}>Profile</Link>
               <button className="primary-button compact-button" type="button" onClick={() => void openChat(friend)} disabled={openingId !== null}>
@@ -200,6 +203,7 @@ export function FriendsPage() {
               request={request}
               direction={activeTab}
               busy={busyIds.includes(request.requestId)}
+              token={token}
               onAction={(action) => void runRequestAction(request, action)}
             />
           ))}
@@ -220,23 +224,28 @@ function FriendRequestRow({
   request,
   direction,
   busy,
+  token,
   onAction,
 }: {
   request: FriendRequestItem;
   direction: 'incoming' | 'outgoing';
   busy: boolean;
+  token: string | null;
   onAction: (action: 'accept' | 'reject' | 'cancel') => void;
 }) {
   return (
     <article className="person-row friend-row" key={request.requestId}>
-      <span className="person-avatar">{request.user.displayName.charAt(0).toUpperCase()}</span>
+      <UserAvatar userId={request.user.userId} displayName={request.user.displayName} avatarUpdatedAt={request.user.avatarUpdatedAt} token={token} />
       <span className="person-details"><strong>{request.user.displayName}</strong><small>@{request.user.username}</small></span>
       {direction === 'incoming' ? (
         <span className="request-actions">
           <button className="primary-button compact-button" type="button" onClick={() => onAction('accept')} disabled={busy}>{busy ? 'Saving…' : 'Accept'}</button>
           <button className="quiet-light-button compact-button" type="button" onClick={() => onAction('reject')} disabled={busy}>Reject</button>
         </span>
-      ) : <button className="quiet-light-button compact-button" type="button" onClick={() => onAction('cancel')} disabled={busy}>{busy ? 'Cancelling…' : 'Cancel'}</button>}
+      ) : <button className="quiet-light-button compact-button" type="button" onClick={() => onAction('cancel')} disabled={busy}>{busy ? 'Cancelling…' : 'Cancel'}</button>
+
+      }
+      <Link className="quiet-light-button compact-button" to={`/app/profile/${request.user.userId}`}>Profile</Link>
     </article>
   );
 }

@@ -69,6 +69,8 @@ public class WebSocketSessionRegistry {
         return activeSessionCounts.containsKey(userId);
     }
 
+    public java.util.Set<Long> onlineUserIds() { return java.util.Set.copyOf(activeSessionCounts.keySet()); }
+
     @org.springframework.transaction.event.TransactionalEventListener(phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
     public void accountAccessChanged(com.geochat.user.service.AccountLifecycleService.AccessChanged event) {
         sessionUserIds.forEach((sessionId, userId) -> {

@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useOverlayFocus } from '../../hooks/useOverlayFocus';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { openAdminConversation } from '../../api/admin';
 import { useAuth } from '../../app/providers/AuthContext';
 import { AdminUser, listAdminUsers, moderateAccount } from '../../api/accounts';
 import { ApiError } from '../../api/client';
@@ -10,6 +11,7 @@ import { useLocale, translate as t, translateText as text } from '../../i18n';
 export function AdminUsersPage() {
   useLocale();
   const { user, token } = useAuth();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -36,14 +38,21 @@ export function AdminUsersPage() {
     return () => { document.body.style.overflow = previous; };
   }, [selected]);
   const load = useCallback(async () => {
-    if (!token || user?.role !== 'ADMIN') return;
+    if (!token || !['ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '')) return;
     setLoading(true); setError('');
     try { const result = await listAdminUsers(token, search, page); setItems(result.items); setHasMore(result.hasMore); }
     catch (e) { setError(e instanceof ApiError ? e.message : t('account.failed')); }
     finally { setLoading(false); }
   }, [token, user?.role, search, page]);
   useEffect(() => { void load(); }, [load]);
-  if (user?.role !== 'ADMIN') return <Navigate to="/app/home" replace />;
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '')) return <Navigate to="/app/home" replace />;
+  const message = async (id: number) => {
+    if (!token || busy) return;
+    setBusy(true); setError('');
+    try { const chat = await openAdminConversation(token, id); navigate(`/app/chat/${chat.conversationId}`); }
+    catch (e) { setError(e instanceof ApiError ? e.message : t('account.failed')); }
+    finally { setBusy(false); }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!token || !selected || !reason.trim() || busy) return;
@@ -74,7 +83,10 @@ export function AdminUsersPage() {
     {loading ? <p role="status">{t('common.wait')}</p> : <ul className="admin-user-list">{items.map(item => <li className="settings-section" key={item.id}>
       <div><strong>{item.displayName}</strong><p>@{item.username}</p><span className="status-chip">{t(item.status === 'LOCKED' ? 'account.blocked' : item.status === 'INACTIVE' ? 'account.inactive' : 'account.active')}</span>
         {item.blockReason ? <p>{t('admin.reason')}: {item.blockReason}</p> : null}</div>
-      {item.role !== 'ADMIN' ? <button className="quiet-light-button" disabled={busy || !!selected} onClick={event => { triggerRef.current = event.currentTarget; setSelected(item); setReason(''); setDialogError(''); setError(''); setNotice(''); }}>{t(item.status === 'LOCKED' ? 'admin.unblock' : 'admin.block')}</button> : <span>Admin</span>}
+      <div className="account-action-buttons">
+      {user?.role === 'SUPER_ADMIN' && item.id !== user.id && item.status === 'ACTIVE' ? <button className="quiet-light-button" disabled={busy || !!selected} onClick={() => void message(item.id)}>{t('admin.message')}</button> : null}
+      {!['ADMIN', 'SUPER_ADMIN'].includes(item.role) ? <button className="quiet-light-button" disabled={busy || !!selected} onClick={event => { triggerRef.current = event.currentTarget; setSelected(item); setReason(''); setDialogError(''); setError(''); setNotice(''); }}>{t(item.status === 'LOCKED' ? 'admin.unblock' : 'admin.block')}</button> : <span>{item.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}</span>}
+      </div>
     </li>)}</ul>}
     {!loading && items.length === 0 ? <p>{t('admin.empty')}</p> : null}
     <div className="account-action-buttons"><button className="quiet-light-button" disabled={busy || loading || page === 0} onClick={() => setPage(page - 1)}>{t('admin.previous')}</button>

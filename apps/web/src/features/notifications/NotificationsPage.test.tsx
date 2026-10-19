@@ -100,7 +100,7 @@ describe('notifications page', () => {
     const state = createState({ hasMore: true });
     mockUseNotifications.mockReturnValue(state);
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark all read' }));
     expect(state.markAllAsRead).toHaveBeenCalledOnce();
 
     mockUseNotifications.mockReturnValue(createState({ notifications: [], unreadCount: 0, loading: true }));

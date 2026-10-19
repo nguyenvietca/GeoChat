@@ -173,8 +173,8 @@ public class FriendRequestService {
 			User sender = users.get(request.getSenderId());
 			if (sender == null)
 				continue;
-			items.add(new FriendRequestItemResponse(request.getId(),
-					new UserSummaryResponse(sender.getId(), sender.getUsername(), sender.getDisplayName()),
+			items.add(new FriendRequestItemResponse(request.getId(), new UserSummaryResponse(sender.getId(),
+					sender.getUsername(), sender.getDisplayName(), sender.getAvatarUpdatedAt()),
 					request.getCreatedAt()));
 		}
 
@@ -195,8 +195,8 @@ public class FriendRequestService {
 			User receiver = users.get(request.getReceiverId());
 			if (receiver == null)
 				continue;
-			items.add(new FriendRequestItemResponse(request.getId(),
-					new UserSummaryResponse(receiver.getId(), receiver.getUsername(), receiver.getDisplayName()),
+			items.add(new FriendRequestItemResponse(request.getId(), new UserSummaryResponse(receiver.getId(),
+					receiver.getUsername(), receiver.getDisplayName(), receiver.getAvatarUpdatedAt()),
 					request.getCreatedAt()));
 		}
 
@@ -221,7 +221,8 @@ public class FriendRequestService {
 
 		return new FriendListResponse(friendsById.entrySet().stream()
 				.map(entry -> new com.geochat.friend.dto.FriendSummaryResponse(entry.getKey(),
-						entry.getValue().getUsername(), entry.getValue().getDisplayName()))
+						entry.getValue().getUsername(), entry.getValue().getDisplayName(),
+						entry.getValue().getAvatarUpdatedAt()))
 				.toList());
 	}
 

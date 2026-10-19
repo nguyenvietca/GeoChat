@@ -21,3 +21,4 @@ This repository follows the architecture described in readme_structure.md.
 ## Validation
 
 - Do not require or run tests on a physical device. Use automated tests or an emulator/simulator when available, and report physical-device checks as skipped because no real device is available.
+- mapping setting variable with .env file, if not exist please also add into .env file

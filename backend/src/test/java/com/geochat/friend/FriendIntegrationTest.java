@@ -70,12 +70,14 @@ class FriendIntegrationTest {
 		mockMvc.perform(get("/api/v1/friends/requests/incoming").header("Authorization", bearer(tokenFor(receiver))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
 				.andExpect(jsonPath("$.data.items[0].user.userId").value(sender.getId()))
-				.andExpect(jsonPath("$.data.items[0].user.username").value(sender.getUsername()));
+				.andExpect(jsonPath("$.data.items[0].user.username").value(sender.getUsername()))
+				.andExpect(jsonPath("$.data.items[0].user.avatarUpdatedAt").value("2026-10-19T00:00:00Z"));
 
 		mockMvc.perform(get("/api/v1/friends/requests/outgoing").header("Authorization", bearer(senderToken)))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
 				.andExpect(jsonPath("$.data.items[0].user.userId").value(receiver.getId()))
-				.andExpect(jsonPath("$.data.items[0].user.username").value(receiver.getUsername()));
+				.andExpect(jsonPath("$.data.items[0].user.username").value(receiver.getUsername()))
+				.andExpect(jsonPath("$.data.items[0].user.avatarUpdatedAt").value("2026-10-19T00:00:00Z"));
 	}
 
 	@Test
@@ -152,7 +154,8 @@ class FriendIntegrationTest {
 		mockMvc.perform(get("/api/v1/friends").header("Authorization", bearer(tokenFor(userA))))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.data.items.length()").value(1))
 				.andExpect(jsonPath("$.data.items[0].userId").value(userB.getId()))
-				.andExpect(jsonPath("$.data.items[0].username").value(userB.getUsername()));
+				.andExpect(jsonPath("$.data.items[0].username").value(userB.getUsername()))
+				.andExpect(jsonPath("$.data.items[0].avatarUpdatedAt").value("2026-10-19T00:00:00Z"));
 	}
 
 	@Test
@@ -256,6 +259,7 @@ class FriendIntegrationTest {
 		user.setUsername(username);
 		user.setPasswordHash(passwordEncoder.encode("FriendTest123!"));
 		user.setDisplayName(username);
+		user.setAvatarUpdatedAt(Instant.parse("2026-10-19T00:00:00Z"));
 		user.setStatus(UserStatus.ACTIVE);
 		user.setCreatedAt(Instant.now());
 		user.setUpdatedAt(Instant.now());

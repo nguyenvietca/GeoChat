@@ -108,6 +108,10 @@ public final class AbuseRateLimitFilter extends OncePerRequestFilter {
 	private Policy policy(HttpServletRequest request) {
 		String method = request.getMethod();
 		String path = request.getRequestURI();
+		if ("POST".equals(method) && "/api/v1/auth/password/forgot".equals(path))
+			return new Policy("forgot-password", 5, 900);
+		if ("POST".equals(method) && "/api/v1/auth/password/reset".equals(path))
+			return new Policy("reset-password", 10, 60);
 		if ("POST".equals(method) && path.startsWith("/api/v1/auth/google/"))
 			return new Policy("google-auth", 10, 60);
 		if ("POST".equals(method) && "/api/v1/auth/login".equals(path))

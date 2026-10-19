@@ -26,6 +26,10 @@ jwt:
   secret: test-only-key-not-a-real-secret-32-bytes-min
   expiration-ms: 3600000
 app:
+  super-admin:
+    enabled: false
+  password-reset:
+    enabled: false
   security:
     rate-limit:
       enabled: false

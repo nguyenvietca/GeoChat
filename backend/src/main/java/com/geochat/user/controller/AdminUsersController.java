@@ -17,8 +17,9 @@ import java.util.List;
 public class AdminUsersController {
     private final UserRepository users;
     private final AccountLifecycleService accounts;
-    public AdminUsersController(UserRepository users, AccountLifecycleService accounts) {
-        this.users = users; this.accounts = accounts;
+    private final com.geochat.chat.service.ChatService chats;
+    public AdminUsersController(UserRepository users, AccountLifecycleService accounts, com.geochat.chat.service.ChatService chats) {
+        this.users = users; this.accounts = accounts; this.chats = chats;
     }
     public record Item(Long id, String username, String displayName, String status, String role, String blockReason) {
         static Item from(User u) { return new Item(u.getId(), u.getUsername(), u.getDisplayName(),
@@ -47,4 +48,11 @@ public class AdminUsersController {
         accounts.moderate(auth.getName(), id, false, decision.reason());
         return ApiResponse.ok(null);
     }
+
+    @PostMapping("/{id}/conversation")
+    public ApiResponse<com.geochat.chat.dto.ChatDtos.OpenDirectChatResponse> conversation(@PathVariable Long id,
+            Authentication auth) {
+        return ApiResponse.ok(chats.openSuperAdminConversation(auth.getName(), id));
+    }
+
 }

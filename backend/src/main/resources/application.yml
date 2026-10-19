@@ -6,6 +6,20 @@ google:
   web-origin: ${GOOGLE_WEB_ORIGIN:http://localhost:8081}
 
 spring:
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:nguyenvietca199x@gmail.com}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SMTP_STARTTLS:true}
+      mail.smtp.starttls.required: ${SMTP_STARTTLS:true}
+      mail.smtp.ssl.enable: ${SMTP_SSL:false}
+      mail.smtp.ssl.checkserveridentity: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   config:
     import: optional:file:./config/google-local.properties,optional:file:./backend/config/google-local.properties
   servlet:
@@ -35,9 +49,20 @@ spring:
 
 jwt:
   secret: ${JWT_SECRET:vK7!qP2#xR9$mN4@tY8%wL3&cF6*zH1!}
-  expiration-ms: 3600000
+  expiration-ms: ${JWT_EXPIRATION_MS:3600000}
 
 app:
+  chat:
+    max-group-members: ${MAX_GROUP_MEMBERS:100}
+  super-admin:
+    enabled: ${SUPER_ADMIN_BOOTSTRAP_ENABLED:false}
+    username: ${SUPER_ADMIN_USERNAME:geochat_super_admin}
+    email: ${SUPER_ADMIN_EMAIL:}
+    password: ${SUPER_ADMIN_PASSWORD:}
+  password-reset:
+    enabled: ${PASSWORD_RESET_ENABLED:true}
+    web-origin: ${PASSWORD_RESET_WEB_ORIGIN:http://localhost:5173}
+    from: ${SMTP_FROM:nguyenvietca199x@gmail.com}
   security:
     trusted-proxy-hosts: ${TRUSTED_PROXY_HOSTS:}
     registration-bot-check:

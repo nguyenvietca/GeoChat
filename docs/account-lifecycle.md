@@ -39,9 +39,13 @@ update from overwriting a new block or restoring an obsolete token version.
 
 ## Administrator access
 
+The separate `/admin` portal, `SUPER_ADMIN` bootstrap, and email password recovery
+are documented in [admin-and-password-recovery.md](admin-and-password-recovery.md).
+
 `USER` is the default role, including for existing accounts migrated by V20 and for
 new password/Google registrations. Signup and profile APIs cannot assign roles.
-No default administrator or password is created.
+No default password is created. V21 adds a disabled `SUPER_ADMIN` seed; configure
+it using the one-time environment bootstrap described in the linked guide.
 
 The deployment operator must grant `ADMIN` to a verified existing account using
 their database administration connection. For example, substitute the intended
@@ -58,7 +62,7 @@ COMMIT;
 ```
 
 The operator must sign in again. Web Settings then shows **Manage users**, available
-at `/app/admin/users`. The backend independently enforces `ROLE_ADMIN` on every
+at `/admin/users`. The backend independently enforces administrator roles on every
 `/api/v1/admin/**` request. The page supports paginated search and blocking/unblocking
 with a required reason of 1–500 characters. Admin accounts cannot be blocked or
 self-deactivated through these endpoints; transfer/demote the role through the

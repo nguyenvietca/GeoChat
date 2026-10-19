@@ -44,15 +44,17 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+						.requestMatchers("/api/v1/auth/password/**").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/v1/users/me/reactivate").hasRole("INACTIVE")
-						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+						.requestMatchers("/api/v1/admin/users/*/conversation").hasRole("SUPER_ADMIN")
+						.requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
 						.requestMatchers(HttpMethod.GET, "/api/v1/auth/registration-config").permitAll()
 						.requestMatchers("/api/v1/auth/google/config", "/api/v1/auth/google/start",
 								"/api/v1/auth/google/complete", "/api/v1/auth/google/cancel")
 						.permitAll().requestMatchers("/ws/**", "/ws").permitAll()
 						.requestMatchers(HttpMethod.GET, "/api/health").permitAll()
 						.requestMatchers(HttpMethod.GET, "/api/v1/users/me").authenticated().anyRequest()
-						.hasAnyRole("USER", "ADMIN"))
+						.hasAnyRole("USER", "ADMIN", "SUPER_ADMIN"))
 				.exceptionHandling(ex -> ex
 						.authenticationEntryPoint((request, response, authException) -> writeSecurityError(response,
 								HttpServletResponse.SC_UNAUTHORIZED, "Authentication required"))

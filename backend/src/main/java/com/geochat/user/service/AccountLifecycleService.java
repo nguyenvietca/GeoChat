@@ -65,7 +65,7 @@ public class AccountLifecycleService {
 	}
 
 	private void deactivateVerified(User user) {
-		if (user.getRole() == UserRole.ADMIN)
+        if (user.getRole().isAdmin())
 			throw new IllegalArgumentException("Transfer the admin role before deactivating this account.");
 		if (user.getStatus() != UserStatus.ACTIVE)
 			throw new AccessDeniedException("Account unavailable.");
@@ -96,10 +96,10 @@ public class AccountLifecycleService {
 	@Transactional
 	public void moderate(String adminName, Long userId, boolean block, String reason) {
 		User admin = users.findByUsernameIgnoreCase(adminName).orElseThrow();
-		if (admin.getRole() != UserRole.ADMIN || admin.getStatus() != UserStatus.ACTIVE)
+        if (!admin.getRole().isAdmin() || admin.getStatus() != UserStatus.ACTIVE)
 			throw new AccessDeniedException("Access denied");
 		User user = locked(userId);
-		if (user.getRole() == UserRole.ADMIN)
+        if (user.getRole().isAdmin())
 			throw new IllegalArgumentException("Admin accounts cannot be blocked here.");
 		if (reason == null || reason.isBlank() || reason.strip().length() > 500)
 			throw new IllegalArgumentException("Enter a reason between 1 and 500 characters.");

@@ -16,6 +16,9 @@ import { ProfilePage } from './features/profile/ProfilePage';
 import { UserAvatar } from './features/profile/UserAvatar';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { AdminUsersPage } from './features/settings/AdminUsersPage';
+import { AdminLayout } from './features/admin/AdminLayout';
+import { AdminDashboard } from './features/admin/AdminDashboard';
+import { PasswordRecoveryPage } from './features/auth/PasswordRecoveryPage';
 import { ReactivateAccountPage } from './features/settings/ReactivateAccountPage';
 import { NotificationBell, NotificationBellIcon } from './features/notifications/NotificationBell';
 
@@ -77,9 +80,9 @@ function AppShell() {
             </span> : null}
           </NavLink>
         </nav>
-        <p className="nav-caption account-nav-caption">ACCOUNT</p>
+        <p className="nav-caption account-nav-caption">{t('common.account')}</p>
         <nav className="side-nav account-side-nav" aria-label="Account navigation">
-          {user?.role === 'ADMIN' ? <NavLink to="/app/admin/users" className="nav-link account-nav-link">{t('admin.title')}</NavLink> : null}
+          {['ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '') ? <NavLink to="/admin" className="nav-link account-nav-link">{t('admin.overview')}</NavLink> : null}
           <NavLink to="/app/profile" className="nav-link account-nav-link">
             <span className="nav-icon" aria-hidden="true">◉</span> {t('common.profile')}
           </NavLink>
@@ -99,7 +102,7 @@ function AppShell() {
         <header className="topbar">
           <span className="mobile-brand"><span className="brand-mark">G</span> GeoChat</span>
           <NotificationBell />
-          <span className="topbar-user">Signed in as <strong>{user?.displayName}</strong></span>
+          <span className="topbar-user">{t('home.welcome', { name: user?.displayName ?? '' })}</span>
           <nav className="mobile-account-nav" aria-label="Account navigation">
             <NavLink to="/app/profile" aria-label={t('common.profile')} title={t('common.profile')}>◉</NavLink>
             <NavLink to="/app/settings" aria-label={t('common.settings')} title={t('common.settings')}>⚙</NavLink>
@@ -153,6 +156,12 @@ export default function App() {
           <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
           <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
           <Route path="/oauth/complete" element={<GoogleReturnPage />} />
+          <Route path="/forgot-password" element={<PasswordRecoveryPage key="forgot" mode="forgot" />} />
+          <Route path="/reset-password" element={<PasswordRecoveryPage key="reset" mode="reset" />} />
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="users" element={<AdminUsersPage />} />
+          </Route>
           <Route path="/app" element={<ProtectedArea />}>
             <Route index element={<Navigate to="home" replace />} />
             <Route path="home" element={<HomePage />} />
@@ -165,7 +174,7 @@ export default function App() {
             <Route path="profile" element={<ProfilePage />} />
             <Route path="profile/:userId" element={<ProfilePage />} />
             <Route path="settings" element={<SettingsPage />} />
-            <Route path="admin/users" element={<AdminUsersPage />} />
+            <Route path="admin/users" element={<Navigate to="/admin/users" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

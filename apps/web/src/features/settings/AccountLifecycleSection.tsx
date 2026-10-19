@@ -39,7 +39,7 @@ export function AccountLifecycleSection() {
   };
   return <section className="settings-section account-lifecycle" aria-labelledby="lifecycle-heading">
     <h2 id="lifecycle-heading">{t('account.title')}</h2>
-    {user?.role === 'ADMIN' ? <><p>{t('account.adminTransfer')}</p><Link className="quiet-light-button" to="/app/admin/users">{t('admin.title')}</Link></> : <>
+    {['ADMIN', 'SUPER_ADMIN'].includes(user?.role ?? '') ? <><p>{t('account.adminTransfer')}</p><Link className="quiet-light-button" to="/admin">{t('admin.overview')}</Link></> : <>
       <p>{t('account.description')}</p>
       {!open ? <button className="quiet-light-button" onClick={() => setOpen(true)}>{t('account.deactivate')}</button> : <form className="form-stack account-action-form" onSubmit={e => void submit(e)}>
         <p>{t('account.confirmHelp')}</p>

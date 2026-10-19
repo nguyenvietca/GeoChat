@@ -2,6 +2,10 @@ import type { MessageKey } from './en';
 
 // Existing server wording is an adapter, not a translation key or UI label.
 export const apiMessages: Record<string, MessageKey> = {
+  'Only active accounts can receive administrator messages.': 'admin.activeOnly',
+  'Password recovery is currently unavailable.': 'password.unavailable',
+  'Password must be between 8 and 72 UTF-8 bytes.': 'password.length',
+  'Reset link is invalid or expired. Request a new link.': 'password.invalid',
   'This account is blocked. Contact an administrator.': 'account.blockedHelp',
   'Activate your account before continuing.': 'account.activationRequired',
   'This account is already active. Please sign in.': 'account.alreadyActive',

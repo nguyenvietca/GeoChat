@@ -199,7 +199,7 @@ describe('web friends and direct chat', () => {
     expect(mockRejectFriendRequest).toHaveBeenCalledWith(71, 'session-token');
     expect(await screen.findByText('No incoming requests.')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Sent/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Outgoing/ }));
     expect(await screen.findByRole('button', { name: 'Cancel' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(mockCancelFriendRequest).toHaveBeenCalledWith(72, 'session-token');

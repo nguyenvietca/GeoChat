@@ -211,6 +211,12 @@ Mỗi release nên build với `APP_VERSION` bất biến như commit SHA. Rollb
 
 ## CI
 
+Mapping `.env`, cấu hình local và biến build Web:
+[environment-mapping.md](environment-mapping.md).
+
+Trang quản trị `/admin`, khởi tạo super admin bằng biến môi trường và SMTP khôi phục
+mật khẩu: [admin-and-password-recovery.md](admin-and-password-recovery.md).
+
 Tự vô hiệu hóa tài khoản, kích hoạt lại và quyền admin khóa/mở khóa:
 [account-lifecycle.md](account-lifecycle.md). Backend cần chạy migration V20;
 quyền `ADMIN` phải được người vận hành cấp cho tài khoản đã xác minh.

@@ -13,6 +13,10 @@ import com.geochat.user.entity.User;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
+    boolean existsByRoleAndPasswordLoginEnabledTrue(com.geochat.user.entity.UserRole role);
+    long countByStatus(com.geochat.user.entity.UserStatus status);
+    java.util.Optional<User> findByEmailIgnoreCase(String email);
+    long countByStatusAndIdIn(com.geochat.user.entity.UserStatus status, java.util.Collection<Long> ids);
 	@Query("select u from User u where lower(u.username) like lower(concat('%', :query, '%')) or lower(u.displayName) like lower(concat('%', :query, '%')) order by u.id desc")
 	Page<User> adminSearch(@Param("query") String query, Pageable pageable);
 

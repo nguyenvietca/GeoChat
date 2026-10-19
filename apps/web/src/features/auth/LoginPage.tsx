@@ -69,6 +69,7 @@ export function LoginPage() {
         <input id="login-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
         <button className="primary-button" type="submit" disabled={submitting}>{submitting ? t('auth.signingIn') : t('auth.signIn')}</button>
       </form>
+      <p><Link to="/forgot-password">{t('password.forgot')}</Link></p>
       <p className="auth-switch">New to GeoChat? <Link to="/register">Create an account</Link></p>
     </AuthFrame>
   );

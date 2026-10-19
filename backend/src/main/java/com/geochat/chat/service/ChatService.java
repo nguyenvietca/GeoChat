@@ -110,8 +110,11 @@ public class ChatService {
 
 		User otherUser = userRepository.findById(otherUserId)
 				.orElseThrow(() -> new EntityNotFoundException("Target user not found"));
+		if (currentUser.getRole() == com.geochat.user.entity.UserRole.SUPER_ADMIN
+				&& otherUser.getStatus() != com.geochat.user.entity.UserStatus.ACTIVE)
+			throw new IllegalArgumentException("Only active accounts can receive administrator messages.");
 
-		if (!areFriends(currentUser.getId(), otherUserId)) {
+		if (currentUser.getRole() != com.geochat.user.entity.UserRole.SUPER_ADMIN && !areFriends(currentUser.getId(), otherUserId)) {
 			throw new IllegalArgumentException("Only friends can chat directly");
 		}
 
@@ -143,6 +146,18 @@ public class ChatService {
 	}
 
 	@Transactional
+	public OpenDirectChatResponse openSuperAdminConversation(String username, Long userId) {
+		User actor = userRepository.findByUsernameIgnoreCase(username).orElseThrow();
+		if (actor.getRole() != com.geochat.user.entity.UserRole.SUPER_ADMIN
+				|| actor.getStatus() != com.geochat.user.entity.UserStatus.ACTIVE)
+			throw new AccessDeniedException("Access denied");
+		User target = userRepository.findById(userId).orElseThrow(() -> new EntityNotFoundException("Target user not found"));
+		if (target.getStatus() != com.geochat.user.entity.UserStatus.ACTIVE)
+			throw new IllegalArgumentException("Only active accounts can receive administrator messages.");
+		return openDirectConversation(username, new OpenDirectChatRequest(userId));
+	}
+
+	@Transactional
 	public OpenDirectChatResponse openDiscoveryConversation(String username, OpenDirectChatRequest request) {
 		return openNonFriendConversation(username, new OpenContextualChatRequest(request.userId(), null), true);
 	}
@@ -156,6 +171,8 @@ public class ChatService {
 		}
 		User otherUser = userRepository.findById(request.userId())
 				.orElseThrow(() -> new EntityNotFoundException("Target user not found"));
+		if (currentUser.getRole() == com.geochat.user.entity.UserRole.SUPER_ADMIN)
+			return openSuperAdminConversation(username, otherUser.getId());
 		if (areFriends(currentUser.getId(), otherUser.getId())) {
 			return openDirectConversation(username, new OpenDirectChatRequest(otherUser.getId()));
 		}
@@ -298,7 +315,8 @@ public class ChatService {
 				.map(participant -> userRepository.findById(participant.getUserId()).orElse(null))
 				.filter(user -> user != null).map(this::toUserSummary).toList();
 
-		Integer limitedMessagesRemaining = conversation.isContextualLimited() && !hasFriendParticipant(
+		Integer limitedMessagesRemaining = currentUser.getRole() != com.geochat.user.entity.UserRole.SUPER_ADMIN
+				&& conversation.isContextualLimited() && !hasFriendParticipant(
 				currentUser.getId(), conversationId) ? Math.max(0, CONTEXTUAL_MESSAGE_LIMIT
 						- (int) messageRepository.countByConversationIdAndSenderId(conversationId, currentUser.getId()))
 						: null;
@@ -444,7 +462,8 @@ public class ChatService {
 		if (content.length() > 5000) {
 			throw new IllegalArgumentException("message content must be at most 5000 characters");
 		}
-		if (conversation.isContextualLimited() && messageRepository.countByConversationIdAndSenderId(conversationId,
+		if (currentUser.getRole() != com.geochat.user.entity.UserRole.SUPER_ADMIN
+				&& conversation.isContextualLimited() && messageRepository.countByConversationIdAndSenderId(conversationId,
 				currentUser.getId()) >= CONTEXTUAL_MESSAGE_LIMIT) {
 			throw new IllegalArgumentException(
 					"You can send at most 5 messages before becoming friends. Add each other as friends to continue");
