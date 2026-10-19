@@ -29,7 +29,7 @@ export function AdminDashboard() {
     <p>{t('admin.onlineHelp')}</p>{error ? <p className="error-message" role="alert">{text(error)}</p> : null}
     {!data ? <p role="status">{t('common.wait')}</p> : <><dl className="admin-stat-grid">
       {(['total', 'active', 'inactive', 'blocked', 'online'] as const).map(key => <div key={key} className="settings-section"><dt>{t(`admin.stats.${key}`)}</dt><dd>{data[key].toLocaleString(language)}</dd></div>)}
-    </dl><p>{t('admin.measured')}: {new Date(data.measuredAt).toLocaleString(language)}</p></>}
+    {data.newUsers7Days !== undefined ? <div className="settings-section"><dt>{t('management.new7')}</dt><dd>{data.newUsers7Days}</dd></div> : null}</dl><p>{t('admin.measured')}: {new Date(data.measuredAt).toLocaleString(language)}</p></>}
     <Link className="primary-button" to="/admin/users">{t('admin.title')}</Link>
   </section>;
 }

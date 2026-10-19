@@ -68,13 +68,19 @@ jwt:
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}
 
 app:
+  admin-operator:
+    enabled: ${ADMIN_OPERATOR_ENABLED:false}
+    user-id: ${ADMIN_OPERATOR_USER_ID:0}
+    action: ${ADMIN_OPERATOR_ACTION:}
+    confirmation: ${ADMIN_OPERATOR_CONFIRMATION:}
+    reason: ${ADMIN_OPERATOR_REASON:}
   chat:
     max-group-members: ${MAX_GROUP_MEMBERS:100}
   super-admin:
     enabled: ${SUPER_ADMIN_BOOTSTRAP_ENABLED:false}
-    username: ${SUPER_ADMIN_USERNAME:geochat_super_admin}
-    email: ${SUPER_ADMIN_EMAIL:}
-    password: ${SUPER_ADMIN_PASSWORD:}
+    username: ${SUPER_ADMIN_USERNAME:super_admin}
+    email: ${SUPER_ADMIN_EMAIL:geochat_super_admin@gmail.com}
+    password: ${SUPER_ADMIN_PASSWORD:super_adminx@X}
   password-reset:
     enabled: ${PASSWORD_RESET_ENABLED:true}
     web-origin: ${PASSWORD_RESET_WEB_ORIGIN:http://localhost:5173}

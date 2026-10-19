@@ -8,6 +8,8 @@ import { getPublicProfile, updateMyAvatar, updateMyProfile } from '../../api/use
 import { useAuth } from '../../app/providers/AuthContext';
 import { FriendRelationship } from '../../types';
 import { UserAvatar } from './UserAvatar';
+import { createPortal } from 'react-dom';
+import { useOverlayFocus } from '../../hooks/useOverlayFocus';
 
 export function ProfilePage() {
   useLocale(); const { userId } = useParams(); return userId ? <PublicProfile userId={Number(userId)} /> : <MyProfile />; }
@@ -18,14 +20,20 @@ function PublicProfile({ userId }: { userId: number }) {
   const [person, setPerson] = useState<{displayName:string;username:string;avatarUpdatedAt?:string|null}|null>(null);
   const [relationship, setRelationship] = useState<FriendRelationship>('NONE'); const [requestId, setRequestId] = useState<number|null>(null);
   const [busy, setBusy] = useState(false); const [failure, setFailure] = useState('');
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const removeTrigger = useRef<HTMLButtonElement>(null);
+  const removing = useRef(false);
+  useOverlayFocus(dialogRef, confirmRemove, () => setConfirmRemove(false), true, busy, removeTrigger);
+  useEffect(() => { setConfirmRemove(false); }, [userId]);
   useEffect(() => { let active=true; setPerson(null); setFailure(''); if(token) void Promise.all([getPublicProfile(userId,token),getFriendRelationship(userId,token)]).then(([value,state])=>{if(active){setPerson(value);setRelationship(state.relationship);setRequestId(state.requestId);}}).catch(()=>{if(active)setFailure(t('profile.unavailable'));}); return()=>{active=false;}; },[userId,token]);
   async function act(action:'relationship'|'message'|'remove') { if(!token||busy)return; setBusy(true); setFailure(''); try {
     if(action==='message'){const chat=await openDirectConversation(userId,token);navigate(`/app/chat/${chat.conversationId}`);return;}
-    if(action==='remove'){if(!person||!window.confirm(t('profile.removeConfirm', { name: person.displayName })))return;await removeFriend(userId,token);setRelationship('NONE');return;}
+    if(action==='remove'){if(!person||removing.current)return;removing.current=true;await removeFriend(userId,token);setRelationship('NONE');setConfirmRemove(false);return;}
     if(relationship==='NONE'){const request=await sendFriendRequest(userId,token);setRelationship('PENDING_OUTGOING');setRequestId(request.requestId);}
     else if(relationship==='PENDING_OUTGOING'&&requestId){await cancelFriendRequest(requestId,token);setRelationship('NONE');setRequestId(null);}
     else if(relationship==='PENDING_INCOMING'&&requestId){await acceptFriendRequest(requestId,token);setRelationship('FRIENDS');setRequestId(null);}
-  } catch(error){setFailure(error instanceof ApiError?error.message:t('profile.connectionFailed'));} finally{setBusy(false);} }
+  } catch(error){setFailure(error instanceof ApiError?error.message:t('profile.connectionFailed'));} finally{removing.current=false;setBusy(false);} }
   const label=relationship==='NONE'?t('common.addFriend'):relationship==='PENDING_OUTGOING'?t('common.cancelRequest'):relationship==='PENDING_INCOMING'?t('common.acceptRequest'):t('common.friends');
   return <section className="page-content public-profile-page">
     <div className="page-heading"><div><p className="eyebrow">PEOPLE ON GEOCHAT</p><h1>{t('profile.public')}</h1></div></div>
@@ -41,10 +49,18 @@ function PublicProfile({ userId }: { userId: number }) {
       <div className="profile-connection-actions">
         {relationship !== 'FRIENDS' ? <button className="primary-button" type="button" disabled={busy} onClick={()=>void act('relationship')}>{busy?t('common.working'):label}</button> : <>
           <button className="primary-button" type="button" disabled={busy} onClick={()=>void act('message')}>{t('common.message')}</button>
-          <button className="quiet-light-button profile-remove-friend" type="button" disabled={busy} onClick={()=>void act('remove')}>{t('common.removeFriend')}</button>
+          <button ref={removeTrigger} className="quiet-light-button profile-remove-friend" type="button" disabled={busy} onClick={()=>{setFailure('');setConfirmRemove(true);}}>{t('common.removeFriend')}</button>
         </>}
       </div>
     </section> : !failure ? <p role="status">{t('profile.loading')}</p> : null}
+    {confirmRemove && person ? createPortal(<div className="group-confirm-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setConfirmRemove(false); }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="remove-friend-title" aria-describedby="remove-friend-help" aria-busy={busy} tabIndex={-1} className="group-confirm-dialog">
+        <h2 id="remove-friend-title">{t('common.removeFriend')}</h2>
+        <p id="remove-friend-help">{t('profile.removeConfirm', { name: person.displayName })}</p>
+        {failure ? <p role="alert" className="error-message">{text(failure)}</p> : null}
+        <div className="account-action-buttons"><button type="button" className="quiet-light-button" disabled={busy} onClick={() => setConfirmRemove(false)}>{t('common.cancel')}</button>
+          <button type="button" className="primary-button" disabled={busy} onClick={() => void act('remove')}>{busy ? t('common.wait') : t('common.removeFriend')}</button></div>
+      </div></div>, document.body) : null}
   </section>;
 }
 

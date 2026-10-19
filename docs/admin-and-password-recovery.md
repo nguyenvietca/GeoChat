@@ -2,6 +2,9 @@
 
 ## Administration
 
+Admin foundation, user details, filtered audit logs and existing-user operator
+grant/revoke commands: [admin-foundation-046.md](admin-foundation-046.md).
+
 Open `/admin` for the separate administration portal. `/admin/users` lists users;
 the old `/app/admin/users` path redirects there. Both `ADMIN` and `SUPER_ADMIN`
 can view counts and moderate ordinary users. Regular users cannot access its APIs.

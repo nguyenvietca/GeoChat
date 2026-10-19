@@ -95,7 +95,8 @@ public class AccountLifecycleService {
 
 	@Transactional
 	public void moderate(String adminName, Long userId, boolean block, String reason) {
-		User admin = users.findByUsernameIgnoreCase(adminName).orElseThrow();
+		users.lockAdministrators();
+        User admin = users.findByUsernameIgnoreCase(adminName).orElseThrow();
         if (!admin.getRole().isAdmin() || admin.getStatus() != UserStatus.ACTIVE)
 			throw new AccessDeniedException("Access denied");
 		User user = locked(userId);
@@ -103,27 +104,32 @@ public class AccountLifecycleService {
 			throw new IllegalArgumentException("Admin accounts cannot be blocked here.");
 		if (reason == null || reason.isBlank() || reason.strip().length() > 500)
 			throw new IllegalArgumentException("Enter a reason between 1 and 500 characters.");
-		if (block) {
+		String previous = user.getStatus().name();
+        if (block) {
 			if (user.getStatus() == UserStatus.LOCKED)
-				throw new IllegalArgumentException("This account is already blocked.");
+				throw new com.geochat.user.exception.AccountStateConflict("This account is already blocked.");
 			user.setStatus(UserStatus.LOCKED);
 			user.setBlockReason(reason.strip());
 		} else {
 			if (user.getStatus() != UserStatus.LOCKED)
-				throw new IllegalArgumentException("This account is not blocked.");
+				throw new com.geochat.user.exception.AccountStateConflict("This account is not blocked.");
 			user.setStatus(user.getSelfDeactivatedAt() == null ? UserStatus.ACTIVE : UserStatus.INACTIVE);
 			user.setBlockReason(null);
 		}
-		changed(user, admin.getId(), block ? "BLOCK" : "UNBLOCK", reason.strip());
+		changed(user, admin.getId(), block ? "BLOCK" : "UNBLOCK", reason.strip(), previous);
 	}
 
 	private void changed(User user, Long actor, String action, String reason) {
+        changed(user,actor,action,reason,null);
+    }
+
+    private void changed(User user, Long actor, String action, String reason, String previous) {
 		user.setAuthVersion(user.getAuthVersion() + 1);
 		user.setNearbyDiscoverable(false);
 		user.setUpdatedAt(Instant.now());
 		users.saveAndFlush(user);
-		jdbc.update("INSERT INTO account_actions(actor_id,user_id,action,reason,created_at) VALUES (?,?,?,?,?)", actor,
-				user.getId(), action, reason, java.sql.Timestamp.from(Instant.now()));
+		jdbc.update("INSERT INTO account_actions(actor_id,user_id,action,reason,created_at,previous_status,new_status) VALUES (?,?,?,?,?,?,?)", actor,
+				user.getId(), action, reason, java.sql.Timestamp.from(Instant.now()), previous,user.getStatus().name());
 		events.publishEvent(new AccessChanged(user.getId()));
 	}
 }

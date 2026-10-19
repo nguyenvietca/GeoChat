@@ -1,0 +1,10 @@
+ALTER TABLE account_actions ADD COLUMN previous_status VARCHAR(16);
+ALTER TABLE account_actions ADD COLUMN new_status VARCHAR(16);
+ALTER TABLE account_actions ADD COLUMN previous_role VARCHAR(16);
+ALTER TABLE account_actions ADD COLUMN new_role VARCHAR(16);
+CREATE INDEX idx_account_actions_time ON account_actions(created_at DESC, id DESC);
+CREATE INDEX idx_account_actions_actor ON account_actions(actor_id, created_at DESC, id DESC);
+CREATE INDEX idx_account_actions_action ON account_actions(action, created_at DESC, id DESC);
+CREATE INDEX idx_users_status_created ON users(status, created_at DESC, id DESC);
+CREATE INDEX idx_users_created ON users(created_at DESC, id DESC);
+CREATE INDEX idx_users_role ON users(role, id);

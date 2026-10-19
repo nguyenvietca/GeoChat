@@ -34,6 +34,7 @@ class SuperAdminIntegrationTest {
     @Autowired PlatformTransactionManager manager;
     @Autowired WebApplicationContext context;
     @Autowired WebSocketSessionRegistry sockets;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     MockMvc mvc; User root, alice, admin;
     @BeforeEach void setup() {
         conversations.deleteAll(); users.deleteAll(); root = user("root", UserRole.SUPER_ADMIN); alice = user("alice", UserRole.USER); admin = user("admin", UserRole.ADMIN);
@@ -62,7 +63,7 @@ class SuperAdminIntegrationTest {
     @Test void bootstrapUsesSeedOnceAndNeverOverwritesCredentials() {
         users.deleteAll();
         User seed = user("geochat_super_admin", UserRole.SUPER_ADMIN); seed.setPasswordHash("!bootstrap-required"); seed.setPasswordLoginEnabled(false); seed.setStatus(UserStatus.LOCKED); users.saveAndFlush(seed);
-        var bootstrap = new SuperAdminBootstrap(users, passwords, true, "operator", "operator@example.com", "LongUniquePassword123!");
+        var bootstrap = new SuperAdminBootstrap(users, passwords, true, "operator", "operator@example.com", "LongUniquePassword123!", jdbc);
         new TransactionTemplate(manager).executeWithoutResult(tx -> bootstrap.run(new DefaultApplicationArguments()));
         User configured = users.findByUsernameIgnoreCase("operator").orElseThrow();
         assertThat(configured.getStatus()).isEqualTo(UserStatus.ACTIVE); assertThat(passwords.matches("LongUniquePassword123!", configured.getPasswordHash())).isTrue();

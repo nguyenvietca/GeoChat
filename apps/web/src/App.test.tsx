@@ -17,6 +17,12 @@ import { getConversations, openDiscoveryConversation, getConversationDetail, get
 import { searchUsers, updateMyProfile, getPublicProfile } from './api/users';
 import { User } from './types';
 
+vi.mock('./api/facebook', () => ({
+  facebookConfig: vi.fn().mockResolvedValue({ enabled: false }),
+  facebookConnections: vi.fn().mockResolvedValue({ passwordAvailable: true, facebookConnected: false, email: null }),
+  completeFacebook: vi.fn(), startFacebook: vi.fn(), unlinkFacebook: vi.fn(), reauthenticateProvider: vi.fn(), redirectProvider: vi.fn(),
+}));
+
 vi.mock('./api/auth', () => ({
   getCurrentUser: vi.fn(),
   login: vi.fn(),

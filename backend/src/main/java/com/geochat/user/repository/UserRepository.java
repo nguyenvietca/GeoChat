@@ -13,6 +13,12 @@ import com.geochat.user.entity.User;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
+    long countByCreatedAtGreaterThanEqual(java.time.Instant since);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.role in (com.geochat.user.entity.UserRole.ADMIN, com.geochat.user.entity.UserRole.SUPER_ADMIN) order by u.id")
+    java.util.List<User> lockAdministrators();
+    @Query("select count(u) from User u where u.status=com.geochat.user.entity.UserStatus.ACTIVE and u.role in (com.geochat.user.entity.UserRole.ADMIN,com.geochat.user.entity.UserRole.SUPER_ADMIN)")
+    long countActiveAdministrators();
     boolean existsByRoleAndPasswordLoginEnabledTrue(com.geochat.user.entity.UserRole role);
     long countByStatus(com.geochat.user.entity.UserStatus status);
     java.util.Optional<User> findByEmailIgnoreCase(String email);

@@ -1,5 +1,8 @@
 # Business Rules
 
+- Admin authority comes from the current internal account, never public registration fields or provider email. Role grants/revocations require an operator command targeting an existing user with exact confirmation and atomic audit. The final active administrator cannot be revoked; ordinary moderation cannot suspend administrator accounts.
+- Suspension preserves account data, rejects existing and new authentication, and closes local realtime sessions after commit. Unblocking restores the previous self-deactivation state and never revives old JWTs. Admin audit logs contain status/role changes and reasons, never private chat content or GPS data.
+
 - Facebook and Google identities belong to one internal user only and can be combined through explicit authenticated linking. Matching provider email never automatically merges accounts. Facebook email is optional metadata, not a verified GeoChat recovery address; Facebook-only accounts may have no email.
 - Removing a connected provider requires fresh password confirmation or proof of another connected provider, and must leave an enabled, usable sign-in method. Linking and unlinking preserve profile, conversations, friends, groups and Nearby preferences.
 

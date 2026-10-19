@@ -48,6 +48,8 @@ Optional Google Login and secure account linking setup: [docs/google-auth-043.md
 
 Optional Facebook Login and secure account linking: [docs/facebook-auth-044.md](docs/facebook-auth-044.md).
 
+Admin user management and operator provisioning: [docs/admin-foundation-046.md](docs/admin-foundation-046.md).
+
 ## Validation
 
 From `backend`, run `./mvnw test` (Windows: `.\mvnw.cmd test`). In `apps/web`, run `npm run build` and `npm test`. In `apps/mobile`, run `npm run typecheck` and `npm test -- --runInBand`.

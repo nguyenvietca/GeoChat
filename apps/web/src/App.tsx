@@ -17,6 +17,8 @@ import { UserAvatar } from './features/profile/UserAvatar';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { AdminUsersPage } from './features/settings/AdminUsersPage';
 import { AdminLayout } from './features/admin/AdminLayout';
+import { AdminUserDetail } from './features/admin/AdminUserDetail';
+import { AdminAuditPage } from './features/admin/AdminAuditPage';
 import { AdminDashboard } from './features/admin/AdminDashboard';
 import { PasswordRecoveryPage } from './features/auth/PasswordRecoveryPage';
 import { ReactivateAccountPage } from './features/settings/ReactivateAccountPage';
@@ -160,7 +162,7 @@ export default function App() {
           <Route path="/reset-password" element={<PasswordRecoveryPage key="reset" mode="reset" />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />
-            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="users" element={<AdminUsersPage />} /><Route path="users/:userId" element={<AdminUserDetail />} /><Route path="audit-logs" element={<AdminAuditPage />} />
           </Route>
           <Route path="/app" element={<ProtectedArea />}>
             <Route index element={<Navigate to="home" replace />} />

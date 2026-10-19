@@ -7,6 +7,10 @@ import jakarta.persistence.*;
 @Entity
 @Table(name = "account_actions")
 public class AccountAction {
+    @Column(name="previous_status",length=16) private String previousStatus;
+    @Column(name="new_status",length=16) private String newStatus;
+    @Column(name="previous_role",length=16) private String previousRole;
+    @Column(name="new_role",length=16) private String newRole;
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @Column(name = "actor_id", nullable = false)

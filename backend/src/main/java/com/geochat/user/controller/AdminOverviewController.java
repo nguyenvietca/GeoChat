@@ -15,13 +15,13 @@ public class AdminOverviewController {
     public AdminOverviewController(UserRepository users, WebSocketSessionRegistry sessions) {
         this.users = users; this.sessions = sessions;
     }
-    public record Overview(long total, long active, long inactive, long blocked, long online, Instant measuredAt) {}
+    public record Overview(long total, long active, long inactive, long blocked, long online, Instant measuredAt, long newUsers7Days) {}
     @GetMapping("/overview")
     public ApiResponse<Overview> overview(jakarta.servlet.http.HttpServletResponse response) {
         var online = sessions.onlineUserIds();
         response.setHeader("Cache-Control", "no-store");
         return ApiResponse.ok(new Overview(users.count(), users.countByStatus(UserStatus.ACTIVE),
                 users.countByStatus(UserStatus.INACTIVE), users.countByStatus(UserStatus.LOCKED),
-                online.isEmpty() ? 0 : users.countByStatusAndIdIn(UserStatus.ACTIVE, online), Instant.now()));
+                online.isEmpty() ? 0 : users.countByStatusAndIdIn(UserStatus.ACTIVE, online), Instant.now(), users.countByCreatedAtGreaterThanEqual(Instant.now().minusSeconds(7*86400))));
     }
 }

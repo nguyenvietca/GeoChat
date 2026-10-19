@@ -90,7 +90,7 @@ describe('Account lifecycle UI', () => {
     vi.mocked(moderateAccount).mockResolvedValue(null); renderPage(<AdminUsersPage />);
     const trigger = await screen.findByRole('button', { name: 'Unblock account' });
     fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: 'Unblock account @Alice' }).getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByRole('dialog', { name: 'Unblock account @alice' }).getAttribute('aria-modal')).toBe('true');
     expect(document.activeElement).toBe(screen.getByLabelText('Reason'));
     fireEvent.keyDown(screen.getByLabelText('Reason'), { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
